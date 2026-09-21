@@ -5,7 +5,7 @@
 | Project and network | **Sopholeth** |
 | Pronunciation | **SOF-oh-leth** |
 | Meaning and lead line | **Wisdom through intentional forgetting.** |
-| Future client CLI | **`soph`**; not implemented yet |
+| Client CLI | **`soph`**; see the [CLI guide](cli.md) |
 | Intended domains | `sopholeth.io` and `sopholeth.dev` |
 | Repository | [TickTockBent/Sopholeth](https://github.com/TickTockBent/Sopholeth) |
 
@@ -24,6 +24,7 @@ directories are not migrated automatically.
 | --- | --- |
 | Node executable and entry point | `bin/server`, `cmd/server`; `--mcp` runs the embedded MCP server |
 | Operator executables | `bin/omega`, `cmd/omega`; `bin/dashboard`, `cmd/dashboard` |
+| Client executable | `bin/soph`, `cmd/soph`; saved networks in `$XDG_CONFIG_HOME/sopholeth/soph.json` |
 | Go module and imports | `sopholeth` |
 | Node settings | `NODE_*`, with `NODE_ID` for node identity |
 | Dashboard state override | `DASHBOARD_STATE_DIR` |
@@ -39,8 +40,8 @@ directories are not migrated automatically.
 | Public discovery names | `_bootstrap.sopholeth.io`, `_omega.sopholeth.io` |
 
 See [configuration](configuration.md) for settings and fallback paths, and
-the [API reference](api.md) for the current interfaces. `soph` is reserved for
-the future client; it is not a synonym for the node service. The `omega-v1`
+the [API reference](api.md) for the current interfaces. `soph` is the client;
+it is not a synonym for the node service. The `omega-v1`
 signed format, WebSocket fields, and `/v1/` routes retain their protocol names.
 The old product/version response header has been removed.
 

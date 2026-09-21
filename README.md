@@ -2,8 +2,8 @@
 
 **Wisdom through intentional forgetting.**
 
-Pronounced **SOF-oh-leth**. The client CLI, **`soph`**, is planned in
-[issue #187](https://github.com/TickTockBent/Sopholeth/issues/187).
+Pronounced **SOF-oh-leth**. The client CLI is **`soph`**; see the
+[CLI guide](docs/cli.md).
 
 Sopholeth is a distributed network for temporary shared state. Store bytes
 under a key with a time-to-live (TTL), let peers carry them, and retrieve them
@@ -28,7 +28,7 @@ Use a private network for development.
 The service executables are `server`, `omega`, and `dashboard`. Internal names
 follow their roles: `NODE_*` configuration, plain MCP tool names, and component
 metrics. See the [migration guide](docs/rebrand.md) when updating an older
-checkout or deployment. The future `soph` client is not implemented here.
+checkout or deployment. The `soph` client talks to any node over HTTP.
 
 ## Run locally
 
@@ -55,6 +55,20 @@ curl -I http://localhost:8080/v1/data/hello
 A PUT returns `201` when the node observes its quorum, or `202` when the
 write is stored locally but quorum is unconfirmed. Both accept the local
 write. Reads and listings are local to the node you contact.
+
+Or use the client. Join once, then every command uses that node:
+
+```bash
+go build -o bin/soph ./cmd/soph
+./bin/soph join localhost
+printf 'hello' | ./bin/soph put hello --ttl 300
+./bin/soph get hello
+./bin/soph exists hello
+./bin/soph list
+```
+
+The [CLI guide](docs/cli.md) covers named networks, output formats, and
+exit codes.
 
 For a container with its host port restricted to loopback:
 

@@ -1,20 +1,25 @@
 BINARY_NAME=server
 OMEGA_BINARY_NAME=omega
 DASHBOARD_BINARY_NAME=dashboard
+CLIENT_BINARY_NAME=soph
 IMAGE_NAME ?= sopholeth/node:local
 
 # Burn-in cluster seeds — useful for `make dashboard-run-burnin` smoke tests.
 BURNIN_SEEDS ?= localhost:8091,localhost:8092,localhost:8093
 
-.PHONY: build build-omega build-dashboard run dashboard-run-burnin test clean docker-build docker-run docker-compose-up docker-compose-down
+.PHONY: build build-omega build-dashboard build-soph run dashboard-run-burnin test clean docker-build docker-run docker-compose-up docker-compose-down
 
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/server
 	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/omega
 	go build -o bin/$(DASHBOARD_BINARY_NAME) ./cmd/dashboard
+	go build -o bin/$(CLIENT_BINARY_NAME) ./cmd/soph
 
 build-omega:
 	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/omega
+
+build-soph:
+	go build -o bin/$(CLIENT_BINARY_NAME) ./cmd/soph
 
 build-dashboard:
 	go build -o bin/$(DASHBOARD_BINARY_NAME) ./cmd/dashboard
