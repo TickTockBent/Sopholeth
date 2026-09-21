@@ -130,6 +130,11 @@ separation. It publishes its host ports on all interfaces.
 
 ## Documentation
 
+The website projects live in [sites/](sites/README.md): `sopholeth.com` for
+marketing and showcases, `sopholeth.io` for docs, `sopholeth.dev` for the devlog
+and release notes, and a holding page for `soph.stream`. Each directory is an
+independent Vercel project root.
+
 - [API and MCP reference](docs/api.md)
 - [Node configuration](docs/configuration.md)
 - [Usage patterns](docs/patterns.md) and [client-side encryption](docs/encryption-example.md)

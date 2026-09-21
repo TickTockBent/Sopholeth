@@ -5,12 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sopholeth // wisdom through intentional forgetting</title>
   <meta name="description" content="Temporary shared state with mandatory lifetimes. Sopholeth: SOF-oh-leth." />
+  <link rel="canonical" href="https://sopholeth.com/" />
 
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Sopholeth — Wisdom through intentional forgetting" />
   <meta property="og:description" content="A distributed network for temporary shared state. Wisdom through intentional forgetting." />
   <meta property="og:site_name" content="Sopholeth" />
+  <meta property="og:url" content="https://sopholeth.com/" />
 
   <!-- Twitter -->
   <meta property="twitter:card" content="summary" />
@@ -103,10 +105,12 @@
     a:hover { color: #e040fb; text-shadow: 0 0 8px #e040fb99; }
 
     /* responsive grid fallbacks */
+    .two-column-grid > *, .api-row > * { min-width: 0; }
+    .api-row > * { overflow-wrap: anywhere; }
     @media (max-width: 720px) {
       .nav-section-link, .nav-status { display: none; }
-      .demo-grid-2col { grid-template-columns: 1fr !important; }
-      .api-row { grid-template-columns: 70px 1fr !important; }
+      .two-column-grid { grid-template-columns: minmax(0, 1fr) !important; }
+      .api-row { grid-template-columns: 70px minmax(0, 1fr) !important; }
       .api-row > :nth-child(3), .api-row > :nth-child(4) { grid-column: 1 / -1; padding-left: 70px; }
     }
 

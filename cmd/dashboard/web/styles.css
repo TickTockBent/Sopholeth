@@ -1,6 +1,6 @@
 /*
  * Dashboard styles — vendored hackerpunk aesthetic.
- * If web/styles.css (the marketing site) is updated, mirror the change here
+ * If sites/sopholeth.com/styles.css is updated, mirror the change here
  * deliberately. The two files are intentionally not shared at runtime so
  * the dashboard binary stays self-contained.
  */

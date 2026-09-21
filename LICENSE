@@ -53,7 +53,7 @@ The following components are proprietary and NOT covered by this MIT License:
 - cmd/cluster-node/ (cluster node implementation)
 - cmd/fade-cluster-node/ (FADE cluster node implementation)
 - demos/fade/ directory and all contents (FADE demo application)
-- web/ directory and all contents (website, demos, and web interfaces)
+- sites/ directory and all contents (websites, demos, and web interfaces)
 
 The proprietary components are protected by copyright and available only under
 separate commercial licensing agreements. Unauthorized use, reproduction, or
