@@ -330,7 +330,7 @@ func fetchText(ctx context.Context, client *http.Client, url string) (string, er
 	return string(body), nil
 }
 
-// parseMetrics extracts the four counters the dashboard cares about from a
+// parseMetrics extracts the three counters the dashboard cares about from a
 // Prometheus exposition. We do not pull in the full Prometheus parser
 // because the surface is tiny and stable: three `gossip_*` counters in a
 // well-formed text exposition. Anything malformed falls through to zero.

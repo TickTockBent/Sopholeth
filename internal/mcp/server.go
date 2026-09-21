@@ -407,8 +407,8 @@ func (s *Server) toolStore(ctx context.Context, args map[string]interface{}) (an
 
 	// Always include quorum_status so callers can deserialize into a fixed
 	// shape. "confirmed" = local write + quorum acks landed within
-	// NODE_WRITE_TIMEOUT; "pending" = local write succeeded, replication
-	// still in flight (the data is on this node and will gossip out).
+	// NODE_WRITE_TIMEOUT; "pending" = local write succeeded without
+	// confirmation before timeout. Delivery to other peers is not guaranteed.
 	quorumStatus := "confirmed"
 	if err := s.cluster.Put(callCtx, key, []byte(data), time.Duration(ttl)*time.Second); err != nil {
 		if errors.Is(err, cluster.ErrQuorumTimeout) {
@@ -500,7 +500,7 @@ func toInt(v any) (int, error) {
 }
 
 // newKey returns a UUID-shaped hex string. It's not a strict RFC 4122 UUID —
-// Keys are opaque to the system — but the format is familiar and
+// keys are opaque to the system — but the format is familiar and
 // collision-resistant for the per-agent scratchpad use case.
 func newKey() string {
 	var b [16]byte

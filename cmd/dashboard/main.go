@@ -108,9 +108,8 @@ func splitSeeds(s string) []string {
 }
 
 func defaultStateDir() string {
-	// XDG_STATE_HOME for dev, /var/lib for system installs. Pick the
-	// XDG path when HOME exists so operators don't need root just to
-	// run the dashboard during development.
+	// Use the conventional user state path when HOME exists, otherwise
+	// /var/lib for system installs. DASHBOARD_STATE_DIR overrides either.
 	if dir := os.Getenv("DASHBOARD_STATE_DIR"); dir != "" {
 		return dir
 	}

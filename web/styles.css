@@ -102,7 +102,7 @@ h1 {
 
 h1::before,
 h1::after {
-    content: 'REPRAM';
+    content: attr(data-text);
     position: absolute;
     top: 0;
     left: 0;

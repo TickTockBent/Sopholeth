@@ -1,7 +1,7 @@
 # Sopholeth API
 
-This describes the Go implementation. The [migration guide](rebrand.md) maps
-previous configuration, tool, and metric names to the current interfaces.
+This describes the Go implementation. The [naming guide](rebrand.md) lists
+current configuration, tool, and metric names for the direct cutover.
 
 The HTTP client API has no authentication or key ownership. All reads,
 existence checks, and listings inspect the contacted node's local store.
@@ -96,6 +96,10 @@ rather than `[]`; clients should handle both.
 Gossip and WebSocket traffic use the HTTP port. There is no separate gossip
 listener. Health alone does not establish replication, quorum, or public
 discovery readiness.
+
+When `NODE_CLUSTER_SECRET` is set, HTTP gossip and bootstrap requests carry
+their body HMAC in `X-Gossip-Signature`. WebSocket message signatures retain
+their existing wire fields.
 
 The HTTP API accepts browser requests from any origin. A reverse proxy can
 control transport exposure, but CORS is not client authentication. See

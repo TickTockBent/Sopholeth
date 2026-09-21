@@ -7,7 +7,7 @@
 | Meaning and lead line | **Wisdom through intentional forgetting.** |
 | Future client CLI | **`soph`**; not implemented yet |
 | Intended domains | `sopholeth.io` and `sopholeth.dev` |
-| Intended repository name | `sopholeth`; hosting links follow the actual repository until it moves |
+| Repository | [TickTockBent/Sopholeth](https://github.com/TickTockBent/Sopholeth) |
 
 Use **Sopholeth** in prose and **sopholeth** for the Go module, distribution
 identity, and application state directories. Name implementation components
@@ -50,7 +50,7 @@ anchor remains a placeholder, and no public network is claimed to be live.
 
 ## Remaining launch work
 
-- Confirm domain ownership, move the repository, and update hosting links.
+- Confirm domain ownership and connect the site deployment.
 - Publish and verify renamed binaries and container images before linking them.
 - Reconcile the historical component exclusions in [LICENSE](../LICENSE).
 - Retire or replace unused legacy visual assets before adding social previews.

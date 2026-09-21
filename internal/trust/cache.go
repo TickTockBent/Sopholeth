@@ -105,8 +105,8 @@ func SaveCache(dir string, list *SignedList) error {
 	return nil
 }
 
-// DefaultCacheDir resolves the cache directory with the priority defined in
-// the 2.1 spec: NODE_CACHE_DIR > $HOME/.sopholeth/cache > /var/cache/sopholeth.
+// DefaultCacheDir resolves NODE_CACHE_DIR > $HOME/.sopholeth/cache >
+// /var/cache/sopholeth, as documented in docs/configuration.md.
 //
 // Callers should prefer ResolveCacheDir, which additionally returns whether
 // the fallback was used. The /var/cache/sopholeth path typically requires

@@ -104,6 +104,7 @@
 
     /* responsive grid fallbacks */
     @media (max-width: 720px) {
+      .nav-section-link, .nav-status { display: none; }
       .demo-grid-2col { grid-template-columns: 1fr !important; }
       .api-row { grid-template-columns: 70px 1fr !important; }
       .api-row > :nth-child(3), .api-row > :nth-child(4) { grid-column: 1 / -1; padding-left: 70px; }

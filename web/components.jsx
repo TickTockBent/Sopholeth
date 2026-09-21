@@ -1,8 +1,7 @@
 // Landing page components
 // Aligned with wshoffner.dev design system.
 
-// The repository URL remains valid until the hosting rename is complete.
-const PROJECT_REPOSITORY = 'https://github.com/TickTockBent/REPRAM';
+const PROJECT_REPOSITORY = 'https://github.com/TickTockBent/Sopholeth';
 
 const { useState: useStateR, useEffect: useEffectR, useRef: useRefR, useMemo: useMemoR } = React;
 
@@ -14,10 +13,11 @@ function Glyph({ children, color = '#22d3ee' }) {
   return <span style={{ color, marginRight: 6 }}>{children}</span>;
 }
 
-function TerminalFrame({ label, children, style }) {
+function TerminalFrame({ id, label, children, style }) {
   return (
-    <section style={{
+    <section id={id} style={{
       position: 'relative',
+      scrollMarginTop: 76,
       border: '1px solid #22d3ee99',
       padding: '28px 28px 24px',
       margin: '28px 0',
@@ -56,10 +56,10 @@ function SiteNav() {
       }}>
         <a href="#top" style={{
           color: '#39ff14', textShadow: '0 0 10px #39ff1480',
-          fontSize: 14, fontWeight: 700, letterSpacing: '0.1em'
+          fontSize: 14, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap'
         }}>
           <span style={{ color: '#22d3ee' }}>$</span>&nbsp;sopholeth
-          <span style={{ color: '#8b949e', marginLeft: 8, letterSpacing: 0, fontSize: 11 }}>
+          <span className="nav-status" style={{ color: '#8b949e', marginLeft: 8, letterSpacing: 0, fontSize: 11 }}>
             prelaunch
           </span>
         </a>
@@ -94,7 +94,7 @@ function SiteNav() {
 
 function NavLink({ href, children }) {
   return (
-    <a href={href} style={{
+    <a className="nav-section-link" href={href} style={{
       color: '#8b949e', fontSize: 12,
       letterSpacing: '0.05em', padding: '4px 2px'
     }}
@@ -133,7 +133,7 @@ function Hero() {
 
   return (
     <section id="top" style={{ paddingTop: 112, paddingBottom: 32 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 18 }}>
         <span style={{ color: '#22d3ee', fontSize: 12, letterSpacing: '0.14em' }}>
           // SOPHOLETH
         </span>
@@ -592,7 +592,7 @@ function NetworkDiagram() {
 
 function Architecture() {
   return (
-    <TerminalFrame label="ARCH://TOPOLOGY">
+    <TerminalFrame id="architecture" label="ARCH://TOPOLOGY">
       <h2 style={{
         color: '#39ff14', fontSize: 22, margin: '0 0 18px',
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
@@ -681,7 +681,7 @@ const PATTERNS = [
 
 function Patterns() {
   return (
-    <TerminalFrame label="PATTERNS://AGENT" style={{ marginTop: 44 }}>
+    <TerminalFrame id="patterns" label="PATTERNS://AGENT" style={{ marginTop: 44 }}>
       <h2 style={{
         color: '#39ff14', fontSize: 22, margin: '0 0 6px',
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
@@ -768,7 +768,7 @@ function TTLDemo() {
   };
 
   return (
-    <TerminalFrame label="DEMO://EPHEMERAL" style={{ marginTop: 44 }}>
+    <TerminalFrame id="demo" label="DEMO://EPHEMERAL" style={{ marginTop: 44 }}>
       <h2 style={{
         color: '#39ff14', fontSize: 22, margin: '0 0 6px',
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
@@ -931,17 +931,14 @@ docker compose up --build
 },
 {
   id: 'mcp', label: 'mcp', glyph: '@',
-  code: `# build the node first, then use its absolute path
-{
+  code: `{
   "mcpServers": {
     "sopholeth": {
       "command": "/absolute/path/to/checkout/bin/server",
       "args": ["--mcp"]
     }
   }
-}
-# tools: store, retrieve, exists, list_keys
-# embedded private node; HTTP still binds all interfaces`
+}`
 },
 {
   id: 'curl', label: 'raw api', glyph: '$',
@@ -984,13 +981,15 @@ function Quickstart() {
   };
 
   return (
-    <TerminalFrame label="GETTING://STARTED" style={{ marginTop: 44 }}>
+    <TerminalFrame id="quickstart" label="GETTING://STARTED" style={{ marginTop: 44 }}>
       <h2 style={{
         color: '#39ff14', fontSize: 22, margin: '0 0 6px',
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
       }}>quickstart</h2>
       <p style={{ color: '#8b949e', fontSize: 13, margin: '0 0 18px' }}>
         build from source, then try a private node through HTTP or MCP.
+        {tab === 'mcp' && <><br />use the absolute binary path in your MCP client configuration.
+          tools: store, retrieve, exists, list_keys. the embedded node also opens an HTTP listener.</>}
       </p>
 
       <div style={{
@@ -1069,7 +1068,7 @@ const ENDPOINTS = [
 
 function ApiReference() {
   return (
-    <TerminalFrame label="API://v1" style={{ marginTop: 44 }}>
+    <TerminalFrame id="api" label="API://v1" style={{ marginTop: 44 }}>
       <h2 style={{
         color: '#39ff14', fontSize: 22, margin: '0 0 6px',
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
