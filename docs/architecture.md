@@ -6,15 +6,15 @@ bounded local lifetime. Useful state survives through new writes from
 participants who still need it.
 
 The reference node is written in Go. The same executable runs an HTTP service
-or an MCP stdio server with an embedded node. Source paths still use the
-previous project name during the [rebrand](rebrand.md).
+or an MCP stdio server with an embedded node. The service builds as `server`; the future `soph` client is separate.
+Component names and interfaces are described in the [migration guide](rebrand.md).
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
 | [Memory store](../internal/storage/memory.go) | Local bytes, TTL checks, cleanup, and payload capacity. |
-| [Node entry point](../cmd/repram/main.go) | Configuration, HTTP handlers, startup, and shutdown. |
+| [Node entry point](../cmd/server/main.go) | Configuration, HTTP handlers, startup, and shutdown. |
 | [Cluster](../internal/cluster/node.go) | Local writes, replication, and acknowledgement tracking. |
 | [Gossip](../internal/gossip/protocol.go) | Peer knowledge, health checks, forwarding, and message deduplication. |
 | [Tree manager](../internal/tree/manager.go) | Substrate and transient WebSocket attachment. |

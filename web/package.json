@@ -1,7 +1,7 @@
 {
-  "name": "repram-showcase",
+  "name": "site",
   "version": "1.0.0",
-  "description": "REPRAM - Replicated Ephemeral RAM Showcase and Landing Page",
+  "description": "Sopholeth landing page",
   "main": "index.html",
   "scripts": {
     "dev": "npx http-server . -p 3000 -o",
@@ -10,14 +10,12 @@
     "serve": "npx http-server . -p 8080"
   },
   "keywords": [
-    "repram",
+    "sopholeth",
     "distributed-storage",
     "ephemeral",
-    "key-value",
-    "blockchain-alternative",
-    "privacy"
+    "key-value"
   ],
-  "author": "REPRAM Project",
+  "author": "Sopholeth Project",
   "license": "MIT",
   "devDependencies": {
     "http-server": "^14.1.1"
@@ -29,5 +27,5 @@
     "type": "git",
     "url": "https://github.com/ticktockbent/REPRAM.git"
   },
-  "homepage": "https://ticktockbent.github.io/REPRAM/web/"
+  "private": true
 }

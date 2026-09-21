@@ -1,71 +1,62 @@
-# Sopholeth rebrand
-
-## Identity
+# Sopholeth identity and naming
 
 | Element | Decision |
 | --- | --- |
 | Project and network | **Sopholeth** |
 | Pronunciation | **SOF-oh-leth** |
 | Meaning and lead line | **Wisdom through intentional forgetting.** |
-| Node command | **`soph`** |
+| Future client CLI | **`soph`**; not implemented yet |
 | Intended domains | `sopholeth.io` and `sopholeth.dev` |
-| Repository name | `sopholeth`; final owner and URL follow account setup |
+| Intended repository name | `sopholeth`; hosting links follow the actual repository until it moves |
 
-Use **Sopholeth** in prose and lowercase **sopholeth** in names that require
-lowercase. Lead with temporary shared state and intentional forgetting.
-Describe encryption and retention limits precisely; avoid claims that
-expiration guarantees secrecy or makes retained copies disappear.
+Use **Sopholeth** in prose and **sopholeth** for the Go module, distribution
+identity, and application state directories. Name implementation components
+by their purpose. Lead with temporary shared state and intentional forgetting;
+do not imply that expiration erases copies retained elsewhere.
 
-The domains and GitHub name are being arranged by the maintainer. They are
-not documented as active service endpoints.
+## Code naming
 
-## Documentation pass
+This is a direct cutover. Old environment variables, tool IDs, metric names,
+and HTTP signature headers have no compatibility aliases. Existing state
+directories are not migrated automatically.
 
-- [x] Establish the name, pronunciation, meaning, and CLI direction.
-- [x] Replace active documentation branding and remove unverified install links.
-- [x] Consolidate the overview and whitepaper into one architecture document.
-- [x] Separate current API and configuration from launch plans.
-- [x] Shorten the roadmap around public alpha, a demo, and the probe laboratory.
-- [x] Retire the host-specific burn-in command runbook and obsolete TS setup.
-- [x] Preserve release and experiment history with explicit historical context.
+| Surface | Current name |
+| --- | --- |
+| Node executable and entry point | `bin/server`, `cmd/server`; `--mcp` runs the embedded MCP server |
+| Operator executables | `bin/omega`, `cmd/omega`; `bin/dashboard`, `cmd/dashboard` |
+| Go module and imports | `sopholeth` |
+| Node settings | `NODE_*`, with `NODE_ID` for node identity |
+| Dashboard state override | `DASHBOARD_STATE_DIR` |
+| Burn-in targets and state | `BURNIN_NODES`, `BURNIN_STATE_DIR` |
+| MCP tool IDs | `store`, `retrieve`, `exists`, `list_keys` |
+| Metrics | `gossip_*`, `http_*`, `discovery_*`; dashboard metrics remain `dashboard_*` |
+| HTTP gossip and bootstrap authentication | `X-Gossip-Signature` |
+| Node discovery cache | `$HOME/.sopholeth/cache`; override with `NODE_CACHE_DIR` |
+| Dashboard state | `$HOME/.local/state/sopholeth/dashboard` |
+| Burn-in state | `$HOME/.local/state/sopholeth/burnin` |
+| Local container image | `sopholeth/node:local`; burn-in image `sopholeth/node:burnin` |
+| CI publishing target | `ticktockbent/sopholeth-node`; publication remains a release step |
+| Public discovery names | `_bootstrap.sopholeth.io`, `_omega.sopholeth.io` |
 
-This pass changes Markdown documents only. No source, configuration, release
-artifact, website asset, remote, DNS record, or deployment is renamed here.
+See [configuration](configuration.md) for settings and fallback paths, and
+the [API reference](api.md) for the current interfaces. `soph` is reserved for
+the future client; it is not a synonym for the node service. The `omega-v1`
+signed format, WebSocket fields, and `/v1/` routes retain their protocol names.
+The old product/version response header has been removed.
 
-## Implementation pass
+The site and dashboard display Sopholeth. `web/CNAME` names the intended site
+domain; editing it does not provision DNS or deploy a site. The public trust
+anchor remains a placeholder, and no public network is claimed to be live.
 
-The README builds the current source to `bin/soph` with Go's output flag.
-That executable works under the new local name, but does not change the
-embedded strings or the repository's normal build outputs.
+## Remaining launch work
 
-| Surface | Current state | Follow-up |
-| --- | --- | --- |
-| Node executable and entry point | `repram`, `cmd/repram` | Make `soph` the standard output and update the entry point. |
-| Operator executables | `repram-omega`, `repram-dashboard` | Use `soph-omega` and `soph-dashboard`. |
-| Go module and imports | `repram` | Update together after the repository location is settled. |
-| Environment variables | `REPRAM_*` | Adopt a consistent new prefix; proposed `SOPH_*`. |
-| MCP tool IDs | `repram_*` | Update tool names, server identity, prompts, and client examples together; proposed `soph_*`. |
-| Metrics | `repram_*` | Rename with scrape rules, alerts, and dashboards; proposed `soph_*`. |
-| State directories | `.repram`, `repram-dashboard`, burn-in paths | Define new paths and any migration behavior. |
-| Containers and automation | Legacy image tags, service names, scripts, CI | Update the build and publishing chain as one change. |
-| Public discovery | `_bootstrap.repram.io` and legacy operator output | Move to the acquired domain with release and DNS coordination. |
-| Website and dashboard UI | Existing branding in HTML, CSS, JS, and assets | Apply the identity in a separate implementation pass. |
-| Source comments and local guidance | Legacy names and old document paths | Update references after the document consolidation. |
+- Confirm domain ownership, move the repository, and update hosting links.
+- Publish and verify renamed binaries and container images before linking them.
+- Reconcile the historical component exclusions in [LICENSE](../LICENSE).
+- Retire or replace unused legacy visual assets before adding social previews.
+- Replace the placeholder public trust anchor through the operator key ceremony.
+- Deploy roots and publish signed discovery records for the new network.
+- Complete the [public-alpha validation gates](roadmap.md#before-public-alpha).
 
-Decide compatibility behavior for environment variables, MCP tools, metrics,
-and state paths before release. A mechanical rename must not silently strand
-existing clients or caches. The signed format identifier `omega-v1` is a
-protocol version, not branding.
-
-## Launch cutover
-
-- [ ] Confirm domain ownership and the final repository URL.
-- [ ] Complete the implementation rename and update documentation examples.
-- [ ] Publish and verify renamed binaries and container images before linking them.
-- [ ] Replace the placeholder public trust anchor through the operator key ceremony.
-- [ ] Deploy roots and publish signed discovery records for the new network.
-- [ ] Complete the [public-alpha validation gates](roadmap.md#before-public-alpha).
-- [ ] Update the website, badges, install paths, and any old-name redirects.
-
-Historical release notes and raw experiment artifacts retain their original
-identifiers. They describe the software that actually ran.
+Historical release notes, experiment artifacts, and legal attributions retain
+their original identifiers. They describe the software that actually ran.

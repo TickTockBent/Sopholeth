@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"repram/internal/trust"
+	"sopholeth/internal/trust"
 )
 
 // stubTXTResolver is an in-memory dns.TXTResolver. Each entry is either a
@@ -105,8 +105,8 @@ func TestBootDNSBeatsSeedsWhenCacheAbsent(t *testing.T) {
 
 	resolver := &stubTXTResolver{
 		records: map[string][]string{
-			"_bootstrap.repram.io": {"omega=_omega.repram.io"},
-			"_omega.repram.io":     {list.Encode()},
+			trust.DefaultBootstrapName:  {"omega=" + trust.DefaultSignedListName},
+			trust.DefaultSignedListName: {list.Encode()},
 		},
 	}
 
@@ -134,7 +134,7 @@ func TestBootDNSBeatsSeedsWhenCacheAbsent(t *testing.T) {
 func TestBootSeedsAreLastResort(t *testing.T) {
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	resolver := &stubTXTResolver{
-		err: map[string]error{"_bootstrap.repram.io": errors.New("dns down")},
+		err: map[string]error{trust.DefaultBootstrapName: errors.New("dns down")},
 	}
 
 	o := NewOrchestrator(Config{
@@ -160,7 +160,7 @@ func TestBootSeedsAreLastResort(t *testing.T) {
 func TestBootExitsWhenNothingAvailable(t *testing.T) {
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	resolver := &stubTXTResolver{
-		err: map[string]error{"_bootstrap.repram.io": errors.New("dns down")},
+		err: map[string]error{trust.DefaultBootstrapName: errors.New("dns down")},
 	}
 	o := NewOrchestrator(Config{
 		StateDir:    t.TempDir(),
@@ -216,7 +216,7 @@ func TestBootLoadsPriorSnapshotAsStale(t *testing.T) {
 	}
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	resolver := &stubTXTResolver{
-		err: map[string]error{"_bootstrap.repram.io": errors.New("stubbed: no dns")},
+		err: map[string]error{trust.DefaultBootstrapName: errors.New("stubbed: no dns")},
 	}
 	o := NewOrchestrator(Config{
 		StateDir:      dir,

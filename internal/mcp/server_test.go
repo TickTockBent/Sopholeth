@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"repram/internal/cluster"
+	"sopholeth/internal/cluster"
 )
 
 // newTestServer returns a Server wired to a single-node cluster, ready for
@@ -87,7 +87,7 @@ func TestInitialize(t *testing.T) {
 		t.Errorf("protocolVersion = %v, want 2024-11-05", got)
 	}
 	info, ok := result["serverInfo"].(map[string]any)
-	if !ok || info["name"] != "repram" {
+	if !ok || info["name"] != "sopholeth" {
 		t.Errorf("unexpected serverInfo: %+v", result["serverInfo"])
 	}
 }
@@ -110,7 +110,7 @@ func TestToolsList(t *testing.T) {
 		t := raw.(map[string]any)
 		names[t["name"].(string)] = true
 	}
-	for _, want := range []string{"repram_store", "repram_retrieve", "repram_exists", "repram_list_keys"} {
+	for _, want := range []string{"store", "retrieve", "exists", "list_keys"} {
 		if !names[want] {
 			t.Errorf("missing tool: %s", want)
 		}
@@ -120,15 +120,15 @@ func TestToolsList(t *testing.T) {
 // runStream lets tests send multiple requests and collect responses on the
 // same Server.Run invocation.
 type stream struct {
-	t      *testing.T
-	srv    *Server
-	inW    io.WriteCloser
-	br     *bufio.Reader
-	done   chan error
-	idSeq  int
-	mu     sync.Mutex
-	cn     *cluster.ClusterNode
-	outW   io.Closer
+	t     *testing.T
+	srv   *Server
+	inW   io.WriteCloser
+	br    *bufio.Reader
+	done  chan error
+	idSeq int
+	mu    sync.Mutex
+	cn    *cluster.ClusterNode
+	outW  io.Closer
 }
 
 func openStream(t *testing.T) *stream {
@@ -212,7 +212,7 @@ func TestStoreRetrieveRoundtrip(t *testing.T) {
 	s := openStream(t)
 	defer s.close()
 
-	resp := s.call("tools/call", `{"name":"repram_store","arguments":{"data":"hello world","ttl_seconds":600,"key":"greeting"}}`)
+	resp := s.call("tools/call", `{"name":"store","arguments":{"data":"hello world","ttl_seconds":600,"key":"greeting"}}`)
 	stored := toolContent(t, resp)
 	if stored["key"] != "greeting" {
 		t.Errorf("key = %v, want greeting", stored["key"])
@@ -227,7 +227,7 @@ func TestStoreRetrieveRoundtrip(t *testing.T) {
 		t.Errorf("quorum_status = %v, want confirmed", stored["quorum_status"])
 	}
 
-	resp = s.call("tools/call", `{"name":"repram_retrieve","arguments":{"key":"greeting"}}`)
+	resp = s.call("tools/call", `{"name":"retrieve","arguments":{"key":"greeting"}}`)
 	got := toolContent(t, resp)
 	if got["data"] != "hello world" {
 		t.Errorf("data = %v, want hello world", got["data"])
@@ -238,7 +238,7 @@ func TestRetrieveMissing(t *testing.T) {
 	s := openStream(t)
 	defer s.close()
 
-	resp := s.call("tools/call", `{"name":"repram_retrieve","arguments":{"key":"nope"}}`)
+	resp := s.call("tools/call", `{"name":"retrieve","arguments":{"key":"nope"}}`)
 	result := resp["result"].(map[string]any)
 	content := result["content"].([]any)
 	first := content[0].(map[string]any)
@@ -252,15 +252,15 @@ func TestExists(t *testing.T) {
 	defer s.close()
 
 	// Missing key → exists:false.
-	resp := s.call("tools/call", `{"name":"repram_exists","arguments":{"key":"missing"}}`)
+	resp := s.call("tools/call", `{"name":"exists","arguments":{"key":"missing"}}`)
 	got := toolContent(t, resp)
 	if got["exists"] != false {
 		t.Errorf("exists for missing = %v, want false", got["exists"])
 	}
 
 	// Store then exists:true.
-	_ = s.call("tools/call", `{"name":"repram_store","arguments":{"data":"v","ttl_seconds":600,"key":"alive"}}`)
-	resp = s.call("tools/call", `{"name":"repram_exists","arguments":{"key":"alive"}}`)
+	_ = s.call("tools/call", `{"name":"store","arguments":{"data":"v","ttl_seconds":600,"key":"alive"}}`)
+	resp = s.call("tools/call", `{"name":"exists","arguments":{"key":"alive"}}`)
 	got = toolContent(t, resp)
 	if got["exists"] != true {
 		t.Errorf("exists for stored = %v, want true", got["exists"])
@@ -274,11 +274,11 @@ func TestListKeys(t *testing.T) {
 	s := openStream(t)
 	defer s.close()
 
-	_ = s.call("tools/call", `{"name":"repram_store","arguments":{"data":"a","ttl_seconds":600,"key":"proj-x/a"}}`)
-	_ = s.call("tools/call", `{"name":"repram_store","arguments":{"data":"b","ttl_seconds":600,"key":"proj-x/b"}}`)
-	_ = s.call("tools/call", `{"name":"repram_store","arguments":{"data":"c","ttl_seconds":600,"key":"other"}}`)
+	_ = s.call("tools/call", `{"name":"store","arguments":{"data":"a","ttl_seconds":600,"key":"proj-x/a"}}`)
+	_ = s.call("tools/call", `{"name":"store","arguments":{"data":"b","ttl_seconds":600,"key":"proj-x/b"}}`)
+	_ = s.call("tools/call", `{"name":"store","arguments":{"data":"c","ttl_seconds":600,"key":"other"}}`)
 
-	resp := s.call("tools/call", `{"name":"repram_list_keys","arguments":{"prefix":"proj-x/"}}`)
+	resp := s.call("tools/call", `{"name":"list_keys","arguments":{"prefix":"proj-x/"}}`)
 	got := toolContent(t, resp)
 	keys := got["keys"].([]any)
 	if len(keys) != 2 {
@@ -289,7 +289,7 @@ func TestListKeys(t *testing.T) {
 	}
 
 	// No prefix → all 3.
-	resp = s.call("tools/call", `{"name":"repram_list_keys","arguments":{}}`)
+	resp = s.call("tools/call", `{"name":"list_keys","arguments":{}}`)
 	got = toolContent(t, resp)
 	keys = got["keys"].([]any)
 	if len(keys) != 3 {
@@ -301,7 +301,7 @@ func TestStoreGeneratesKey(t *testing.T) {
 	s := openStream(t)
 	defer s.close()
 
-	resp := s.call("tools/call", `{"name":"repram_store","arguments":{"data":"anon","ttl_seconds":600}}`)
+	resp := s.call("tools/call", `{"name":"store","arguments":{"data":"anon","ttl_seconds":600}}`)
 	got := toolContent(t, resp)
 	key, ok := got["key"].(string)
 	if !ok || len(key) < 30 {
@@ -313,7 +313,7 @@ func TestStoreOmittedTTLDefaultsToThirtyMinutes(t *testing.T) {
 	s := openStream(t)
 	defer s.close()
 
-	resp := s.call("tools/call", `{"name":"repram_store","arguments":{"data":"default","key":"default-ttl"}}`)
+	resp := s.call("tools/call", `{"name":"store","arguments":{"data":"default","key":"default-ttl"}}`)
 	got := toolContent(t, resp)
 	if got["ttl_seconds"].(float64) != 1800 {
 		t.Errorf("ttl_seconds = %v, want 1800", got["ttl_seconds"])
@@ -325,7 +325,7 @@ func TestStoreClampsTTL(t *testing.T) {
 	defer s.close()
 
 	// minTTL=60 in newTestServer; below-floor request should be clamped up.
-	resp := s.call("tools/call", `{"name":"repram_store","arguments":{"data":"x","ttl_seconds":1,"key":"clamped"}}`)
+	resp := s.call("tools/call", `{"name":"store","arguments":{"data":"x","ttl_seconds":1,"key":"clamped"}}`)
 	got := toolContent(t, resp)
 	if got["ttl_seconds"].(float64) != 60 {
 		t.Errorf("ttl_seconds = %v, want 60 (clamped)", got["ttl_seconds"])

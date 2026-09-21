@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 )
 
+// SignatureHeader carries the body HMAC on HTTP gossip and bootstrap requests.
+const SignatureHeader = "X-Gossip-Signature"
+
 // SignBody computes an HMAC-SHA256 signature of body using secret.
 func SignBody(secret string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))

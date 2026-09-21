@@ -27,7 +27,7 @@ const DefaultPollTimeout = 5 * time.Second
 
 // MaxResponseBytes caps any single HTTP response body the poller will
 // read. A malicious node could otherwise serve gigabytes at /v1/metrics
-// or /v1/topology and exhaust the dashboard heap. 1 MiB matches REPRAM's
+// or /v1/topology and exhaust the dashboard heap. 1 MiB matches the node's
 // own server-side request-body limit (MaxRequestSize) — anything beyond
 // is degenerate.
 const MaxResponseBytes int64 = 1 << 20
@@ -66,7 +66,7 @@ type pollResult struct {
 }
 
 // statusResponse is the subset of /v1/status the dashboard consumes. Kept
-// minimal so unknown fields are silently dropped — REPRAM may add to
+// minimal so unknown fields are silently dropped — the node may add to
 // status over time and the dashboard should not error on that.
 type statusResponse struct {
 	NodeID  string `json:"node_id"`
@@ -332,7 +332,7 @@ func fetchText(ctx context.Context, client *http.Client, url string) (string, er
 
 // parseMetrics extracts the four counters the dashboard cares about from a
 // Prometheus exposition. We do not pull in the full Prometheus parser
-// because the surface is tiny and stable: four `repram_*` counters in a
+// because the surface is tiny and stable: three `gossip_*` counters in a
 // well-formed text exposition. Anything malformed falls through to zero.
 func parseMetrics(text string) NodeMetrics {
 	var m NodeMetrics
@@ -357,11 +357,11 @@ func parseMetrics(text string) NodeMetrics {
 		}
 		u := uint64(num)
 		switch name {
-		case "repram_peer_joins_total":
+		case "gossip_peer_joins_total":
 			m.PeerJoinsTotal = u
-		case "repram_peer_evictions_total":
+		case "gossip_peer_evictions_total":
 			m.PeerEvictionsTotal = u
-		case "repram_ping_failures_total":
+		case "gossip_ping_failures_total":
 			m.PingFailuresTotal = u
 		}
 	}

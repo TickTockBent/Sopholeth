@@ -1,4 +1,4 @@
-// REPRAM dashboard — vanilla JS, no build step.
+// Network dashboard — vanilla JS, no build step.
 //
 // Polls /api/snapshot every 10s and re-renders the graph + tables. The
 // server-side poll cycle is 60s, so a tighter client poll just catches the

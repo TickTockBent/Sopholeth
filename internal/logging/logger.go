@@ -26,7 +26,7 @@ var levelNames = map[Level]string{
 var currentLevel = LevelInfo
 
 func Init() {
-	switch strings.ToLower(os.Getenv("REPRAM_LOG_LEVEL")) {
+	switch strings.ToLower(os.Getenv("NODE_LOG_LEVEL")) {
 	case "debug":
 		currentLevel = LevelDebug
 	case "info":

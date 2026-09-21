@@ -29,7 +29,7 @@ import {
   randomUUID,
 } from "node:crypto";
 
-const baseURL = process.env.SOPH_URL ?? "http://localhost:8080";
+const baseURL = process.env.NODE_URL ?? "http://localhost:8080";
 const encryptionKey = randomBytes(32);
 const rendezvousSecret = randomBytes(32);
 const context = ["sopholeth-handoff-v1", randomUUID(), "sender", "recipient"];
@@ -90,8 +90,7 @@ assert.equal(decrypt(await retrieved.text()), original);
 console.log(`Encrypted round trip verified (PUT ${stored.status}).`);
 ```
 
-`SOPH_URL` is a setting for this example client only. The node's current
-configuration still uses the [legacy variables](configuration.md).
+`NODE_URL` is a setting for this example client only. See [node configuration](configuration.md) for service settings.
 
 ## What the envelope does and does not protect
 
@@ -113,8 +112,8 @@ ciphertext copy or encryption key retained elsewhere.
 
 ## MCP use
 
-Encrypt in the client before calling the current `repram_store` tool with a
-base64 string, and decrypt after `repram_retrieve`. Keep the encryption key
+Encrypt in the client before calling the `store` tool with a
+base64 string, and decrypt after `retrieve`. Keep the encryption key
 out of tool arguments and payloads. The MCP process receives ciphertext, but
 the client environment that performs encryption still has the plaintext and
 key.

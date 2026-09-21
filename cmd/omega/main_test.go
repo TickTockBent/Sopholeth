@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"repram/internal/trust"
+	"sopholeth/internal/trust"
 )
 
 // TestDecodePrivateKeyRoundtrip — keygen output decodes back to a working key.

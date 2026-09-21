@@ -1,22 +1,22 @@
-// REPRAM 2.1 burn-in workload (k6).
+// Node burn-in workload (k6).
 //
-// Spec: docs/internal/REPRAM-2.1-Minimal-BurnIn.md, "Workload" section.
+// Spec: test/burnin/README.md, "Workload" section.
 //
 // Run:
 //   k6 run \
-//     -e REPRAM_NODES=http://10.0.20.72:8080,http://10.0.10.81:8080,http://10.0.10.104:8080 \
+//     -e BURNIN_NODES=http://localhost:8080 \
 //     -e BURNIN_DURATION=48h \
 //     test/burnin/workload.js
 //
 // Output: stdout summary at end-of-run, plus k6's built-in metrics. Pipe
 // metrics to Prometheus via `--out experimental-prometheus-rw=...` if you
-// want them on the burn-in dashboard alongside REPRAM's own metrics.
+// want them on the burn-in dashboard alongside node metrics.
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter } from 'k6/metrics';
 
-const NODES = (__ENV.REPRAM_NODES || 'http://localhost:8080').split(',').map(s => s.trim());
+const NODES = (__ENV.BURNIN_NODES || 'http://localhost:8080').split(',').map(s => s.trim());
 const REF_SET_SIZE = 200;
 const GRAVEYARD_SIZE = 200;
 const AGENT_COUNT = 100;
@@ -25,7 +25,7 @@ const AGENT_COUNT = 100;
 // single-segment strings; use ':' or '-' as a hierarchy delimiter
 // (see docs/patterns.md "Key Naming Conventions").
 
-// REPRAM_MIN_TTL defaults to 300 (5 min). Graveyard set is written with this
+// NODE_MIN_TTL defaults to 300 (5 min). Graveyard set is written with this
 // TTL and the setup() sleeps long enough for it to expire before the main
 // workload starts hitting it — that way GET-expired actually exercises the
 // expired-key path, not just a miss.

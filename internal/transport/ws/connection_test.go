@@ -16,7 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"repram/internal/gossip"
+	"sopholeth/internal/gossip"
 )
 
 // ---- helpers ----------------------------------------------------------
@@ -487,8 +487,8 @@ func TestIgnoresMessagesMissingTypeOrPayload(t *testing.T) {
 	var calls atomic.Int32
 	server.AddAttachmentHandler(func(*AttachmentMessage) { calls.Add(1) })
 
-	client.writeRaw(t, []byte(`{"type":"put"}`))    // missing payload
-	client.writeRaw(t, []byte(`{"payload":{}}`))   // missing type
+	client.writeRaw(t, []byte(`{"type":"put"}`)) // missing payload
+	client.writeRaw(t, []byte(`{"payload":{}}`)) // missing type
 	time.Sleep(100 * time.Millisecond)
 	if n := calls.Load(); n != 0 {
 		t.Errorf("attachment fired for malformed envelope: %d times", n)

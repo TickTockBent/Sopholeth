@@ -5,7 +5,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"repram/internal/logging"
+	"sopholeth/internal/logging"
 )
 
 // Handler returns the HTTP handler for the /v1/ws endpoint. On successful
@@ -13,7 +13,7 @@ import (
 // returns, and the connection's read loop drives lifecycle from there.
 //
 // allowOrigin matches gorilla's Upgrader.CheckOrigin contract — pass nil to
-// accept any origin (REPRAM's CORS policy is intentionally permissive; see #38).
+// accept any origin (the node's CORS policy is intentionally permissive; see #38).
 func Handler(clusterSecret string, allowOrigin func(*http.Request) bool, onAccept func(*Connection)) http.HandlerFunc {
 	upgrader := &websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {

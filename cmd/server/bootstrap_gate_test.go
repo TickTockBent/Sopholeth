@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"repram/internal/cluster"
-	"repram/internal/node"
+	"sopholeth/internal/cluster"
+	"sopholeth/internal/node"
 )
 
 // newPublicTestServer builds an HTTPServer in public-network mode so the
@@ -107,7 +107,7 @@ func TestBootstrapHandler_RootAnswers(t *testing.T) {
 }
 
 // TestBootstrapHandler_PrivateNetworkBypass — private-network nodes skip
-// the root check entirely. They drive peer discovery via REPRAM_PEERS, not
+// the root check entirely. They drive peer discovery via NODE_PEERS, not
 // the signed list, so the gate doesn't apply.
 func TestBootstrapHandler_PrivateNetworkBypass(t *testing.T) {
 	server, cleanup := newTestServer(t) // default: network="private"

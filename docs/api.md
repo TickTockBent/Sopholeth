@@ -1,7 +1,7 @@
 # Sopholeth API
 
-This describes the current Go implementation. Environment variables and MCP
-tool IDs retain their legacy spelling during the [rebrand](rebrand.md).
+This describes the Go implementation. The [migration guide](rebrand.md) maps
+previous configuration, tool, and metric names to the current interfaces.
 
 The HTTP client API has no authentication or key ownership. All reads,
 existence checks, and listings inspect the contacted node's local store.
@@ -88,7 +88,7 @@ rather than `[]`; clients should handle both.
 | `GET /v1/health` | Process health, node ID, and configured network. |
 | `GET /v1/status` | Node status, storage and runtime statistics. |
 | `GET /v1/topology` | Known peers, enclave membership, and tree attachment state. |
-| `GET /v1/metrics` | Prometheus metrics, currently using `repram_*` names. |
+| `GET /v1/metrics` | Prometheus metrics grouped under `gossip_*`, `http_*`, and `discovery_*`. |
 | `POST /v1/bootstrap` | Peer bootstrap; gated by root status in public mode. |
 | `POST /v1/gossip/message` | Peer gossip transport. |
 | `GET /v1/ws` | WebSocket upgrade for substrate attachments. |
@@ -103,15 +103,15 @@ control transport exposure, but CORS is not client authentication. See
 
 ## MCP tools
 
-Run the locally built `soph --mcp` through an MCP client. The server hosts an
-embedded node and exposes these current tool IDs:
+Run the locally built `server --mcp` through an MCP client. The server hosts an
+embedded node and exposes these tool IDs:
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `repram_store` | Required string `data`; optional `key`, integer `ttl_seconds` | Key, accepted TTL, expiry estimate, and `quorum_status` (`confirmed` or `pending`). |
-| `repram_retrieve` | `key` | Value and local TTL metadata, or a missing result. |
-| `repram_exists` | `key` | Existence and local TTL metadata. |
-| `repram_list_keys` | Optional `prefix` | Matching local keys. |
+| `store` | Required string `data`; optional `key`, integer `ttl_seconds` | Key, accepted TTL, expiry estimate, and `quorum_status` (`confirmed` or `pending`). |
+| `retrieve` | `key` | Value and local TTL metadata, or a missing result. |
+| `exists` | `key` | Existence and local TTL metadata. |
+| `list_keys` | Optional `prefix` | Matching local keys. |
 
 Store generates a random UUID-shaped key when one is not supplied. MCP
 accepts string values; encode binary payloads, such as ciphertext, before

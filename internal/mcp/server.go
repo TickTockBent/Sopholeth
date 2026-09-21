@@ -1,6 +1,6 @@
 // Package mcp implements a Model Context Protocol server over stdio that
-// exposes a local *cluster.ClusterNode through four tools: repram_store,
-// repram_retrieve, repram_exists, repram_list_keys. The wire format is
+// exposes a local *cluster.ClusterNode through four tools: store,
+// retrieve, exists, list_keys. The wire format is
 // newline-delimited JSON-RPC 2.0, matching the MCP stdio transport.
 package mcp
 
@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"repram/internal/cluster"
-	"repram/internal/storage"
+	"sopholeth/internal/cluster"
+	"sopholeth/internal/storage"
 )
 
 const defaultStoreTTLSeconds = 30 * 60
@@ -226,7 +226,7 @@ func (s *Server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 			"tools": map[string]any{},
 		},
 		"serverInfo": map[string]any{
-			"name":    "repram",
+			"name":    "sopholeth",
 			"version": "2.1.0",
 		},
 	}, nil
@@ -247,11 +247,11 @@ func (s *Server) handleToolsList() any {
 func tools() []toolDef {
 	return []toolDef{
 		{
-			Name: "repram_store",
-			Description: "Store ephemeral data in the REPRAM network. Data is replicated across nodes and automatically expires after the specified TTL. " +
-				"Use this for temporary coordination data, handoff payloads, scratchpad state, or any data that should not persist.\n\n" +
-				"A unique key is generated automatically (UUID v4 hex). You will receive the key in the response — save it or share it with other agents who need to retrieve this data. The response also includes a quorum_status field: \"confirmed\" means the write was acknowledged by enough peers, \"pending\" means the data is on this node and replication is still in flight (it will gossip out shortly).\n\n" +
-				"All data on REPRAM is ephemeral. There is no way to extend a TTL or recover expired data. If you need the data to last longer, store it again with a new TTL before expiration.",
+			Name: "store",
+			Description: "Store temporary data with a mandatory TTL. Use this for handoffs, coordination hints, and disposable working state. " +
+				"A random key is generated when no key is supplied; save or share the returned key to retrieve the value.\n\n" +
+				"quorum_status is \"confirmed\" when the node observes its confirmation threshold, or \"pending\" when stored locally without confirmation before timeout. Neither outcome guarantees delivery to every peer.\n\n" +
+				"Writing an existing key replaces its local value and starts a fresh TTL. There is no key ownership or atomic reservation. Encrypt sensitive values before storing them.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -272,24 +272,24 @@ func tools() []toolDef {
 			},
 		},
 		{
-			Name: "repram_retrieve",
-			Description: "Retrieve ephemeral data from the REPRAM network by key. Returns the stored data along with TTL metadata.\n\n" +
-				"Returns null if the key does not exist or has expired. Expired data is permanently gone — this is by design. Do not treat a null response as an error; it is the normal lifecycle of ephemeral data.",
+			Name: "retrieve",
+			Description: "Retrieve a value and TTL metadata from the local node by key. Returns null when the key is absent or expired here. " +
+				"Another node may have a different live value; absence does not establish network-wide absence.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"key": map[string]any{
 						"type":        "string",
-						"description": "The key to retrieve. This is the key returned by repram_store or shared by another agent.",
+						"description": "The key to retrieve. This is the key returned by store or shared by another agent.",
 					},
 				},
 				"required": []string{"key"},
 			},
 		},
 		{
-			Name: "repram_exists",
-			Description: "Check whether a key exists in the REPRAM network without retrieving its value. Returns existence status and remaining TTL.\n\n" +
-				"This is the right tool for the coordination-token pattern: check if a lock key is present, poll for a heartbeat signal, or verify a handoff key is still alive — without transferring the payload. For large values, this avoids unnecessary bandwidth.",
+			Name: "exists",
+			Description: "Check local key presence without returning the value. Returns existence status and remaining TTL. " +
+				"Use this to poll a heartbeat or handoff signal. Presence is advisory; it does not provide a lock or prove the writer is still running.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -302,15 +302,15 @@ func tools() []toolDef {
 			},
 		},
 		{
-			Name: "repram_list_keys",
-			Description: "List keys currently stored in the REPRAM network. Optionally filter by prefix.\n\n" +
-				"Use this to discover what data is available, check if a coordination key exists, or enumerate keys in a namespace. Keys for expired data will not appear.",
+			Name: "list_keys",
+			Description: "List live keys on the local node, optionally filtered by prefix. " +
+				"Keys may expire before retrieval, and other nodes may expose different keys.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"prefix": map[string]any{
 						"type":        "string",
-						"description": "Optional prefix filter. Only keys starting with this string will be returned. Useful for namespacing (e.g., 'project-x/' to list all keys in that namespace).",
+						"description": "Optional prefix filter. Only keys starting with this string will be returned (e.g., 'project-x:').",
 					},
 				},
 			},
@@ -334,13 +334,13 @@ func (s *Server) handleToolCall(ctx context.Context, params json.RawMessage) (an
 		err     error
 	)
 	switch p.Name {
-	case "repram_store":
+	case "store":
 		payload, err = s.toolStore(ctx, p.Arguments)
-	case "repram_retrieve":
+	case "retrieve":
 		payload, err = s.toolRetrieve(p.Arguments)
-	case "repram_exists":
+	case "exists":
 		payload, err = s.toolExists(p.Arguments)
-	case "repram_list_keys":
+	case "list_keys":
 		payload, err = s.toolListKeys(p.Arguments)
 	default:
 		return nil, &rpcError{Code: codeMethodNotFound, Message: "unknown tool: " + p.Name}
@@ -407,7 +407,7 @@ func (s *Server) toolStore(ctx context.Context, args map[string]interface{}) (an
 
 	// Always include quorum_status so callers can deserialize into a fixed
 	// shape. "confirmed" = local write + quorum acks landed within
-	// REPRAM_WRITE_TIMEOUT; "pending" = local write succeeded, replication
+	// NODE_WRITE_TIMEOUT; "pending" = local write succeeded, replication
 	// still in flight (the data is on this node and will gossip out).
 	quorumStatus := "confirmed"
 	if err := s.cluster.Put(callCtx, key, []byte(data), time.Duration(ttl)*time.Second); err != nil {
@@ -500,7 +500,7 @@ func toInt(v any) (int, error) {
 }
 
 // newKey returns a UUID-shaped hex string. It's not a strict RFC 4122 UUID —
-// REPRAM keys are opaque to the system — but the format is familiar and
+// Keys are opaque to the system — but the format is familiar and
 // collision-resistant for the per-agent scratchpad use case.
 func newKey() string {
 	var b [16]byte

@@ -17,7 +17,7 @@ attachments, and an embedded MCP interface. A separate dashboard observes
 topology.
 
 Public launch remains pending. The compiled omega public key is a placeholder,
-discovery names still reference the previous domain, and the restored Go
+discovery publication is pending, and the restored Go
 WebSocket tree needs sustained validation. The [rebrand checklist](rebrand.md)
 tracks the naming transition.
 
@@ -58,7 +58,9 @@ tree, a public deployment, or untested failure modes.
 
 ### Prepare operations
 
-- Complete the source, configuration, tooling, artifact, and website rebrand.
+- Publish the renamed artifacts and site after validating this code rebrand.
+- Reconcile the legacy proprietary appendix in `LICENSE` with the intended
+  distribution terms before public release.
 - Generate the first real omega key offline, document custody and recovery,
   and bake its public key into the release.
 - Deploy independent, reachable roots across failure domains.

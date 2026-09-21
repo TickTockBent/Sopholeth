@@ -11,15 +11,15 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"repram/internal/logging"
+	"sopholeth/internal/logging"
 )
 
 // clusterMetrics tracks gossip protocol health for Prometheus.
 type clusterMetrics struct {
-	peersActive    prometheus.Gauge
-	peerEvictions  prometheus.Counter
-	peerJoins      prometheus.Counter
-	pingFailures   prometheus.Counter
+	peersActive   prometheus.Gauge
+	peerEvictions prometheus.Counter
+	peerJoins     prometheus.Counter
+	pingFailures  prometheus.Counter
 }
 
 var (
@@ -31,19 +31,19 @@ func newClusterMetrics() *clusterMetrics {
 	sharedMetricsOnce.Do(func() {
 		sharedMetrics = &clusterMetrics{
 			peersActive: prometheus.NewGauge(prometheus.GaugeOpts{
-				Name: "repram_peers_active",
+				Name: "gossip_peers_active",
 				Help: "Current number of active peers in the gossip protocol",
 			}),
 			peerEvictions: prometheus.NewCounter(prometheus.CounterOpts{
-				Name: "repram_peer_evictions_total",
+				Name: "gossip_peer_evictions_total",
 				Help: "Total number of peers evicted due to consecutive ping failures",
 			}),
 			peerJoins: prometheus.NewCounter(prometheus.CounterOpts{
-				Name: "repram_peer_joins_total",
+				Name: "gossip_peer_joins_total",
 				Help: "Total number of peers added (initial join or rejoin after eviction)",
 			}),
 			pingFailures: prometheus.NewCounter(prometheus.CounterOpts{
-				Name: "repram_ping_failures_total",
+				Name: "gossip_ping_failures_total",
 				Help: "Total number of failed ping attempts to peers",
 			}),
 		}
@@ -76,18 +76,18 @@ type Message struct {
 	Timestamp time.Time   `json:"timestamp"`
 	MessageID string      `json:"message_id"`
 	// Node information for JOIN messages
-	NodeInfo  *Node       `json:"node_info,omitempty"`
+	NodeInfo *Node `json:"node_info,omitempty"`
 }
 
 type MessageType string
 
 const (
-	MessageTypePut        MessageType = "PUT"
-	MessageTypeGet        MessageType = "GET"
-	MessageTypePing       MessageType = "PING"
-	MessageTypePong       MessageType = "PONG"
-	MessageTypeSync       MessageType = "SYNC"
-	MessageTypeAck        MessageType = "ACK"
+	MessageTypePut  MessageType = "PUT"
+	MessageTypeGet  MessageType = "GET"
+	MessageTypePing MessageType = "PING"
+	MessageTypePong MessageType = "PONG"
+	MessageTypeSync MessageType = "SYNC"
+	MessageTypeAck  MessageType = "ACK"
 )
 
 // MaxPingFailures is the number of consecutive failed health checks before
@@ -121,7 +121,7 @@ type Protocol struct {
 	transport         Transport
 	topologyTicker    *time.Ticker
 	stopChan          chan struct{}
-	metrics           *clusterMetrics // nil in tests (skip metrics)
+	metrics           *clusterMetrics      // nil in tests (skip metrics)
 	seenMessages      map[string]time.Time // message ID → expiry time (dedup cache)
 	seenMutex         sync.Mutex
 }

@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "REPRAM 2.1 \u2014 48-hour burn-in baseline. Five panels: memory, goroutines/eventloop, peers, workload errors, omega-cache freshness. The bootstrap-gate probe (originally a sixth panel) was dropped because every burn-in node is in the signed list and is therefore a root.",
+  "description": "Node burn-in: memory, goroutines, peers, workload errors, and signed-discovery freshness.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -24,7 +24,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Heap-in-use per Go node, RSS per TS node. Stable after ~1h warmup means no leak.",
+      "description": "Go heap in use and total resident process memory. Compare both over the full workload and recovery window.",
       "fieldConfig": {
         "defaults": {
           "unit": "decbytes",
@@ -58,7 +58,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "go_memstats_heap_inuse_bytes{cluster=\"burnin\"}",
-          "legendFormat": "{{instance}} (go)",
+          "legendFormat": "{{instance}} heap",
           "refId": "A"
         },
         {
@@ -66,8 +66,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "process_resident_memory_bytes{cluster=\"burnin\",impl=\"ts\"}",
-          "legendFormat": "{{instance}} (ts)",
+          "expr": "process_resident_memory_bytes{cluster=\"burnin\"}",
+          "legendFormat": "{{instance}} RSS",
           "refId": "B"
         }
       ],
@@ -79,7 +79,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Goroutines per Go node, plus event-loop lag (s) per TS node \u2014 the closest TS analogue.",
+      "description": "Goroutines per node; investigate sustained growth after workload or reconnect activity settles.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -113,18 +113,9 @@
           "expr": "go_goroutines{cluster=\"burnin\"}",
           "legendFormat": "{{instance}} goroutines",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "nodejs_eventloop_lag_p99_seconds{cluster=\"burnin\"} * 1000",
-          "legendFormat": "{{instance}} evloop p99 (ms)",
-          "refId": "B"
         }
       ],
-      "title": "Goroutines (Go) / Event-loop lag p99 ms (TS)",
+      "title": "Goroutines per node",
       "type": "timeseries"
     },
     {
@@ -180,7 +171,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "repram_peers_active{cluster=\"burnin\"}",
+          "expr": "gossip_peers_active{cluster=\"burnin\"}",
           "legendFormat": "{{instance}}",
           "refId": "A"
         },
@@ -189,7 +180,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(repram_peer_evictions_total{cluster=\"burnin\"}[5m]) * 60",
+          "expr": "rate(gossip_peer_evictions_total{cluster=\"burnin\"}[5m]) * 60",
           "legendFormat": "{{instance}} evictions/min",
           "refId": "B"
         }
@@ -202,7 +193,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Workload generator status mix per second over 5m windows. PUT requests use unique URLs per iteration (`bench-agent-X-{iter}`), creating ~5900+ time series — querying across all of them takes 26+ seconds and times out Grafana panels. Queries here are restricted to the bounded-cardinality ops (get_existing, head, list, get_expired) plus the explicit soft_failures_202 counter. PUT successes are implicit in the absence of soft/hard failures. The 'graveyard 404 (probe)' line is intentional — workload.js doGetExpired hits known-expired keys at 15% of iterations to verify the expired-key path. Real hard failures (5xx) and PUT 202 timeouts should both stay near zero.",
+      "description": "Workload generator status mix per second over 5m windows. PUT requests use unique URLs per iteration (`bench-agent-X-{iter}`), creating ~5900+ time series \u2014 querying across all of them takes 26+ seconds and times out Grafana panels. Queries here are restricted to the bounded-cardinality ops (get_existing, head, list, get_expired) plus the explicit soft_failures_202 counter. PUT successes are implicit in the absence of soft/hard failures. The 'graveyard 404 (probe)' line is intentional \u2014 workload.js doGetExpired hits known-expired keys at 15% of iterations to verify the expired-key path. Real hard failures (5xx) and PUT 202 timeouts should both stay near zero.",
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -336,7 +327,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "time() - repram_omega_last_refresh_unix_seconds{cluster=\"burnin\"}",
+          "expr": "time() - discovery_last_refresh_unix_seconds{cluster=\"burnin\"}",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
@@ -348,8 +339,8 @@
   "refresh": "30s",
   "schemaVersion": 39,
   "tags": [
-    "repram",
-    "burn-in"
+    "burnin",
+    "network"
   ],
   "templating": {
     "list": [
@@ -378,8 +369,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "REPRAM 2.1 Burn-In",
-  "uid": "repram-burnin-2-1",
+  "title": "Network Burn-in",
+  "uid": "network-burnin",
   "version": 1,
   "weekStart": ""
 }

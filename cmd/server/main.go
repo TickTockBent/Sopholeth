@@ -19,7 +19,7 @@ import (
 
 	"errors"
 	// Registers pprof handlers on http.DefaultServeMux unconditionally;
-	// only exposed via a listener when REPRAM_PPROF_ENABLED=true.
+	// only exposed via a listener when NODE_PPROF_ENABLED=true.
 	_ "net/http/pprof"
 
 	"github.com/gorilla/mux"
@@ -28,15 +28,15 @@ import (
 
 	"net"
 
-	"repram/internal/cluster"
-	"repram/internal/gossip"
-	"repram/internal/logging"
-	mcprpc "repram/internal/mcp"
-	"repram/internal/node"
-	"repram/internal/storage"
-	"repram/internal/transport/ws"
-	"repram/internal/tree"
-	"repram/internal/trust"
+	"sopholeth/internal/cluster"
+	"sopholeth/internal/gossip"
+	"sopholeth/internal/logging"
+	mcprpc "sopholeth/internal/mcp"
+	"sopholeth/internal/node"
+	"sopholeth/internal/storage"
+	"sopholeth/internal/transport/ws"
+	"sopholeth/internal/tree"
+	"sopholeth/internal/trust"
 )
 
 const (
@@ -46,10 +46,10 @@ const (
 
 // omegaLastRefreshGauge records the unix timestamp of the most recent
 // successful signed-list refresh. The burn-in dashboard plots
-// `time() - repram_omega_last_refresh_unix_seconds` to surface freshness.
+// `time() - discovery_last_refresh_unix_seconds` to surface freshness.
 // Stays at zero on private-network deployments (refresher never runs).
 var omegaLastRefreshGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "repram_omega_last_refresh_unix_seconds",
+	Name: "discovery_last_refresh_unix_seconds",
 	Help: "Unix timestamp of the most recent successful omega root-list refresh (0 = never).",
 })
 
@@ -73,20 +73,20 @@ func main() {
 		// stderr, but pin it explicitly so any future change can't regress.
 		log.SetOutput(os.Stderr)
 		// Quieter default — the host agent is the only audience for stderr.
-		if os.Getenv("REPRAM_LOG_LEVEL") == "" {
-			os.Setenv("REPRAM_LOG_LEVEL", "warn")
+		if os.Getenv("NODE_LOG_LEVEL") == "" {
+			os.Setenv("NODE_LOG_LEVEL", "warn")
 		}
 	}
 
 	logging.Init()
 
 	// Generate a unique node ID
-	nodeID := os.Getenv("REPRAM_NODE_ID")
+	nodeID := os.Getenv("NODE_ID")
 	if nodeID == "" {
 		nodeID = fmt.Sprintf("node-%d", time.Now().UnixNano())
 	}
 
-	address := os.Getenv("REPRAM_ADDRESS")
+	address := os.Getenv("NODE_ADDRESS")
 	if address == "" {
 		address = "localhost"
 	}
@@ -94,7 +94,7 @@ func main() {
 	// Defaults differ for embedded MCP: HTTP and gossip listeners pick
 	// random free ports, storage is capped at 50MB so an agent fleet
 	// doesn't blow out the host's memory, and the network is private —
-	// agents that want to join the public mesh set REPRAM_NETWORK=public
+	// agents that want to join the public mesh set NODE_NETWORK=public
 	// explicitly and accept the omega bootstrap dependency.
 	defaultHTTPPort := 8080
 	defaultGossipPort := 9090
@@ -108,38 +108,38 @@ func main() {
 	}
 
 	// Configuration: one name per setting, no aliases
-	httpPort := envInt("REPRAM_HTTP_PORT", defaultHTTPPort)
-	gossipPort := envInt("REPRAM_GOSSIP_PORT", defaultGossipPort)
-	replicationFactor := envInt("REPRAM_REPLICATION", 3)
-	minTTL := envInt("REPRAM_MIN_TTL", 300)
-	maxTTL := envInt("REPRAM_MAX_TTL", 86400)
+	httpPort := envInt("NODE_HTTP_PORT", defaultHTTPPort)
+	gossipPort := envInt("NODE_GOSSIP_PORT", defaultGossipPort)
+	replicationFactor := envInt("NODE_REPLICATION", 3)
+	minTTL := envInt("NODE_MIN_TTL", 300)
+	maxTTL := envInt("NODE_MAX_TTL", 86400)
 	// Five minutes is the protocol floor: callers may request less, but the
 	// accepted value is normalized upward so it has time to propagate. An
 	// operator may configure a stricter floor, never a looser one.
 	if minTTL < minimumTTLSeconds {
 		minTTL = minimumTTLSeconds
 	}
-	rateLimit := envInt("REPRAM_RATE_LIMIT", 100)
-	maxStorageMB := envInt("REPRAM_MAX_STORAGE_MB", defaultStorageMB)
-	writeTimeout := envInt("REPRAM_WRITE_TIMEOUT", 5)      // seconds
-	clusterSecret := os.Getenv("REPRAM_CLUSTER_SECRET")
-	trustProxy := strings.EqualFold(os.Getenv("REPRAM_TRUST_PROXY"), "true")
-	enclave := os.Getenv("REPRAM_ENCLAVE") // default: "default"
-	network := os.Getenv("REPRAM_NETWORK")
+	rateLimit := envInt("NODE_RATE_LIMIT", 100)
+	maxStorageMB := envInt("NODE_MAX_STORAGE_MB", defaultStorageMB)
+	writeTimeout := envInt("NODE_WRITE_TIMEOUT", 5) // seconds
+	clusterSecret := os.Getenv("NODE_CLUSTER_SECRET")
+	trustProxy := strings.EqualFold(os.Getenv("NODE_TRUST_PROXY"), "true")
+	enclave := os.Getenv("NODE_ENCLAVE") // default: "default"
+	network := os.Getenv("NODE_NETWORK")
 	if network == "" {
 		network = defaultNetwork
 	}
-	pprofEnabled := strings.EqualFold(os.Getenv("REPRAM_PPROF_ENABLED"), "true")
-	pprofAddr := os.Getenv("REPRAM_PPROF_ADDR")
+	pprofEnabled := strings.EqualFold(os.Getenv("NODE_PPROF_ENABLED"), "true")
+	pprofAddr := os.Getenv("NODE_PPROF_ADDR")
 	if pprofAddr == "" {
 		pprofAddr = "127.0.0.1:6060"
 	}
 
 	// Resolve bootstrap peers.
-	// REPRAM_PEERS are HTTP addresses (host:httpPort) since the bootstrap
+	// NODE_PEERS are HTTP addresses (host:httpPort) since the bootstrap
 	// handshake is an HTTP POST to /v1/bootstrap. Example: "node2:8080,node3:8080"
 	var bootstrapNodes []string
-	if peers := os.Getenv("REPRAM_PEERS"); peers != "" {
+	if peers := os.Getenv("NODE_PEERS"); peers != "" {
 		bootstrapNodes = strings.Split(peers, ",")
 		for i, n := range bootstrapNodes {
 			bootstrapNodes[i] = strings.TrimSpace(n)
@@ -147,7 +147,7 @@ func main() {
 	}
 
 	// Signed-root-list bootstrap for the public network. See
-	// docs/REPRAM-2.1-Spec.md. This replaces the pre-2.1
+	// docs/discovery.md. This replaces the pre-2.1
 	// unsigned DNS path; there is no fallback by design.
 	var rootList *trust.SignedList
 	if network == "public" && len(bootstrapNodes) == 0 {
@@ -160,11 +160,11 @@ func main() {
 		rootList = list
 		bootstrapNodes = append(bootstrapNodes, list.Nodes...)
 	} else if network == "public" && len(bootstrapNodes) > 0 {
-		// REPRAM_PEERS short-circuits omega resolution, which in turn
+		// NODE_PEERS short-circuits omega resolution, which in turn
 		// leaves IsRoot() false and causes /v1/bootstrap to 403. Fine
 		// for local testing; wrong for a real public-network root node.
 		// See docs/omega-operations.md for the guidance.
-		logging.Warn("REPRAM_NETWORK=public with REPRAM_PEERS set: skipping omega verification. This node will not be recognized as a bootstrap root and will return 403 for /v1/bootstrap requests.")
+		logging.Warn("NODE_NETWORK=public with NODE_PEERS set: skipping omega verification. This node will not be recognized as a bootstrap root and will return 403 for /v1/bootstrap requests.")
 	}
 
 	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second, clusterSecret, enclave)
@@ -237,7 +237,7 @@ func main() {
 			return list.Nodes
 		})
 	} else if len(bootstrapNodes) > 0 {
-		// Private / REPRAM_PEERS: re-bootstrap reuses the static seed list
+		// Private / NODE_PEERS: re-bootstrap reuses the static seed list
 		// the operator provided. Capture by closure so the goroutine sees
 		// the same slice we started with (#85, F5).
 		seeds := append([]string(nil), bootstrapNodes...)
@@ -245,14 +245,14 @@ func main() {
 	}
 
 	// Tree manager owns substrate-transient attachment state. Substrate
-	// nodes (REPRAM_INBOUND=true) accept inbound WS attachments and act as
+	// nodes (NODE_INBOUND=true) accept inbound WS attachments and act as
 	// AckRouter + ChildBroadcaster for the cluster node. Transients
-	// (default, REPRAM_INBOUND=false) attach outbound after bootstrap.
+	// (default, NODE_INBOUND=false) attach outbound after bootstrap.
 	inbound := tree.InboundFalse
-	if strings.EqualFold(os.Getenv("REPRAM_INBOUND"), "true") {
+	if strings.EqualFold(os.Getenv("NODE_INBOUND"), "true") {
 		inbound = tree.InboundTrue
 	}
-	maxChildren := envInt("REPRAM_MAX_CHILDREN", tree.DefaultMaxChildren)
+	maxChildren := envInt("NODE_MAX_CHILDREN", tree.DefaultMaxChildren)
 	treeMgr := tree.NewManager(
 		&gossip.Node{
 			ID: gossip.NodeID(nodeID), Address: address,
@@ -337,14 +337,14 @@ func main() {
 	// Initialize security middleware
 	securityMW := node.NewSecurityMiddleware(
 		rateLimit,
-		rateLimit*2, // burst = 2x rate
+		rateLimit*2,  // burst = 2x rate
 		10*1024*1024, // 10MB max request size
 		trustProxy,
 	)
 	server.securityMW = securityMW
 
 	peerCount := len(bootstrapNodes)
-	logging.Info("REPRAM node online. Peers: %d. Network: %s", peerCount, network)
+	logging.Info("Node online. Peers: %d. Network: %s", peerCount, network)
 	logging.Info("  Node ID: %s", nodeID)
 	logging.Info("  HTTP: :%d  Gossip: :%d  Enclave: %s", httpPort, gossipPort, clusterNode.Enclave())
 	logging.Info("  Replication: %d  TTL range: %d-%ds  Write timeout: %ds", replicationFactor, minTTL, maxTTL, writeTimeout)
@@ -486,7 +486,7 @@ func resolveOmegaBootstrap(ctx context.Context) (*trust.SignedList, error) {
 
 	cacheDir, usedLastResort := trust.ResolveCacheDir()
 	if usedLastResort {
-		logging.Warn("Using %s as cache directory; this typically requires root write access. Set REPRAM_CACHE_DIR for a writable location if refresh writes start failing.", cacheDir)
+		logging.Warn("Using %s as cache directory; this typically requires root write access. Set NODE_CACHE_DIR for a writable location if refresh writes start failing.", cacheDir)
 	}
 	now := time.Now()
 
@@ -559,7 +559,7 @@ func (s *HTTPServer) Router() *mux.Router {
 	// clients then see a redirect that converts to GET (RFC 9110), so the
 	// PUT never gets a coherent 400. With SkipClean, the original path
 	// reaches the router, fails the `{key}` route, and lands in the
-	// NotFoundHandler that returns 400. None of REPRAM's routes need
+	// NotFoundHandler that returns 400. None of the node's routes need
 	// path cleaning (no `..`, no double-slash semantics) (#91).
 	r.SkipClean(true)
 
@@ -822,7 +822,7 @@ func (s *HTTPServer) verifyGossipSignature(w http.ResponseWriter, r *http.Reques
 	if secret == "" {
 		return true // open mode
 	}
-	sig := r.Header.Get("X-Repram-Signature")
+	sig := r.Header.Get(gossip.SignatureHeader)
 	if sig == "" {
 		http.Error(w, "Missing signature", http.StatusForbidden)
 		return false
@@ -889,7 +889,7 @@ func (s *HTTPServer) bootstrapHandler(w http.ResponseWriter, r *http.Request) {
 	// Only roots answer bootstrap requests. On the public network a node is
 	// a root iff its advertised address is in the current signed omega list
 	// (see resolveOmegaBootstrap). On private networks no one is a root
-	// under this gate — peer discovery is driven by REPRAM_PEERS directly.
+	// under this gate — peer discovery is driven by NODE_PEERS directly.
 	if s.network == "public" && !s.clusterNode.IsRoot() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)

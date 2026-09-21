@@ -2,7 +2,8 @@
 
 **Wisdom through intentional forgetting.**
 
-Pronounced **SOF-oh-leth**. The command is **`soph`**.
+Pronounced **SOF-oh-leth**. The client CLI, **`soph`**, is planned in
+[issue #187](https://github.com/TickTockBent/REPRAM/issues/187).
 
 Sopholeth is a distributed network for temporary shared state. Store bytes
 under a key with a time-to-live (TTL), let peers carry them, and retrieve them
@@ -24,24 +25,22 @@ application**, and a **probe simulation**.
 Public launch is pending: the discovery trust anchor is still a placeholder.
 Use a private network for development.
 
-This is the documentation stage of the rebrand from REPRAM. Source paths,
-environment variables, MCP tool IDs, build targets, and published artifacts
-still use their existing names. The build below produces a local `soph`
-executable today. See the [migration checklist](docs/rebrand.md) for the
-remaining work; the new domains and repository location are not yet launch
-dependencies.
+The service executables are `server`, `omega`, and `dashboard`. Internal names
+follow their roles: `NODE_*` configuration, plain MCP tool names, and component
+metrics. See the [migration guide](docs/rebrand.md) when updating an older
+checkout or deployment. The future `soph` client is not implemented here.
 
 ## Run locally
 
 From this checkout, with Go 1.22 or later:
 
 ```bash
-go build -o bin/soph ./cmd/repram
-REPRAM_NETWORK=private REPRAM_MAX_STORAGE_MB=50 ./bin/soph
+go build -o bin/server ./cmd/server
+NODE_NETWORK=private NODE_MAX_STORAGE_MB=50 ./bin/server
 ```
 
 The HTTP listener uses port 8080 on all interfaces.
-`REPRAM_NETWORK=private` disables public discovery; it does not restrict who
+`NODE_NETWORK=private` disables public discovery; it does not restrict who
 can reach the listener.
 
 In another terminal:
@@ -62,7 +61,7 @@ For a container with its host port restricted to loopback:
 ```bash
 docker build -t sopholeth/node:local .
 docker run --rm -p 127.0.0.1:8080:8080 \
-  -e REPRAM_NETWORK=private -e REPRAM_MAX_STORAGE_MB=50 \
+  -e NODE_NETWORK=private -e NODE_MAX_STORAGE_MB=50 \
   sopholeth/node:local
 ```
 
@@ -77,11 +76,11 @@ Use the absolute path to the locally built binary in your MCP client:
 {
   "mcpServers": {
     "sopholeth": {
-      "command": "/absolute/path/to/checkout/bin/soph",
+      "command": "/absolute/path/to/checkout/bin/server",
       "args": ["--mcp"],
       "env": {
-        "REPRAM_NETWORK": "private",
-        "REPRAM_MAX_STORAGE_MB": "50"
+        "NODE_NETWORK": "private",
+        "NODE_MAX_STORAGE_MB": "50"
       }
     }
   }
@@ -92,10 +91,10 @@ MCP mode embeds the same node, with an OS-assigned HTTP port and logs on
 stderr. It also opens an HTTP listener on all interfaces; stdio is the agent
 interface, not a network isolation boundary.
 
-The current tools are `repram_store`, `repram_retrieve`, `repram_exists`,
-and `repram_list_keys`. Set `REPRAM_PEERS` to a comma-separated list of
+The tools are `store`, `retrieve`, `exists`,
+and `list_keys`. Set `NODE_PEERS` to a comma-separated list of
 reachable `host:httpPort` seeds to join a private cluster. A substrate with
-`REPRAM_INBOUND=true` accepts outbound WebSocket attachments from agents.
+`NODE_INBOUND=true` accepts outbound WebSocket attachments from agents.
 
 ## Try a cluster
 
@@ -125,4 +124,4 @@ separation. It publishes its host ports on all interfaces.
 - [Roadmap](docs/roadmap.md) and [rebrand migration](docs/rebrand.md)
 - [Contributing](CONTRIBUTING.md), [validation harness](test/burnin/README.md), and [changelog](CHANGELOG.md)
 
-Licensed under [MIT](LICENSE).
+See [LICENSE](LICENSE) for the current licensing terms.

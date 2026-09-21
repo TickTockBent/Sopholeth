@@ -1,6 +1,6 @@
-// Command repram-omega is the operator tool for REPRAM's signed-root-list
-// trust anchor. It runs offline — never on a REPRAM node. See
-// docs/REPRAM-2.1-Spec.md and docs/omega-operations.md.
+// Command omega signs public root lists with the operator's trust anchor.
+// It runs offline, separate from the node. See
+// docs/discovery.md and docs/omega-operations.md.
 //
 // Subcommands:
 //
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"repram/internal/trust"
+	"sopholeth/internal/trust"
 )
 
 func main() {
@@ -52,11 +52,11 @@ func main() {
 }
 
 func usage(w *os.File) {
-	fmt.Fprintln(w, "repram-omega — operator tool for REPRAM signed root lists")
+	fmt.Fprintln(w, "omega — operator tool for signed root lists")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  repram-omega keygen --out-private <path> --out-public <path>")
-	fmt.Fprintln(w, "  repram-omega sign --key <path> --version <id> --expires-in <seconds> --nodes <csv>")
+	fmt.Fprintln(w, "  omega keygen --out-private <path> --out-public <path>")
+	fmt.Fprintln(w, "  omega sign --key <path> --version <id> --expires-in <duration> --nodes <host:http-port,...>")
 }
 
 func runKeygen(args []string) error {
@@ -103,7 +103,7 @@ func runSign(args []string) error {
 	keyPath := fs.String("key", "", "path to Ed25519 private key file (required)")
 	version := fs.String("version", trust.OmegaVersion, "omega version identifier")
 	expiresIn := fs.Duration("expires-in", 0, "lifetime of the signed list (e.g. 24h)")
-	nodes := fs.String("nodes", "", "comma-separated root node addresses host:gossip-port (required)")
+	nodes := fs.String("nodes", "", "comma-separated root node addresses host:http-port (required)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -136,8 +136,8 @@ func runSign(args []string) error {
 	fmt.Println(list.Encode())
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "To publish:")
-	fmt.Fprintln(os.Stderr, "  1. Paste the line above as the value of the _omega.repram.io TXT record.")
-	fmt.Fprintln(os.Stderr, "  2. Verify propagation with: dig TXT _omega.repram.io")
+	fmt.Fprintf(os.Stderr, "  1. Paste the line above as the value of the %s TXT record.\n", trust.DefaultSignedListName)
+	fmt.Fprintf(os.Stderr, "  2. Verify propagation with: dig TXT %s\n", trust.DefaultSignedListName)
 	fmt.Fprintf(os.Stderr, "  3. This record expires at %s UTC.\n",
 		time.Unix(list.Expires, 0).UTC().Format(time.RFC3339))
 	return nil

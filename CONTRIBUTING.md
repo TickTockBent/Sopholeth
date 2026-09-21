@@ -17,12 +17,12 @@ make build
 make test
 ```
 
-Build targets still produce the legacy executable names while the
-[rebrand](docs/rebrand.md) is in progress. To use the new command locally:
+Build targets produce `bin/server`, `bin/omega`, and `bin/dashboard`.
+To build and run just the node:
 
 ```bash
-go build -o bin/soph ./cmd/repram
-REPRAM_NETWORK=private REPRAM_MAX_STORAGE_MB=50 ./bin/soph
+go build -o bin/server ./cmd/server
+NODE_NETWORK=private NODE_MAX_STORAGE_MB=50 ./bin/server
 ```
 
 See [configuration](docs/configuration.md) for network and listener behavior.
@@ -48,4 +48,4 @@ client concerns. Avoid promises of global ordering, exclusive locks,
 guaranteed delivery, or secure erasure that the node does not provide.
 
 Work respectfully, address feedback directly, and keep discussion focused on
-the project. Contributions use the project's [MIT license](LICENSE).
+the project. See the project's [license](LICENSE) for the current terms.

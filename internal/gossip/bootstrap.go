@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"repram/internal/logging"
+	"sopholeth/internal/logging"
 )
 
 // BootstrapRequest is sent when a node wants to join the cluster
@@ -107,7 +107,7 @@ func (p *Protocol) sendBootstrapRequest(ctx context.Context, seedAddr string, re
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if p.clusterSecret != "" {
-		httpReq.Header.Set("X-Repram-Signature", SignBody(p.clusterSecret, jsonData))
+		httpReq.Header.Set(SignatureHeader, SignBody(p.clusterSecret, jsonData))
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}

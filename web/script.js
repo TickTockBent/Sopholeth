@@ -1,4 +1,4 @@
-// REPRAM Landing Page Interactive Effects
+// Landing page interactive effects
 document.addEventListener('DOMContentLoaded', function() {
 
     // Add glitch effect to title on hover
@@ -134,7 +134,7 @@ document.addEventListener('DOMContentLoaded', function() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        const chars = 'REPRAM0101';
+        const chars = '0101';
         const fontSize = 14;
         const columns = canvas.width / fontSize;
         const drops = [];
@@ -238,6 +238,6 @@ document.addEventListener('DOMContentLoaded', function() {
     ██║  ██║███████╗██║     ██║  ██║██║  ██║██║ ╚═╝ ██║
     ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝
 
-    REPRAM - Ephemeral Coordination Layer for the Agent Web
+    Sopholeth - Wisdom through intentional forgetting
     `);
 });

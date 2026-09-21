@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Spec field names and separators. See docs/REPRAM-2.1-Spec.md
+// Spec field names and separators. See docs/discovery.md
 // "Signed Root List: DNS Format" and "Signature Format".
 const (
 	fieldVersion = "v"
@@ -50,7 +50,7 @@ type SignedList struct {
 
 	// Nodes are advertised addresses ("host:http-port") of the root
 	// nodes. Stored in the order received; Canonical() sorts them.
-	// See docs/REPRAM-2.1-Spec.md for the rationale (#82, F1/F2).
+	// See docs/discovery.md for the rationale (#82, F1/F2).
 	Nodes []string
 
 	// Signature is the Ed25519 signature over Canonical(). Empty on a
@@ -166,7 +166,7 @@ func (s *SignedList) Canonical() []byte {
 }
 
 // Encode produces the full TXT-record value including the base64-encoded
-// signature. Intended for use by the repram-omega signing tool.
+// signature. Intended for use by the omega signing tool.
 func (s *SignedList) Encode() string {
 	return string(s.Canonical()) + fieldSeparator + fieldSig + kvSeparator +
 		base64.StdEncoding.EncodeToString(s.Signature)

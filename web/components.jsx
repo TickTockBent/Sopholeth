@@ -1,5 +1,8 @@
-// repram-components.jsx — REPRAM landing page sections
+// Landing page components
 // Aligned with wshoffner.dev design system.
+
+// The repository URL remains valid until the hosting rename is complete.
+const PROJECT_REPOSITORY = 'https://github.com/TickTockBent/REPRAM';
 
 const { useState: useStateR, useEffect: useEffectR, useRef: useRefR, useMemo: useMemoR } = React;
 
@@ -55,9 +58,9 @@ function SiteNav() {
           color: '#39ff14', textShadow: '0 0 10px #39ff1480',
           fontSize: 14, fontWeight: 700, letterSpacing: '0.1em'
         }}>
-          <span style={{ color: '#22d3ee' }}>$</span>&nbsp;repram
+          <span style={{ color: '#22d3ee' }}>$</span>&nbsp;sopholeth
           <span style={{ color: '#8b949e', marginLeft: 8, letterSpacing: 0, fontSize: 11 }}>
-            v2.0
+            prelaunch
           </span>
         </a>
         <nav style={{ display: 'flex', gap: 22, alignItems: 'center', fontSize: 12 }}>
@@ -65,7 +68,7 @@ function SiteNav() {
           <NavLink href="#patterns">patterns</NavLink>
           <NavLink href="#quickstart">quickstart</NavLink>
           <NavLink href="#api">api</NavLink>
-          <a href="https://github.com/TickTockBent/REPRAM" style={{
+          <a href={PROJECT_REPOSITORY} style={{
             color: '#22d3ee', border: '1px solid #22d3ee4d',
             padding: '6px 12px', fontSize: 12, letterSpacing: '0.06em',
             transition: 'all 0.2s'
@@ -107,10 +110,10 @@ function NavLink({ href, children }) {
 
 const BOOT_LINES = [
 { tag: 'BOOT', color: '#39ff14', text: 'initializing ephemeral storage layer...' },
-{ tag: 'NET', color: '#22d3ee', text: 'gossip protocol online · quorum=3' },
+{ tag: 'NET', color: '#22d3ee', text: 'gossip replication · dynamic quorum' },
 { tag: 'SYS', color: '#facc15', text: 'mandatory TTL enforced · min=300s max=86400s' },
-{ tag: 'AUTH', color: '#e040fb', text: 'no accounts · no keys · no logs' },
-{ tag: 'BOOT', color: '#39ff14', text: 'network ready. data will expire.' }];
+{ tag: 'AUTH', color: '#e040fb', text: 'no accounts · opaque values · client encryption' },
+{ tag: 'BOOT', color: '#39ff14', text: 'public launch pending · try a private node.' }];
 
 
 function Hero() {
@@ -132,12 +135,12 @@ function Hero() {
     <section id="top" style={{ paddingTop: 112, paddingBottom: 32 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
         <span style={{ color: '#22d3ee', fontSize: 12, letterSpacing: '0.14em' }}>
-          // NET://REPRAM.IO
+          // SOPHOLETH
         </span>
         <span style={{ flex: 1, height: 1, background: '#22d3ee33' }}></span>
         <LiveDot />
         <span style={{ color: '#8b949e', fontSize: 11, letterSpacing: '0.1em' }}>
-          NETWORK&nbsp;LIVE
+          PUBLIC&nbsp;ALPHA&nbsp;PENDING
         </span>
       </div>
 
@@ -146,10 +149,10 @@ function Hero() {
         justifyContent: 'center', alignItems: 'center',
         padding: '22px 0', position: 'relative',
       }}>
-        <h1 aria-label="REPRAM" className="wm-glitch" data-text="REPRAM" style={{
+        <h1 aria-label="Sopholeth" className="wm-glitch" data-text="Sopholeth" style={{
           position: 'relative',
           fontFamily: 'var(--font-mono)',
-          fontSize: 'clamp(54px, 11vw, 124px)',
+          fontSize: 'clamp(32px, 7.5vw, 96px)',
           fontWeight: 700,
           letterSpacing: '0.14em',
           lineHeight: 1,
@@ -157,7 +160,7 @@ function Hero() {
           color: '#39ff14',
           textShadow: '0 0 10px #39ff14cc, 0 0 22px #39ff1466',
           animation: 'wm-glitch-shadow 2.2s infinite',
-        }}>REPRAM</h1>
+        }}>Sopholeth</h1>
 
         <style>{`
           @keyframes header-scan {
@@ -211,10 +214,10 @@ function Hero() {
         color: '#b8c0cc', fontSize: 16, lineHeight: 1.7,
         maxWidth: 680, margin: '0 0 8px'
       }}>
-        ephemeral coordination layer for the agent web.
+        wisdom through intentional forgetting.
         <br />
         <span style={{ color: '#8b949e' }}>
-          a distributed dead-drop network where data self-destructs on a timer.
+          SOF-oh-leth. a distributed network for temporary shared state.
           agents leave payloads, other agents pick them up, and the network cleans itself.
           nobody signs a guest book.
         </span>
@@ -240,11 +243,11 @@ function Hero() {
         }
         {visibleLines >= BOOT_LINES.length &&
         <div style={{ marginTop: 6 }}>
-            <span style={{ color: '#22d3ee' }}>guest@repram</span>
+            <span style={{ color: '#22d3ee' }}>guest@network</span>
             <span style={{ color: '#8b949e' }}>:</span>
             <span style={{ color: '#39ff14' }}>~</span>
             <span style={{ color: '#8b949e' }}>$ </span>
-            <span style={{ color: '#b8c0cc' }}>docker run -p 8080:8080 ticktockbent/repram-node</span>
+            <span style={{ color: '#b8c0cc' }}>NODE_NETWORK=private ./bin/server</span>
             <span style={{
             display: 'inline-block', width: 8, height: 14,
             background: '#39ff14', marginLeft: 4,
@@ -259,14 +262,11 @@ function Hero() {
         <CTAButton primary href="#quickstart">
           <Glyph color="#0a0a0f">&gt;</Glyph>run a node
         </CTAButton>
-        <CTAButton href="https://github.com/TickTockBent/REPRAM">
+        <CTAButton href={PROJECT_REPOSITORY}>
           <Glyph>@</Glyph>github
         </CTAButton>
-        <CTAButton href="https://www.npmjs.com/package/repram-mcp">
-          <Glyph>$</Glyph>npm install repram-mcp
-        </CTAButton>
-        <CTAButton href="https://github.com/TickTockBent/REPRAM/blob/main/docs/whitepaper.md">
-          <Glyph>#</Glyph>whitepaper
+        <CTAButton href={`${PROJECT_REPOSITORY}/blob/main/docs/architecture.md`}>
+          <Glyph>#</Glyph>architecture
         </CTAButton>
       </div>
     </section>);
@@ -327,7 +327,7 @@ function WhatItIs() {
           <LiGood>temporary, replicated, self-cleaning storage</LiGood>
           <LiGood>a dead-drop rendezvous for agents who don't know each other</LiGood>
           <LiGood>general-purpose — "pipe, not grep"</LiGood>
-          <LiGood>boring in the best way · boots in one docker command</LiGood>
+          <LiGood>one Go node · HTTP and MCP interfaces</LiGood>
         </ul>
       </div>
       <div style={{
@@ -339,7 +339,7 @@ function WhatItIs() {
           // IS NOT://
         </div>
         <ul style={{ padding: 0, margin: 0, listStyle: 'none', fontSize: 14, lineHeight: 1.75 }}>
-          <LiBad>a database &mdash; data is <em>guaranteed</em> to disappear</LiBad>
+          <LiBad>a persistent database &mdash; values expire locally</LiBad>
           <LiBad>a message queue &mdash; "leave it and hope they check"</LiBad>
           <LiBad>a secrets vault &mdash; no access control, no encryption</LiBad>
           <LiBad>a cache with eviction &mdash; only TTL, never memory pressure</LiBad>
@@ -404,7 +404,7 @@ function NetworkDiagram() {
         viewBox="0 0 800 440"
         width="100%"
         role="img"
-        aria-label="REPRAM network topology: two agents interacting with a three-node enclave via PUT and GET, with a TTL timeline underneath"
+        aria-label="Network topology: two agents interacting with a three-node enclave via PUT and GET, with a TTL timeline underneath"
         style={{ display: 'block', maxWidth: '100%', fontFamily: 'var(--font-mono)', height: "572px" }}>
         
         <defs>
@@ -481,7 +481,7 @@ function NetworkDiagram() {
         fill="none" stroke={C} strokeOpacity="0.55" strokeWidth="1" />
         <rect x={46} y={174} width={132} height={12} fill={BG} />
         <text x={54} y={184} fill={C} fontSize="10"
-        letterSpacing="1.6">REPRAM://ENCLAVE</text>
+        letterSpacing="1.6">NETWORK://ENCLAVE</text>
 
         {/* ===== Three nodes ===== */}
         {[
@@ -609,7 +609,7 @@ function Architecture() {
       }}>
         <span><span style={{ color: '#39ff14' }}>~</span> mandatory TTL</span>
         <span style={{ color: '#22d3ee33' }}>│</span>
-        <span><span style={{ color: '#22d3ee' }}>@</span> gossip replication, quorum=3</span>
+        <span><span style={{ color: '#22d3ee' }}>@</span> gossip replication, dynamic quorum</span>
         <span style={{ color: '#22d3ee33' }}>│</span>
         <span><span style={{ color: '#39ff14' }}>#</span> content-agnostic nodes</span>
         <span style={{ color: '#22d3ee33' }}>│</span>
@@ -651,31 +651,31 @@ const PATTERNS = [
   name: 'scratchpad',
   tag: '[STATE]', tagColor: '#22d3ee',
   desc: 'An agent persists intermediate reasoning across multi-step workflows. Store, retrieve, update, let expire.',
-  code: `PUT /v1/data/job/42/scratch X-TTL:600\nGET /v1/data/job/42/scratch\nPUT /v1/data/job/42/scratch  # overwrite`
+  code: `PUT /v1/data/job:42:scratch X-TTL:600\nGET /v1/data/job:42:scratch\nPUT /v1/data/job:42:scratch  # overwrite`
 },
 {
   name: 'coordination token',
-  tag: '[LOCK]', tagColor: '#e040fb',
-  desc: 'A shared key acts as a lightweight distributed lock. Presence = in progress. Expiration = available.',
-  code: `HEAD /v1/data/lock/resource-9\n   → 200 "held"\n   → 404 "free — go ahead"`
+  tag: '[HINT]', tagColor: '#e040fb',
+  desc: 'A shared key carries an advisory claim. Concurrent writers can overwrite it; it does not provide an exclusive lock.',
+  code: `HEAD /v1/data/claim:resource-9\n   → 200 "claim observed"\n   → 404 "no live claim here"`
 },
 {
   name: 'heartbeat',
   tag: '[LIVE]', tagColor: '#39ff14',
-  desc: 'Write on interval with short TTL. Key exists = alive. Key expires = failure detected. The TTL is the failure detector.',
-  code: `loop {\n  PUT /v1/data/svc/api/heartbeat X-TTL:30\n  sleep 10s\n}`
+  desc: 'Refresh a key and poll for recent presence. Absence may mean a stopped writer, a partition, or a missed update.',
+  code: `loop {\n  PUT /v1/data/svc:api:heartbeat X-TTL:300\n  sleep 60s\n}`
 },
 {
   name: 'state machine',
   tag: '[FSM]', tagColor: '#22d3ee',
   desc: 'A job-id key transitions through states via overwrites. TTL guarantees staleness: if the writer crashes, the key expires.',
-  code: `PUT job/42  queued       X-TTL:600\nPUT job/42  in_progress  X-TTL:600\nPUT job/42  complete     X-TTL:600`
+  code: `PUT job:42  queued       X-TTL:600\nPUT job:42  in_progress  X-TTL:600\nPUT job:42  complete     X-TTL:600`
 },
 {
   name: 'presence broadcast',
   tag: '[NET]', tagColor: '#e040fb',
-  desc: 'N-way ephemeral notification. Each node writes; all readers list with prefix and process whatever exists right now.',
-  code: `PUT  /v1/data/room/42/alice\nGET  /v1/keys?prefix=room/42/\n   → ["alice","bob","charlotte"]`
+  desc: 'Participants write presence keys. Readers poll a prefix and inspect the live values visible on their node.',
+  code: `PUT  /v1/data/room:42:alice\nGET  /v1/keys?prefix=room:42:\n   → ["alice","bob","charlotte"]`
 }];
 
 
@@ -685,7 +685,7 @@ function Patterns() {
       <h2 style={{
         color: '#39ff14', fontSize: 22, margin: '0 0 6px',
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
-      }}>six ways agents use REPRAM</h2>
+      }}>six ways agents use temporary state</h2>
       <p style={{ color: '#8b949e', fontSize: 13, margin: '0 0 22px' }}>
         the primitive is general-purpose. the primitive is also <code style={{
           background: '#161b22', color: '#22d3ee', padding: '0.15em 0.4em',
@@ -817,7 +817,7 @@ function TTLDemo() {
             marginTop: 18, background: '#161b22', border: '1px solid #22d3ee33',
             borderRadius: 4, color: '#22d3ee', fontSize: 11.5, lineHeight: 1.55,
             padding: '10px 12px', fontFamily: 'var(--font-mono)', overflow: 'auto'
-          }}>{`curl -X PUT -H "X-TTL: ${ttl}" \\\n  -d "${val}" \\\n  https://repram.io/v1/data/${key}`}</pre>
+          }}>{`curl -X PUT -H "X-TTL: ${ttl}" \\\n  -d "${val}" \\\n  http://localhost:8080/v1/data/${encodeURIComponent(key)}`}</pre>
         </div>
 
         <div>
@@ -829,7 +829,7 @@ function TTLDemo() {
           }}>
             {live.length === 0 &&
             <div style={{ color: '#8b949e' }}>
-                <span style={{ color: '#22d3ee' }}>guest@repram</span>
+                <span style={{ color: '#22d3ee' }}>guest@network</span>
                 <span>:</span>
                 <span style={{ color: '#39ff14' }}>~</span>
                 <span>$ </span>
@@ -919,22 +919,57 @@ function TermInput({ value, onChange, placeholder }) {
 
 const QUICKSTART_TABS = [
 {
-  id: 'docker', label: 'docker', glyph: '>',
-  code: `# run a public-network node\ndocker run -p 8080:8080 -p 9090:9090 \\\n  ticktockbent/repram-node\n\n# or a 3-node private cluster\ndocker compose up --build\n# → localhost:8091, :8092, :8093`
+  id: 'node', label: 'node', glyph: '>',
+  code: `# from the source checkout
+go build -o bin/server ./cmd/server
+NODE_NETWORK=private NODE_MAX_STORAGE_MB=50 ./bin/server
+
+# or build a private cluster with two enclaves
+docker compose up --build
+# enclave-a: localhost:8091, :8092
+# enclave-b: localhost:8093`
 },
 {
-  id: 'mcp', label: 'mcp / claude code', glyph: '@',
-  code: `// ~/.config/claude-code/mcp.json\n{\n  "mcpServers": {\n    "repram": {\n      "command": "npx",\n      "args": ["repram-mcp"]\n    }\n  }\n}\n// embedded node — no server needed.\n// agent gets: repram_store, repram_retrieve,\n//             repram_exists, repram_list_keys.`
+  id: 'mcp', label: 'mcp', glyph: '@',
+  code: `# build the node first, then use its absolute path
+{
+  "mcpServers": {
+    "sopholeth": {
+      "command": "/absolute/path/to/checkout/bin/server",
+      "args": ["--mcp"]
+    }
+  }
+}
+# tools: store, retrieve, exists, list_keys
+# embedded private node; HTTP still binds all interfaces`
 },
 {
   id: 'curl', label: 'raw api', glyph: '$',
-  code: `# store with 5-minute TTL\ncurl -X PUT -H "X-TTL: 300" \\\n  -d "hello" http://localhost:8080/v1/data/mykey\n# → 201 Created (quorum confirmed)\n\n# retrieve\ncurl http://localhost:8080/v1/data/mykey\n# → 200 "hello"  · X-Remaining-TTL: 298\n\n# list keys\ncurl http://localhost:8080/v1/keys?prefix=myapp/\n# → {"keys": ["myapp/42", "myapp/43"]}`
+  code: `# store with 5-minute TTL
+curl -X PUT -H "X-TTL: 300" --data-binary "hello" http://localhost:8080/v1/data/myapp:message
+# 201: quorum observed; 202: stored locally, unconfirmed
+
+# retrieve from this node
+curl http://localhost:8080/v1/data/myapp:message
+
+# list live keys
+curl "http://localhost:8080/v1/keys?prefix=myapp:&limit=100"`
 },
 {
   id: 'js', label: 'javascript', glyph: '#',
-  code: `// browser or node — CORS is open on purpose.\nconst base = 'http://localhost:8080/v1/data';\n\nawait fetch(base + '/task/42', {\n  method: 'PUT',\n  headers: { 'X-TTL': '300' },\n  body: JSON.stringify({ handoff: true })\n});\n\nconst res = await fetch(base + '/task/42');\nif (res.ok) return res.json();  // still live\n// else: 404 — the network forgot. this is fine.`
-}];
+  code: `const url = 'http://localhost:8080/v1/data/task:42';
+const stored = await fetch(url, {
+  method: 'PUT',
+  headers: { 'X-TTL': '300' },
+  body: JSON.stringify({ handoff: true })
+});
+if (!stored.ok) throw new Error('Write failed');
 
+const response = await fetch(url);
+if (response.ok) console.log(await response.json());
+else if (response.status === 404) console.log('No live value here');
+else throw new Error('Read failed');`
+}];
 
 function Quickstart() {
   const [tab, setTab] = useStateR(QUICKSTART_TABS[0].id);
@@ -955,7 +990,7 @@ function Quickstart() {
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
       }}>quickstart</h2>
       <p style={{ color: '#8b949e', fontSize: 13, margin: '0 0 18px' }}>
-        pick your interface. everything below talks to the same network.
+        build from source, then try a private node through HTTP or MCP.
       </p>
 
       <div style={{
@@ -1040,7 +1075,7 @@ function ApiReference() {
         letterSpacing: '0.05em', textShadow: '0 0 10px #39ff1480'
       }}>API reference</h2>
       <p style={{ color: '#8b949e', fontSize: 13, margin: '0 0 18px' }}>
-        ten endpoints. no auth. no versioning surprises. bytes in, bytes out.
+        client and diagnostic endpoints. no client accounts. bytes in, bytes out.
       </p>
 
       <div style={{
@@ -1085,10 +1120,10 @@ function ApiReference() {
 
 const NEOFETCH_ASCII = String.raw`
        :::::::::::
-     ::::r::e::p:::        guest@repram
-    :::r::a::m::::.        -------------
-    ::::::::::::::         OS:      REPRAM v2.0
-     ::::::::::::.         Kernel:  gossip/quorum=3
+     :::::::::::::        guest@network
+    :::::::::::::.        -------------
+    ::::::::::::::         Project: Sopholeth
+     ::::::::::::.         Kernel:  gossip/TTL
       ::::::::::           Uptime:  ephemeral
        ::::::::.           Shell:   dead-drop
          ::::::            Memory:  configurable · TTL-bounded
@@ -1114,18 +1149,15 @@ function Footer() {
             // LINKS://EXTERNAL
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <FooterLink glyph="@" label="github / TickTockBent/REPRAM"
-            href="https://github.com/TickTockBent/REPRAM" />
-            <FooterLink glyph="$" label="npm / repram-mcp"
-            href="https://www.npmjs.com/package/repram-mcp" />
-            <FooterLink glyph="~" label="docker / ticktockbent/repram-node"
-            href="https://hub.docker.com/r/ticktockbent/repram-node" />
-            <FooterLink glyph="#" label="whitepaper"
-            href="https://github.com/TickTockBent/REPRAM/blob/main/docs/whitepaper.md" />
+            <FooterLink glyph="@" label="github / source"
+            href={PROJECT_REPOSITORY} />
+            <FooterLink glyph=">" label="run locally" href="#quickstart" />
+            <FooterLink glyph="#" label="architecture"
+            href={`${PROJECT_REPOSITORY}/blob/main/docs/architecture.md`} />
             <FooterLink glyph="#" label="core principles"
-            href="https://github.com/TickTockBent/REPRAM/blob/main/docs/core-principles.md" />
+            href={`${PROJECT_REPOSITORY}/blob/main/docs/core-principles.md`} />
             <FooterLink glyph="#" label="usage patterns"
-            href="https://github.com/TickTockBent/REPRAM/blob/main/docs/patterns.md" />
+            href={`${PROJECT_REPOSITORY}/blob/main/docs/patterns.md`} />
           </div>
         </div>
       </div>
@@ -1135,7 +1167,7 @@ function Footer() {
         display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
         color: '#8b949e', fontSize: 11, letterSpacing: '0.05em'
       }}>
-        <span>REPRAM v2.0 · ephemeral by design · MIT</span>
+        <span>Sopholeth · wisdom through intentional forgetting</span>
         <span>
           built by <a href="https://www.clocktowerassoc.com" style={{ color: '#22d3ee' }}>
             clocktower & associates</a> · <a href="https://www.wshoffner.dev" style={{ color: '#22d3ee' }}>

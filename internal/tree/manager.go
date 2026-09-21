@@ -1,10 +1,10 @@
 // Package tree manages substrate-transient attachment lifecycle for
 // Discovery Protocol v2.
 //
-// Substrate nodes (REPRAM_INBOUND=true) accept inbound WS attachments, register
+// Substrate nodes (NODE_INBOUND=true) accept inbound WS attachments, register
 // transients as children, and send goodbye-with-alternatives during shutdown.
 //
-// Transient nodes (REPRAM_INBOUND=false) dial a substrate's /v1/ws after HTTP
+// Transient nodes (NODE_INBOUND=false) dial a substrate's /v1/ws after HTTP
 // bootstrap, send hello, parse welcome, and cache the substrate's topology as
 // fallback candidates. When the parent connection drops, a three-layer reattach
 // loop tries goodbye-supplied alternatives → cached topology → seed list, with
@@ -24,9 +24,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"repram/internal/gossip"
-	"repram/internal/logging"
-	"repram/internal/transport/ws"
+	"sopholeth/internal/gossip"
+	"sopholeth/internal/logging"
+	"sopholeth/internal/transport/ws"
 )
 
 const (
@@ -68,7 +68,7 @@ const (
 	RoleTransient Role = "transient"
 )
 
-// InboundCapability mirrors the REPRAM_INBOUND env var: "true" makes the node
+// InboundCapability mirrors the NODE_INBOUND env var: "true" makes the node
 // a substrate, "false" (default) makes it a transient.
 type InboundCapability string
 
@@ -211,7 +211,7 @@ func (m *Manager) Children() map[string]*ws.Connection {
 }
 
 // SetSeedProvider wires the freshest reattach fallback. For private clusters
-// snapshot REPRAM_PEERS; for public, close over the omega refresher's current
+// snapshot NODE_PEERS; for public, close over the omega refresher's current
 // signed root list. Nil disables the seed-list layer.
 func (m *Manager) SetSeedProvider(fn func() []string) {
 	m.mu.Lock()

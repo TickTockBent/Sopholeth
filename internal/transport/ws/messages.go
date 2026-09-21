@@ -1,8 +1,8 @@
 // Package ws implements the WebSocket transport for substrate-transient
-// attachments described in docs/internal/REPRAM-Discovery-Protocol-v2.md.
+// attachments described in docs/architecture.md.
 //
-// Substrate nodes (REPRAM_INBOUND=true) accept inbound WS connections at
-// /v1/ws. Transient nodes (REPRAM_INBOUND=false, the default) dial a
+// Substrate nodes (NODE_INBOUND=true) accept inbound WS connections at
+// /v1/ws. Transient nodes (NODE_INBOUND=false, the default) dial a
 // substrate's /v1/ws after HTTP bootstrap and stay attached. Gossip
 // frames sent over WS carry the same JSON wire format as HTTP gossip;
 // a node processes a PUT identically regardless of the arrival transport.
@@ -15,7 +15,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"repram/internal/gossip"
+	"sopholeth/internal/gossip"
 )
 
 // AttachmentType identifies the kind of message carried on a substrate-
@@ -44,7 +44,7 @@ type AttachmentMessage struct {
 }
 
 // Capabilities declares whether the announcing node accepts inbound WS
-// attachments. Maps directly to the REPRAM_INBOUND env var.
+// attachments. Maps directly to the NODE_INBOUND env var.
 type Capabilities struct {
 	Inbound string `json:"inbound"` // "true" | "false"
 }

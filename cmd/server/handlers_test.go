@@ -10,21 +10,26 @@ import (
 	"testing"
 	"time"
 
-	"repram/internal/cluster"
-	"repram/internal/node"
+	"sopholeth/internal/cluster"
+	"sopholeth/internal/node"
 )
 
 // newTestServer creates an HTTPServer backed by a single-node cluster
 // suitable for handler-level tests. No gossip, no network.
 func newTestServer(t *testing.T) (*HTTPServer, func()) {
 	t.Helper()
+	return newTestServerWithSecret(t, "")
+}
+
+func newTestServerWithSecret(t *testing.T, secret string) (*HTTPServer, func()) {
+	t.Helper()
 
 	cn := cluster.NewClusterNode(
 		"test-node", "localhost", 0, 0,
-		1,    // replicationFactor=1 → quorum=1 (local write sufficient)
-		0,    // unlimited storage
+		1, // replicationFactor=1 → quorum=1 (local write sufficient)
+		0, // unlimited storage
 		5*time.Second,
-		"",   // no cluster secret
+		secret,
 		"default",
 	)
 

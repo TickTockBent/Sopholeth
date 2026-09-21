@@ -91,18 +91,18 @@ func TestSaveCacheAtomic(t *testing.T) {
 }
 
 func TestDefaultCacheDirEnvWins(t *testing.T) {
-	t.Setenv("REPRAM_CACHE_DIR", "/tmp/explicit")
+	t.Setenv("NODE_CACHE_DIR", "/tmp/explicit")
 	if got := DefaultCacheDir(); got != "/tmp/explicit" {
-		t.Errorf("REPRAM_CACHE_DIR override ignored: got %q", got)
+		t.Errorf("NODE_CACHE_DIR override ignored: got %q", got)
 	}
 }
 
 func TestDefaultCacheDirHomeFallback(t *testing.T) {
-	t.Setenv("REPRAM_CACHE_DIR", "")
+	t.Setenv("NODE_CACHE_DIR", "")
 	// os.UserHomeDir checks HOME on linux; force a known value.
 	t.Setenv("HOME", "/home/fake")
 	got := DefaultCacheDir()
-	want := filepath.Join("/home/fake", ".repram", "cache")
+	want := filepath.Join("/home/fake", ".sopholeth", "cache")
 	if got != want {
 		t.Errorf("home fallback = %q, want %q", got, want)
 	}

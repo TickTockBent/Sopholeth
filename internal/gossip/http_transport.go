@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"repram/internal/logging"
+	"sopholeth/internal/logging"
 )
 
 // SimpleMessage is the HTTP wire format for gossip messages.
@@ -79,7 +79,7 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 		Timestamp: msg.Timestamp.Unix(),
 		MessageID: msg.MessageID,
 	}
-	
+
 	// Include NodeInfo if present
 	if msg.NodeInfo != nil {
 		simpleMsg.NodeInfo = &SimpleNodeInfo{
@@ -90,22 +90,22 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 			Enclave:  msg.NodeInfo.Enclave,
 		}
 	}
-	
+
 	// Send to the HTTP gossip endpoint
 	url := fmt.Sprintf("http://%s:%d/v1/gossip/message", node.Address, node.HTTPPort)
-	
+
 	jsonData, err := json.Marshal(simpleMsg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if t.clusterSecret != "" {
-		req.Header.Set("X-Repram-Signature", SignBody(t.clusterSecret, jsonData))
+		req.Header.Set(SignatureHeader, SignBody(t.clusterSecret, jsonData))
 	}
 
 	resp, err := t.client.Do(req)
@@ -113,11 +113,11 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 		return fmt.Errorf("failed to send message to %s: %w", url, err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("message rejected by %s with status: %d", node.ID, resp.StatusCode)
 	}
-	
+
 	logging.Debug("[HTTPTransport] Sent %s message to %s at %s", msg.Type, node.ID, url)
 	return nil
 }

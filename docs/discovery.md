@@ -23,16 +23,16 @@ from a bootstrap response.
 
 ## DNS records
 
-The current binary queries `_bootstrap.repram.io`. Its TXT value points to
+The current binary queries `_bootstrap.sopholeth.io`. Its TXT value points to
 the signed-list record:
 
 ```text
-omega=_omega.repram.io
+omega=_omega.sopholeth.io
 ```
 
-These are current compatibility identifiers, not the intended Sopholeth
-launch names. Moving discovery to the acquired domain requires a code and
-release change; editing documentation alone does not redirect clients.
+These names are compiled into the current release source. Public operation
+still requires domain ownership, DNS publication, deployed roots, and a real
+trust anchor; the rebrand does not publish records or activate a network.
 
 The target TXT value has four semicolon-separated fields:
 

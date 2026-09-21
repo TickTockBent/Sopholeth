@@ -13,7 +13,8 @@ import (
 // Default DNS names for the public network. Overridable for tests and for
 // future spec revisions that migrate the records.
 const (
-	DefaultBootstrapName = "_bootstrap.repram.io"
+	DefaultBootstrapName  = "_bootstrap.sopholeth.io"
+	DefaultSignedListName = "_omega.sopholeth.io"
 )
 
 // TXTResolver is the minimal interface this package needs from a DNS
@@ -51,7 +52,7 @@ var (
 )
 
 // FetchSigned resolves the signed root list over DNS and verifies it against
-// pubkey. It performs two lookups: first _bootstrap.repram.io (or whatever
+// pubkey. It performs two lookups: first DefaultBootstrapName (or whatever
 // cfg.BootstrapName overrides it to) for an `omega=<target>` indirection,
 // then the target for the actual signed record.
 //
@@ -111,7 +112,7 @@ func lookupSingleTXT(ctx context.Context, r TXTResolver, name string) (string, e
 	return "", errEmptyTXT
 }
 
-// parseBootstrapIndirection parses a _bootstrap.repram.io TXT value of the
+// parseBootstrapIndirection parses a bootstrap TXT value of the
 // form `omega=<target-name>`. The indirection layer exists so future spec
 // revisions can migrate the signed-record hostname without changing the
 // baked-in name.

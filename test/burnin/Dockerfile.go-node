@@ -14,22 +14,22 @@ RUN go mod download
 COPY . .
 
 # Replace the placeholder pubkey. The literal AAAA...= is unique to omega.go
-# and cmd/repram-omega tests don't bake it into binaries, so the sed match is
+# and cmd/omega tests don't bake it into binaries, so the sed match is
 # safe. Use | as delimiter because base64 contains / characters.
 RUN sed -i "s|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=|${TEST_OMEGA_PUBKEY}|" internal/trust/omega.go && \
     grep -q "OmegaPubkey = \"${TEST_OMEGA_PUBKEY}\"" internal/trust/omega.go || \
     (echo "pubkey bake failed — placeholder not found or replacement mismatched" >&2 && exit 3)
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram ./cmd/repram
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates tzdata
-RUN adduser -D -s /bin/sh repram
+RUN adduser -D -s /bin/sh node
 WORKDIR /app
-COPY --from=builder /app/repram .
-RUN chown -R repram:repram /app && \
-    mkdir -p /data/cache && chown repram:repram /data/cache
-USER repram
-ENV REPRAM_CACHE_DIR=/data/cache
-EXPOSE 8080 9090
-CMD ["./repram"]
+COPY --from=builder /app/server .
+RUN chown -R node:node /app && \
+    mkdir -p /data/cache && chown node:node /data/cache
+USER node
+ENV NODE_CACHE_DIR=/data/cache
+EXPOSE 8080
+CMD ["./server"]

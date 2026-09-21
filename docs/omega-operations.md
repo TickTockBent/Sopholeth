@@ -13,12 +13,11 @@ production signing keys separate from node hosts and test keys.
 From the checkout:
 
 ```bash
-go build -o bin/soph-omega ./cmd/repram-omega
+go build -o bin/omega ./cmd/omega
 ```
 
-This gives the existing tool its intended local command name. Its built-in
-help and publication hints still mention the old project and domain.
-Use **HTTP ports** in root addresses even where legacy help says gossip port.
+The operator tool is `omega`. Use **HTTP ports** in root addresses.
+Its publication hints share the discovery defaults used by the node.
 
 ## Establish the trust anchor
 
@@ -26,7 +25,7 @@ On the offline signing machine, using a private working directory:
 
 ```bash
 umask 077
-./bin/soph-omega keygen \
+./bin/omega keygen \
   --out-private omega-v1.key \
   --out-public omega-v1.pub
 ```
@@ -37,7 +36,7 @@ Copy only the public key into the release's
 [trust anchor](../internal/trust/omega.go), replacing the placeholder.
 Record the public key, release revision, and operator custody procedure.
 
-No key generation or trust-anchor change is part of the documentation rebrand.
+No production key generation or trust-anchor change is part of the rebrand.
 Disposable lab keys must never become the public network's trust anchor.
 
 ## Sign and publish
@@ -46,7 +45,7 @@ The following addresses are placeholders. Replace them with the deployed
 roots' advertised hostnames and HTTP ports:
 
 ```bash
-./bin/soph-omega sign \
+./bin/omega sign \
   --key omega-v1.key \
   --version omega-v1 \
   --expires-in 24h \
@@ -66,9 +65,9 @@ For the intended launch namespace, publish the signed record at
 omega=_omega.sopholeth.io
 ```
 
-**Prerequisite:** domain ownership and a release configured to query
-`_bootstrap.sopholeth.io`. Current source still queries the old name, so
-publishing these records alone will not migrate it.
+**Prerequisite:** domain ownership and a release containing the real public
+key. Current source queries `_bootstrap.sopholeth.io`; it still contains the
+placeholder trust anchor.
 
 After publication, inspect both records:
 
@@ -95,7 +94,7 @@ are separate clocks.
 - Observe discovery refresh, peer reachability, storage usage, and quorum
   outcomes. A healthy HTTP response alone does not validate the network.
 
-The current environment variable spellings are in
+Environment variables are documented in
 [node configuration](configuration.md). Changing the root set requires
 signing and publishing a new list; nodes adopt it on refresh.
 

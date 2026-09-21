@@ -5,7 +5,8 @@
 ### Documentation and identity
 
 - Adopt **Sopholeth**, pronounced **SOF-oh-leth**, with the identity line
-  **Wisdom through intentional forgetting** and the intended command `soph`.
+  **Wisdom through intentional forgetting**. Reserve `soph` for the future
+  client CLI; the current node executable is `server`.
 - Replace the README with a private-network quick start and local builds that
   work before artifact and repository renames.
 - Consolidate the project overview and whitepaper into an architecture guide.
@@ -16,9 +17,22 @@
 - Retire the obsolete host-specific burn-in runbook and TS deployment
   instructions. Preserve historical releases and experiment observations.
 
-This rebrand pass changes documents only. Source, configuration, website
-assets, published artifacts, and live infrastructure retain their existing
-identifiers.
+### Code and interfaces
+
+- Rename the Go module to `sopholeth` and service commands to `server`,
+  `omega`, and `dashboard`; update imports, containers, CI, and examples.
+- Replace branded configuration with `NODE_*` and `DASHBOARD_STATE_DIR`,
+  and give MCP tools plain names: `store`, `retrieve`, `exists`, `list_keys`.
+- Use `gossip_*`, `http_*`, and `discovery_*` metrics with matching dashboard
+  and burn-in consumers. Authenticate HTTP gossip with `X-Gossip-Signature`.
+- Move default application state to Sopholeth directories and configure
+  discovery names under `sopholeth.io`. No compatibility aliases or automatic
+  state migration are provided.
+- Rebrand the active site and dashboard, replace obsolete installation
+  examples, and make burn-in targets and output directories configurable.
+
+Published artifacts, repository hosting, DNS, and running infrastructure are
+separate launch steps. See the [naming guide](docs/rebrand.md).
 
 ### Existing implementation awaiting release
 

@@ -1,4 +1,4 @@
-module repram
+module sopholeth
 
 go 1.22
 

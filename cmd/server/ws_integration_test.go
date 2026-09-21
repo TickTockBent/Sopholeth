@@ -12,11 +12,11 @@ import (
 
 	gws "github.com/gorilla/websocket"
 
-	"repram/internal/cluster"
-	"repram/internal/gossip"
-	"repram/internal/node"
-	"repram/internal/transport/ws"
-	"repram/internal/tree"
+	"sopholeth/internal/cluster"
+	"sopholeth/internal/gossip"
+	"sopholeth/internal/node"
+	"sopholeth/internal/transport/ws"
+	"sopholeth/internal/tree"
 )
 
 // newSubstrateTestServer spins up an HTTPServer running as a substrate

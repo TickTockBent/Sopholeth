@@ -4,14 +4,14 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o repram ./cmd/repram
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates tzdata
-RUN adduser -D -s /bin/sh repram
+RUN adduser -D -s /bin/sh node
 WORKDIR /app
-COPY --from=builder /app/repram .
-RUN chown -R repram:repram /app
-USER repram
-EXPOSE 8080 9090
-CMD ["./repram"]
+COPY --from=builder /app/server .
+RUN chown -R node:node /app
+USER node
+EXPOSE 8080
+CMD ["./server"]

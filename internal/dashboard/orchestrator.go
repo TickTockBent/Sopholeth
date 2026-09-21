@@ -13,7 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"repram/internal/trust"
+	"sopholeth/internal/trust"
 )
 
 // MaxRootsUnreachableCycles is how many consecutive poll cycles without any
@@ -67,7 +67,7 @@ type Orchestrator struct {
 	// the next ticker fire and race on rootsConsecutiveMisses. TryLock
 	// would let us count skipped cycles, but Go's sync.Mutex doesn't
 	// expose that — we just record an atomic skip count instead.
-	cycleMu      sync.Mutex
+	cycleMu       sync.Mutex
 	cyclesSkipped atomic.Uint64
 
 	// lastSuccessfulPoll backs the dashboard_snapshot_age_seconds
@@ -114,7 +114,7 @@ type Config struct {
 
 	// OmegaDNS overrides the DNS configuration used by trust.FetchSigned
 	// and the refresher. Production callers leave this zero-valued
-	// (real net.Resolver against _bootstrap.repram.io). Tests inject a
+	// (real net.Resolver against the public bootstrap name). Tests inject a
 	// stub TXTResolver so Boot() doesn't make live DNS calls.
 	OmegaDNS trust.DNSConfig
 }

@@ -11,8 +11,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"repram/internal/gossip"
-	"repram/internal/logging"
+	"sopholeth/internal/gossip"
+	"sopholeth/internal/logging"
 )
 
 const (

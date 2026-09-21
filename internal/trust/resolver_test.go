@@ -36,8 +36,8 @@ func TestFetchSignedHappyPath(t *testing.T) {
 
 	resolver := &stubResolver{
 		records: map[string][]string{
-			"_bootstrap.repram.io": {"omega=_omega.repram.io"},
-			"_omega.repram.io":     {list.Encode()},
+			DefaultBootstrapName:  {"omega=" + DefaultSignedListName},
+			DefaultSignedListName: {list.Encode()},
 		},
 	}
 
@@ -54,7 +54,7 @@ func TestFetchSignedHandlesIndirectionMissing(t *testing.T) {
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	resolver := &stubResolver{
 		records: map[string][]string{
-			"_bootstrap.repram.io": {"something-else=value"},
+			DefaultBootstrapName: {"something-else=value"},
 		},
 	}
 	_, err := FetchSigned(context.Background(), DNSConfig{Resolver: resolver}, pub, time.Now())
@@ -74,8 +74,8 @@ func TestFetchSignedPropagatesVerifyFailure(t *testing.T) {
 
 	resolver := &stubResolver{
 		records: map[string][]string{
-			"_bootstrap.repram.io": {"omega=_omega.repram.io"},
-			"_omega.repram.io":     {list.Encode()},
+			DefaultBootstrapName:  {"omega=" + DefaultSignedListName},
+			DefaultSignedListName: {list.Encode()},
 		},
 	}
 	_, err := FetchSigned(context.Background(), DNSConfig{Resolver: resolver}, pub, time.Now())
@@ -97,8 +97,8 @@ func TestFetchSignedPropagatesSignatureMismatch(t *testing.T) {
 
 	resolver := &stubResolver{
 		records: map[string][]string{
-			"_bootstrap.repram.io": {"omega=_omega.repram.io"},
-			"_omega.repram.io":     {list.Encode()},
+			DefaultBootstrapName:  {"omega=" + DefaultSignedListName},
+			DefaultSignedListName: {list.Encode()},
 		},
 	}
 	// Attacker's pubkey does not match the signing key.
@@ -112,7 +112,7 @@ func TestFetchSignedDNSError(t *testing.T) {
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	sentinel := errors.New("dns down")
 	resolver := &stubResolver{
-		err: map[string]error{"_bootstrap.repram.io": sentinel},
+		err: map[string]error{DefaultBootstrapName: sentinel},
 	}
 	_, err := FetchSigned(context.Background(), DNSConfig{Resolver: resolver}, pub, time.Now())
 	if !errors.Is(err, sentinel) {

@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"repram/internal/gossip"
-	"repram/internal/logging"
-	"repram/internal/storage"
+	"sopholeth/internal/gossip"
+	"sopholeth/internal/logging"
+	"sopholeth/internal/storage"
 )
 
 // ErrQuorumTimeout indicates the write was stored locally but quorum
@@ -30,14 +30,14 @@ type ClusterNode struct {
 
 	// isRoot tracks whether this node appears in the currently-trusted
 	// signed root list. Updated on each successful omega refresh
-	// (see cmd/repram/main.go and future phase 4 refresh loop). When
+	// (see cmd/server/main.go and future phase 4 refresh loop). When
 	// false, the HTTP server refuses bootstrap requests with 403.
 	isRoot atomic.Bool
 
 	// seedProvider returns the current bootstrap seed list. Used by the
 	// isolation-recovery loop to re-bootstrap when peer count drops to 0
 	// (#85, F5). Public deployments wire this to the omega refresher's
-	// current list; private deployments wire it to the static REPRAM_PEERS
+	// current list; private deployments wire it to the static NODE_PEERS
 	// list. Nil disables recovery (used for tests and for cases where
 	// re-bootstrap doesn't make sense).
 	seedProvider func() []string
@@ -84,9 +84,9 @@ type WriteOperation struct {
 	// MessageID dedup that keys pendingWrites: there can still be more
 	// than one goroutine that observes "quorum reached" within a single
 	// write's lifetime.
-	Complete    chan bool
-	signalOnce  sync.Once
-	Error       error
+	Complete   chan bool
+	signalOnce sync.Once
+	Error      error
 }
 
 // markComplete signals the write as quorum-reached at most once. Safe

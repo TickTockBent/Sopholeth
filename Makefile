@@ -1,19 +1,20 @@
-BINARY_NAME=repram
-OMEGA_BINARY_NAME=repram-omega
-DASHBOARD_BINARY_NAME=repram-dashboard
+BINARY_NAME=server
+OMEGA_BINARY_NAME=omega
+DASHBOARD_BINARY_NAME=dashboard
+IMAGE_NAME ?= sopholeth/node:local
 
 # Burn-in cluster seeds — useful for `make dashboard-run-burnin` smoke tests.
-BURNIN_SEEDS=10.0.20.72:18080,10.0.10.81:18080,10.0.10.104:18080
+BURNIN_SEEDS ?= localhost:8091,localhost:8092,localhost:8093
 
 .PHONY: build build-omega build-dashboard run dashboard-run-burnin test clean docker-build docker-run docker-compose-up docker-compose-down
 
 build:
-	go build -o bin/$(BINARY_NAME) ./cmd/repram
-	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/repram-omega
+	go build -o bin/$(BINARY_NAME) ./cmd/server
+	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/omega
 	go build -o bin/$(DASHBOARD_BINARY_NAME) ./cmd/dashboard
 
 build-omega:
-	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/repram-omega
+	go build -o bin/$(OMEGA_BINARY_NAME) ./cmd/omega
 
 build-dashboard:
 	go build -o bin/$(DASHBOARD_BINARY_NAME) ./cmd/dashboard
@@ -37,13 +38,13 @@ clean:
 	rm -rf bin/
 
 docker-build:
-	docker build -t ticktockbent/repram-node:latest .
+	docker build -t $(IMAGE_NAME) .
 
 docker-run:
-	docker run -p 8080:8080 -p 9090:9090 ticktockbent/repram-node:latest
+	docker run --rm -p 127.0.0.1:8080:8080 -e NODE_NETWORK=private $(IMAGE_NAME)
 
 docker-compose-up:
-	docker-compose up --build
+	docker compose up --build
 
 docker-compose-down:
-	docker-compose down
+	docker compose down

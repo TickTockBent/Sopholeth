@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"repram/internal/dashboard"
+	"sopholeth/internal/dashboard"
 )
 
 // Static frontend assets — index.html, app.js, vendored vis-network. The
@@ -111,11 +111,11 @@ func defaultStateDir() string {
 	// XDG_STATE_HOME for dev, /var/lib for system installs. Pick the
 	// XDG path when HOME exists so operators don't need root just to
 	// run the dashboard during development.
-	if dir := os.Getenv("REPRAM_DASHBOARD_STATE_DIR"); dir != "" {
+	if dir := os.Getenv("DASHBOARD_STATE_DIR"); dir != "" {
 		return dir
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return home + "/.local/state/repram-dashboard"
+		return home + "/.local/state/sopholeth/dashboard"
 	}
-	return "/var/lib/repram-dashboard"
+	return "/var/lib/sopholeth/dashboard"
 }

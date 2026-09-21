@@ -3,16 +3,15 @@ services:
     build: .
     ports:
       - "8091:8080"
-      - "9091:9090"
     environment:
-      - REPRAM_NODE_ID=node1
-      - REPRAM_ADDRESS=node1
-      - REPRAM_HTTP_PORT=8080
-      - REPRAM_GOSSIP_PORT=9090
-      - REPRAM_NETWORK=private
-      - REPRAM_PEERS=node2:8080,node3:8080
-      - REPRAM_REPLICATION=3
-      - REPRAM_ENCLAVE=enclave-a
+      - NODE_ID=node1
+      - NODE_ADDRESS=node1
+      - NODE_HTTP_PORT=8080
+      - NODE_GOSSIP_PORT=9090
+      - NODE_NETWORK=private
+      - NODE_PEERS=node2:8080,node3:8080
+      - NODE_REPLICATION=3
+      - NODE_ENCLAVE=enclave-a
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/health"]
       interval: 30s
@@ -20,22 +19,21 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - repram-net
+      - cluster
 
   node2:
     build: .
     ports:
       - "8092:8080"
-      - "9092:9090"
     environment:
-      - REPRAM_NODE_ID=node2
-      - REPRAM_ADDRESS=node2
-      - REPRAM_HTTP_PORT=8080
-      - REPRAM_GOSSIP_PORT=9090
-      - REPRAM_NETWORK=private
-      - REPRAM_PEERS=node1:8080,node3:8080
-      - REPRAM_REPLICATION=3
-      - REPRAM_ENCLAVE=enclave-a
+      - NODE_ID=node2
+      - NODE_ADDRESS=node2
+      - NODE_HTTP_PORT=8080
+      - NODE_GOSSIP_PORT=9090
+      - NODE_NETWORK=private
+      - NODE_PEERS=node1:8080,node3:8080
+      - NODE_REPLICATION=3
+      - NODE_ENCLAVE=enclave-a
     depends_on:
       node1:
         condition: service_healthy
@@ -46,22 +44,21 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - repram-net
+      - cluster
 
   node3:
     build: .
     ports:
       - "8093:8080"
-      - "9093:9090"
     environment:
-      - REPRAM_NODE_ID=node3
-      - REPRAM_ADDRESS=node3
-      - REPRAM_HTTP_PORT=8080
-      - REPRAM_GOSSIP_PORT=9090
-      - REPRAM_NETWORK=private
-      - REPRAM_PEERS=node1:8080,node2:8080
-      - REPRAM_REPLICATION=3
-      - REPRAM_ENCLAVE=enclave-b
+      - NODE_ID=node3
+      - NODE_ADDRESS=node3
+      - NODE_HTTP_PORT=8080
+      - NODE_GOSSIP_PORT=9090
+      - NODE_NETWORK=private
+      - NODE_PEERS=node1:8080,node2:8080
+      - NODE_REPLICATION=3
+      - NODE_ENCLAVE=enclave-b
     depends_on:
       node1:
         condition: service_healthy
@@ -74,8 +71,8 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - repram-net
+      - cluster
 
 networks:
-  repram-net:
+  cluster:
     driver: bridge

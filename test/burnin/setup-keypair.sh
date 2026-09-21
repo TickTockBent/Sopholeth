@@ -2,8 +2,8 @@
 # Generate a single-use omega keypair for the burn-in test.
 #
 # Output:
-#   ~/.repram-burnin/omega.priv  (mode 0600) — sign signed-list updates here only
-#   ~/.repram-burnin/omega.pub   (mode 0644) — bake into the burn-in images
+#   ~/.local/state/sopholeth/burnin/omega.priv  (mode 0600) — sign signed-list updates here only
+#   ~/.local/state/sopholeth/burnin/omega.pub   (mode 0644) — bake into the burn-in images
 #
 # DO NOT commit either file. DO NOT reuse this key for anything else. Delete
 # both files at burn-in teardown.
@@ -14,17 +14,17 @@
 set -euo pipefail
 
 repo_root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
-out_dir="$HOME/.repram-burnin"
+out_dir="${BURNIN_STATE_DIR:-$HOME/.local/state/sopholeth/burnin}"
 
 mkdir -p "$out_dir"
 chmod 700 "$out_dir"
 
-if [[ ! -x "$repo_root/bin/repram-omega" ]]; then
-    echo "==> building bin/repram-omega"
+if [[ ! -x "$repo_root/bin/omega" ]]; then
+    echo "==> building bin/omega"
     (cd "$repo_root" && make build-omega)
 fi
 
-"$repo_root/bin/repram-omega" keygen \
+"$repo_root/bin/omega" keygen \
     --out-private "$out_dir/omega.priv" \
     --out-public "$out_dir/omega.pub"
 

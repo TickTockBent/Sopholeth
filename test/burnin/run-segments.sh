@@ -10,19 +10,20 @@
 #   ./test/burnin/run-segments.sh
 #
 # Env vars (all optional):
-#   REPRAM_NODES         — comma-sep node URLs (default: burn-in cluster)
+#   BURNIN_NODES         — comma-separated node URLs (default: localhost:8080)
+#   BURNIN_STATE_DIR     — log directory (default: ~/.local/state/sopholeth/burnin)
 #   SEGMENT_DURATION     — per-segment duration (default: 12h)
 #   TOTAL_SEGMENTS       — how many segments (default: 6 = 72h)
 #   K6_PROMETHEUS_RW_SERVER_URL — Prometheus remote-write URL
 
 set -uo pipefail
 
-NODES="${REPRAM_NODES:-http://10.0.20.72:18080,http://10.0.10.81:18080,http://10.0.10.104:18080}"
+NODES="${BURNIN_NODES:-http://localhost:8080}"
 DURATION="${SEGMENT_DURATION:-12h}"
 SEGMENTS="${TOTAL_SEGMENTS:-6}"
 PROM_URL="${K6_PROMETHEUS_RW_SERVER_URL:-http://localhost:9090/api/v1/write}"
-WORKDIR=/home/ticktockbent/projects/infrastructure/repram/test/burnin
-LOGDIR="$HOME/.repram-burnin"
+WORKDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+LOGDIR="${BURNIN_STATE_DIR:-$HOME/.local/state/sopholeth/burnin}"
 
 mkdir -p "$LOGDIR"
 
@@ -41,7 +42,7 @@ for seg in $(seq 1 "$SEGMENTS"); do
 
     docker run --rm -i --network host \
         -v "$WORKDIR":/work \
-        -e REPRAM_NODES="$NODES" \
+        -e BURNIN_NODES="$NODES" \
         -e BURNIN_DURATION="$DURATION" \
         -e SKIP_SETUP="$skip_setup" \
         -e SEGMENT="$seg" \

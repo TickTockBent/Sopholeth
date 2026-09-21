@@ -117,8 +117,8 @@ func TestRefresherUpdatesOnSchedule(t *testing.T) {
 	clock := newFakeClock(start)
 	resolver := &stubResolver{
 		records: map[string][]string{
-			"_bootstrap.repram.io": {"omega=_omega.repram.io"},
-			"_omega.repram.io":     {refreshed.Encode()},
+			DefaultBootstrapName:  {"omega=" + DefaultSignedListName},
+			DefaultSignedListName: {refreshed.Encode()},
 		},
 	}
 
@@ -175,7 +175,7 @@ func TestRefresherRetainsListOnFailure(t *testing.T) {
 	clock := newFakeClock(start)
 	sentinel := errors.New("simulated DNS failure")
 	resolver := &stubResolver{
-		err: map[string]error{"_bootstrap.repram.io": sentinel},
+		err: map[string]error{DefaultBootstrapName: sentinel},
 	}
 
 	errCh := make(chan error, 4)
@@ -224,8 +224,8 @@ func TestRefresherTriggerForcesImmediateRefresh(t *testing.T) {
 	clock := newFakeClock(start)
 	resolver := &stubResolver{
 		records: map[string][]string{
-			"_bootstrap.repram.io": {"omega=_omega.repram.io"},
-			"_omega.repram.io":     {fresh.Encode()},
+			DefaultBootstrapName:  {"omega=" + DefaultSignedListName},
+			DefaultSignedListName: {fresh.Encode()},
 		},
 	}
 

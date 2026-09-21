@@ -1,4 +1,4 @@
-// REPRAM ramp-to-failure test.
+// Node ramp-to-failure test.
 //
 // Two independent scenarios that run sequentially:
 //
@@ -20,12 +20,11 @@
 //   - Latency shape: if latency climbs but throughput is flat → contention
 //     (pendingWrites mutex, connection pool). If throughput climbs then drops
 //     sharply → resource exhaustion (memory, file descriptors).
-//   - TS external memory: should stabilize at each plateau if the fetch drain
-//     fix holds. Linear climb with rate = leak path still open.
+//   - Process memory: compare heap and RSS over each plateau and recovery.
 //
 // Run:
 //   k6 run \
-//     -e REPRAM_NODES=http://10.0.20.72:18080,http://10.0.10.81:18080,http://10.0.10.104:18080 \
+//     -e BURNIN_NODES=http://localhost:8080 \
 //     test/burnin/ramp-to-failure.js
 //
 // To run only one scenario:
@@ -33,14 +32,14 @@
 //   -e SCENARIO=data     (skip ops ceiling)
 //
 // TTL mode (affects GC pressure profile):
-//   -e TTL_MODE=short    (10-30s TTLs — streaming simulation)
+//   -e TTL_MODE=short    (requests 10-30s; the node clamps these to its TTL floor)
 //   -e TTL_MODE=long     (300-600s TTLs — default, matches burn-in)
 
 import http from 'k6/http';
 import { check } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
-const NODES = (__ENV.REPRAM_NODES || 'http://localhost:18080').split(',').map(s => s.trim());
+const NODES = (__ENV.BURNIN_NODES || 'http://localhost:8080').split(',').map(s => s.trim());
 const SCENARIO_FILTER = (__ENV.SCENARIO || 'both').toLowerCase();
 const TTL_MODE = (__ENV.TTL_MODE || 'long').toLowerCase();
 
@@ -333,7 +332,7 @@ export function handleSummary(data) {
     lines.push('');
     lines.push('Look for the inflection point: the stage where 202s first');
     lines.push('appear is your quorum reliability ceiling. If 429s dominate,');
-    lines.push('raise REPRAM_RATE_LIMIT and rerun to find the real wall.');
+    lines.push('raise NODE_RATE_LIMIT and rerun to find the real wall.');
     lines.push('');
 
     console.log(lines.join('\n'));

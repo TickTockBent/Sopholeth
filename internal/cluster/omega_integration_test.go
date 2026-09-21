@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"repram/internal/gossip"
-	"repram/internal/trust"
+	"sopholeth/internal/gossip"
+	"sopholeth/internal/trust"
 )
 
 // This file is the omega-bootstrap end-to-end integration test (#90, F10).
@@ -68,7 +68,7 @@ func signTestList(t *testing.T, priv ed25519.PrivateKey, expires int64, nodes []
 }
 
 // makeOmegaBootstrapHandler mirrors the production /v1/bootstrap handler
-// in cmd/repram/main.go: returns 403 when the node is not a root, otherwise
+// in cmd/server/main.go: returns 403 when the node is not a root, otherwise
 // delegates to ClusterNode.HandleBootstrap. The harness in
 // integration_test.go skips the gate (it's used by tests where IsRoot is
 // not a concept), so this dedicated handler exists for the omega tests.
@@ -347,4 +347,3 @@ func TestOmegaBootstrap_ExpiredListRejected(t *testing.T) {
 		t.Fatal("FetchSigned accepted an expired list; freshness gate is broken")
 	}
 }
-

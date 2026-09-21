@@ -15,8 +15,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"repram/internal/gossip"
-	"repram/internal/transport/ws"
+	"sopholeth/internal/gossip"
+	"sopholeth/internal/transport/ws"
 )
 
 // ---- helpers ----------------------------------------------------------
@@ -550,10 +550,10 @@ func TestAttachCachesTopologyExcludingSelf(t *testing.T) {
 
 func TestParseSeedAddress(t *testing.T) {
 	cases := []struct {
-		in       string
-		ok       bool
-		addr     string
-		port     int
+		in   string
+		ok   bool
+		addr string
+		port int
 	}{
 		{"10.0.0.5:8080", true, "10.0.0.5", 8080},
 		{"host.example:443", true, "host.example", 443},

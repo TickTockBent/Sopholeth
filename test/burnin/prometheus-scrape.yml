@@ -1,41 +1,18 @@
-# Drop-in scrape config snippet for the REPRAM 2.1 burn-in.
-# Append the contents of `scrape_configs:` below to your existing
-# prometheus.yml's scrape_configs list, then `systemctl reload prometheus`
-# (or send SIGHUP to the prometheus process).
-#
-# Targets are pinned to the burn-in cluster's LAN addresses
-# (10.0.20.72 = node-a/observer, 10.0.10.81 = node-b, 10.0.10.104 = node-c).
-
+# Node metrics for the local Compose cluster.
+# Change targets to the observer-reachable HTTP endpoints for your run.
+# Compose deliberately uses two enclaves; use one enclave for replication tests.
 scrape_configs:
-  # REPRAM Go nodes — full /v1/metrics (go_memstats_*, repram_peers_active,
-  # repram_peer_{evictions,joins}_total, repram_ping_failures_total, etc.)
-  - job_name: repram_burnin_go
+  - job_name: node_burnin
     metrics_path: /v1/metrics
     scrape_interval: 15s
     static_configs:
       - targets:
-          - 10.0.20.72:18080
-          - 10.0.10.81:18080
+          - localhost:8091
+          - localhost:8092
+          - localhost:8093
         labels:
           cluster: burnin
           impl: go
 
-  # REPRAM TS node — same /v1/metrics endpoint as the Go nodes
-  # (process_resident_memory_bytes, nodejs_eventloop_lag_seconds, plus the
-  # repram_* peer + omega-refresh metrics).
-  - job_name: repram_burnin_ts
-    metrics_path: /v1/metrics
-    scrape_interval: 15s
-    static_configs:
-      - targets:
-          - 10.0.10.104:18080
-        labels:
-          cluster: burnin
-          impl: ts
-
-  # k6 metrics — k6 can push to Prometheus via experimental remote-write.
-  # Run k6 with:
-  #   K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
-  #   k6 run --out experimental-prometheus-rw test/burnin/workload.js
-  # That requires Prometheus started with --enable-feature=remote-write-receiver.
-  # No scrape job needed — k6 pushes directly.
+# k6 can separately push driver metrics through Prometheus remote-write.
+# Configure the receiver and K6_PROMETHEUS_RW_SERVER_URL for your observer.

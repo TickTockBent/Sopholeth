@@ -1,9 +1,9 @@
 # Sopholeth validation harness
 
 This directory contains load generators, lab helpers, and historical
-observations. The scripts still use legacy identifiers and some assume the
-original private lab. They need an implementation pass before they form a
-portable public-alpha validation suite.
+observations. Helpers accept explicit targets and state directories; the
+signing loop still requires a dedicated dnsmasq lab host. These tools do not
+replace the public-alpha acceptance scenarios described below.
 
 ## Available tools
 
@@ -11,13 +11,19 @@ portable public-alpha validation suite.
 | --- | --- |
 | [workload.js](workload.js) | k6 mixed reads and writes, reference keys, and expired-key probes. |
 | [ramp-to-failure.js](ramp-to-failure.js) | k6 request-rate and payload-size ramps; `TTL_MODE=short` is clamped by the node's five-minute floor. |
-| [run-segments.sh](run-segments.sh) | Segmented soak runner with a hardcoded checkout path, lab endpoints, and Prometheus defaults. |
-| [setup-keypair.sh](setup-keypair.sh) | Creates a disposable lab signing key under the legacy home-directory path. |
+| [run-segments.sh](run-segments.sh) | Segmented Docker/k6 soak runner; accepts `BURNIN_NODES`, `BURNIN_STATE_DIR`, and a Prometheus remote-write URL. |
+| [setup-keypair.sh](setup-keypair.sh) | Creates a disposable lab signing key under `BURNIN_STATE_DIR`. |
 | [build-images.sh](build-images.sh) | Builds the Go test-key image using [Dockerfile.go-node](Dockerfile.go-node); the TS image has been removed. |
 | [sign-loop.sh](sign-loop.sh) | Lab-only online signing and dnsmasq restart loop; modifies host service configuration. |
-| [snapshot.sh](snapshot.sh) | Captures metrics from hardcoded lab hosts. |
-| [ramp-pprof-capture.sh](ramp-pprof-capture.sh) | Profiling helper; review targets and output paths before use. |
-| [prometheus-scrape.yml](prometheus-scrape.yml) and [grafana-dashboard.json](grafana-dashboard.json) | Historical monitoring configuration that needs target and metric review. |
+| [snapshot.sh](snapshot.sh) | Captures metrics from `BURNIN_NODES`; writes to `SNAPSHOT_LOG` or the state directory. |
+| [ramp-pprof-capture.sh](ramp-pprof-capture.sh) | Captures Go profiles from comma-separated `PPROF_TARGETS`; requires enabled node profiling listeners. |
+| [prometheus-scrape.yml](prometheus-scrape.yml) and [grafana-dashboard.json](grafana-dashboard.json) | Go metrics dashboard and host-side scrape targets for the three-node Compose setup; adjust targets for other deployments. |
+
+`BURNIN_NODES` defaults to `http://localhost:8080`; `BURNIN_STATE_DIR` defaults
+to `$HOME/.local/state/sopholeth/burnin`. Profiling defaults to
+`http://127.0.0.1:6060`. The signing loop requires `PRIVATE_KEY`, `ROOT_NODES`
+(`host:http-port` entries), and `DNSMASQ_HOSTS_FILE`; `BOOTSTRAP_NAME` and
+`BOOTSTRAP_TARGET` select its DNS records.
 
 Use [omega operations](../../docs/omega-operations.md) for the production
 signing workflow. A test-key image is not a public release.
@@ -28,16 +34,16 @@ With Go and k6 installed, start a disposable private node from the repository
 root. The higher request limit accommodates the setup writes:
 
 ```bash
-go build -o bin/soph ./cmd/repram
-REPRAM_NETWORK=private REPRAM_MAX_STORAGE_MB=50 REPRAM_RATE_LIMIT=1000 \
-  ./bin/soph
+go build -o bin/server ./cmd/server
+NODE_NETWORK=private NODE_MAX_STORAGE_MB=50 NODE_RATE_LIMIT=1000 \
+  ./bin/server
 ```
 
 In another terminal, from the same checkout:
 
 ```bash
 k6 run \
-  -e REPRAM_NODES=http://localhost:8080 \
+  -e BURNIN_NODES=http://localhost:8080 \
   -e BURNIN_DURATION=1m \
   test/burnin/workload.js
 ```
@@ -69,7 +75,7 @@ recovery time. Preserve the actual accepted TTLs. Allocation totals and
 process uptime cannot substitute for request or correctness measurements.
 
 See the [roadmap](../../docs/roadmap.md#before-public-alpha) for the complete
-launch gates. No new burn-in result is claimed by this documentation pass.
+launch gates. No new sustained burn-in result is claimed by this rebrand.
 
 ## Historical evidence
 

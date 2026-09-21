@@ -21,15 +21,15 @@ const clientIPKey contextKey = "client_ip"
 type RateLimiter struct {
 	buckets map[string]*tokenBucket
 	mutex   sync.RWMutex
-	rate    int           // requests per second
-	burst   int           // max burst size
+	rate    int // requests per second
+	burst   int // max burst size
 	cleanup chan struct{}
 }
 
 type tokenBucket struct {
-	tokens    int
+	tokens     int
 	lastRefill time.Time
-	mutex     sync.Mutex
+	mutex      sync.Mutex
 }
 
 func NewRateLimiter(rate, burst int) *RateLimiter {
@@ -39,7 +39,7 @@ func NewRateLimiter(rate, burst int) *RateLimiter {
 		burst:   burst,
 		cleanup: make(chan struct{}),
 	}
-	
+
 	go rl.cleanupStaleEntries()
 	return rl
 }
@@ -55,15 +55,15 @@ func (rl *RateLimiter) Allow(ip string) bool {
 		rl.buckets[ip] = bucket
 	}
 	rl.mutex.Unlock()
-	
+
 	bucket.mutex.Lock()
 	defer bucket.mutex.Unlock()
-	
+
 	// Refill tokens based on time elapsed
 	now := time.Now()
 	elapsed := now.Sub(bucket.lastRefill)
 	tokensToAdd := int(elapsed.Seconds() * float64(rl.rate))
-	
+
 	if tokensToAdd > 0 {
 		bucket.tokens += tokensToAdd
 		if bucket.tokens > rl.burst {
@@ -71,19 +71,19 @@ func (rl *RateLimiter) Allow(ip string) bool {
 		}
 		bucket.lastRefill = now
 	}
-	
+
 	if bucket.tokens > 0 {
 		bucket.tokens--
 		return true
 	}
-	
+
 	return false
 }
 
 func (rl *RateLimiter) cleanupStaleEntries() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -116,9 +116,9 @@ type SecurityMiddleware struct {
 }
 
 type SecurityMetrics struct {
-	rateLimitedRequests   prometheus.Counter
-	oversizedRequests     prometheus.Counter
-	suspiciousRequests    prometheus.Counter
+	rateLimitedRequests prometheus.Counter
+	oversizedRequests   prometheus.Counter
+	suspiciousRequests  prometheus.Counter
 }
 
 var (
@@ -130,15 +130,15 @@ func newSecurityMetrics() *SecurityMetrics {
 	sharedSecurityMetricsOnce.Do(func() {
 		sharedSecurityMetrics = &SecurityMetrics{
 			rateLimitedRequests: prometheus.NewCounter(prometheus.CounterOpts{
-				Name: "repram_rate_limited_requests_total",
+				Name: "http_rate_limited_requests_total",
 				Help: "Total number of rate-limited requests",
 			}),
 			oversizedRequests: prometheus.NewCounter(prometheus.CounterOpts{
-				Name: "repram_oversized_requests_total",
+				Name: "http_oversized_requests_total",
 				Help: "Total number of oversized requests rejected",
 			}),
 			suspiciousRequests: prometheus.NewCounter(prometheus.CounterOpts{
-				Name: "repram_suspicious_requests_total",
+				Name: "http_suspicious_requests_total",
 				Help: "Total number of suspicious requests detected",
 			}),
 		}
@@ -162,12 +162,13 @@ func NewSecurityMiddleware(rateLimit, burst int, maxRequestSize int64, trustProx
 
 // peerEndpoints are inter-cluster paths that the per-IP rate limiter must
 // not apply to. Two reasons:
-//   1. When REPRAM_CLUSTER_SECRET is set, these endpoints are HMAC-gated
-//      already (verifyGossipSignature). Authenticated peer traffic at
-//      cluster volumes legitimately exceeds the client-tier per-IP rate.
-//   2. In open mode, the operator has explicitly accepted no-auth on the
-//      cluster plane — applying a client-tier rate limit there is
-//      inconsistent with that trust model.
+//  1. When NODE_CLUSTER_SECRET is set, these endpoints are HMAC-gated
+//     already (verifyGossipSignature). Authenticated peer traffic at
+//     cluster volumes legitimately exceeds the client-tier per-IP rate.
+//  2. In open mode, the operator has explicitly accepted no-auth on the
+//     cluster plane — applying a client-tier rate limit there is
+//     inconsistent with that trust model.
+//
 // Either way, applying the client rate limit here was the F6 burn-in
 // symptom: peer-to-peer gossip got 429'd and the cluster broke at modest
 // volumes (#86). Other security checks (size, scanner, headers) still
@@ -191,26 +192,26 @@ func (sm *SecurityMiddleware) Middleware(next http.Handler) http.Handler {
 				return
 			}
 		}
-		
+
 		// Check request size
 		if r.ContentLength > sm.maxRequestSize {
 			sm.metrics.oversizedRequests.Inc()
 			http.Error(w, "Request too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		
+
 		// Check for suspicious patterns
 		if sm.isSuspiciousRequest(r) {
 			sm.metrics.suspiciousRequests.Inc()
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-		
+
 		// Add security context
 		ctx := r.Context()
 		ctx = context.WithValue(ctx, clientIPKey, clientIP)
 		r = r.WithContext(ctx)
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -222,9 +223,7 @@ func (sm *SecurityMiddleware) applySecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'")
-	
-	// REPRAM-specific headers
-	w.Header().Set("X-REPRAM-Node", "1.0.0")
+
 }
 
 func (sm *SecurityMiddleware) getClientIP(r *http.Request) string {
@@ -256,7 +255,7 @@ func (sm *SecurityMiddleware) isSuspiciousRequest(r *http.Request) bool {
 
 	// Block known vulnerability scanners by user-agent.
 	// Only scanner-specific tools — not general-purpose HTTP libraries.
-	// REPRAM is permissionless by design; python-requests, curl, etc. are legitimate clients.
+	// The API is permissionless; python-requests, curl, etc. are legitimate clients.
 	scannerUAs := []string{
 		"sqlmap",
 		"nikto",
@@ -273,7 +272,7 @@ func (sm *SecurityMiddleware) isSuspiciousRequest(r *http.Request) bool {
 		}
 	}
 
-	// No URL pattern matching. REPRAM is a key-value store that treats keys and
+	// No URL pattern matching. The store treats keys and
 	// values as opaque bytes — there is no SQL layer, no HTML rendering, and no
 	// filesystem access. Substring checks on URLs would false-positive on legitimate
 	// keys like "user_selection", "drop_zone", or "script_output".
@@ -300,7 +299,7 @@ func MaxRequestSizeMiddleware(maxSize int64) func(http.Handler) http.Handler {
 				http.Error(w, "Request too large", http.StatusRequestEntityTooLarge)
 				return
 			}
-			
+
 			// Also set a limit on the request body reader
 			r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 			next.ServeHTTP(w, r)

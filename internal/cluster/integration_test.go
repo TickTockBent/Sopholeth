@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"repram/internal/gossip"
+	"sopholeth/internal/gossip"
 )
 
 // testNode wraps a ClusterNode with its HTTP server for integration testing.

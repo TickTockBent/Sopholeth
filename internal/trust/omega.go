@@ -1,9 +1,9 @@
-// Package trust holds the baked-in trust anchors for REPRAM's public network.
+// Package trust holds the baked-in trust anchors for the public network.
 //
 // OmegaPubkey is the root of trust for DNS-delivered bootstrap data. The
 // corresponding private key is held offline by the network operator and is
 // used only to sign root lists published via DNS TXT records (see
-// docs/REPRAM-2.1-Spec.md). The private key is never deployed to any
+// docs/discovery.md). The private key is never deployed to any
 // node and never transmitted over any network.
 //
 // OmegaVersion identifies the signing scheme. Future spec revisions that

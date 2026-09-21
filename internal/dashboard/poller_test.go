@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// fakeNode is a tiny in-memory REPRAM node: serves /v1/topology, /v1/status,
+// fakeNode is a tiny in-memory node: serves /v1/topology, /v1/status,
 // and /v1/metrics with operator-supplied payloads. Used by poller tests to
 // stand up small clusters without touching the network.
 type fakeNode struct {
@@ -80,9 +80,9 @@ func TestPollerWalksFullCluster(t *testing.T) {
 		{ID: "node-b", Address: b.host, HTTPPort: b.httpPort, Enclave: "default"},
 	}
 	a.metrics = map[string]uint64{
-		"repram_peer_joins_total":     5,
-		"repram_peer_evictions_total": 1,
-		"repram_ping_failures_total":  2,
+		"gossip_peer_joins_total":     5,
+		"gossip_peer_evictions_total": 1,
+		"gossip_ping_failures_total":  2,
 	}
 
 	p := NewPoller(4, 2*time.Second)
@@ -129,11 +129,11 @@ func TestPollerMarksUnreachableOnTopologyFailure(t *testing.T) {
 }
 
 func TestParseMetricsExtractsCounters(t *testing.T) {
-	text := `# HELP repram_peer_joins_total foo
-# TYPE repram_peer_joins_total counter
-repram_peer_joins_total 12
-repram_peer_evictions_total 3
-repram_ping_failures_total 1
+	text := `# HELP gossip_peer_joins_total foo
+# TYPE gossip_peer_joins_total counter
+gossip_peer_joins_total 12
+gossip_peer_evictions_total 3
+gossip_ping_failures_total 1
 unrelated_metric 999
 go_gc_duration_seconds{quantile="0"} 0.001
 `
