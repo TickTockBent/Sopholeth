@@ -95,6 +95,19 @@ func resolveConfigDir(getenv func(string) string) (string, error) {
 	return filepath.Join(home, ".config", "sopholeth"), nil
 }
 
+// Resolve configuration only for commands that use it, so help and version
+// work even when no configuration directory is available.
+func (a *app) loadConfig() (*Config, error) {
+	if a.configPath == "" {
+		dir, err := resolveConfigDir(a.getenv)
+		if err != nil {
+			return nil, usagef("%v", err)
+		}
+		a.configPath = filepath.Join(dir, configFileName)
+	}
+	return loadConfig(a.configPath)
+}
+
 // loadConfig reads the config file. A missing file yields an empty config.
 func loadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)

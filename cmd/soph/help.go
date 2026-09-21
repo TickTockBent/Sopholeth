@@ -1,0 +1,64 @@
+package main
+
+import (
+	"bytes"
+	"flag"
+	"fmt"
+)
+
+// commandHelp preserves the command's flags for rendering after parsing has
+// stopped, before any configuration, input, or network operations occur.
+type commandHelp struct{ flags *flag.FlagSet }
+
+func (*commandHelp) Error() string { return "help requested" }
+
+func (a *app) printCommandHelp(fs *flag.FlagSet) error {
+	commands := map[string]struct{ args, description string }{
+		"join":     {"[endpoint] [--name name] [--public]", "Validate and save a node, making its network current. Without an endpoint, use signed public discovery."},
+		"use":      {"<name>", "Make a saved network current."},
+		"networks": {"", "List saved networks; * marks the current one."},
+		"forget":   {"<name>", "Remove a saved network."},
+		"put":      {"[key] [--ttl seconds] [--file path] [--require-confirmed]", "Write stdin or a file. Generate a key if omitted; print the key to stdout."},
+		"get":      {"<key> [--output path]", "Write the stored value's bytes to stdout or a file."},
+		"exists":   {"<key>", "Check presence and local TTL without the payload. Alias: head."},
+		"list":     {"[--prefix p] [--limit n] [--cursor c] [--all]", "List live keys on the contacted node."},
+		"health":   {"", "Show the node's health and identity as JSON."},
+		"status":   {"", "Show the node's status as JSON."},
+		"topology": {"", "Show the node's topology as JSON."},
+		"metrics":  {"", "Show the node's Prometheus metrics."},
+		"version":  {"", "Show the client version."},
+	}
+	info := commands[fs.Name()]
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "Usage: soph [global flags] %s", fs.Name())
+	if info.args != "" {
+		fmt.Fprintf(&buf, " %s", info.args)
+	}
+	fmt.Fprintf(&buf, "\n\n%s\n\nCommand flags:\n", info.description)
+	fs.SetOutput(&buf)
+	defer fs.SetOutput(nil)
+	fs.PrintDefaults()
+	buf.WriteString("  -h, --help\n    \tshow this command's help\n\nGlobal flags go before the command; see 'soph help'.\n")
+	_, err := a.stdout.Write(buf.Bytes())
+	return err
+}
+
+func (a *app) cmdVersion(args []string) error {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	pos, err := parseInterspersed(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 0 {
+		return usagef("version takes no arguments")
+	}
+	return a.printf("soph (Sopholeth client, development build)\n")
+}
+
+func (a *app) printf(format string, args ...any) error {
+	_, err := fmt.Fprintf(a.stdout, format, args...)
+	if err != nil {
+		return fmt.Errorf("write stdout: %w", err)
+	}
+	return nil
+}

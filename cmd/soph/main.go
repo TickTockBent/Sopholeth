@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -59,6 +58,10 @@ type app struct {
 }
 
 func main() {
+	os.Exit(runMain())
+}
+
+func runMain() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	a := &app{
@@ -69,7 +72,7 @@ func main() {
 		publicDiscovery: realPublicDiscovery,
 		newHTTPClient:   func() *http.Client { return &http.Client{} },
 	}
-	os.Exit(a.run(ctx, os.Args[1:]))
+	return a.run(ctx, os.Args[1:])
 }
 
 // usageError marks a problem with how soph was invoked, as opposed to a
@@ -107,7 +110,9 @@ func (a *app) run(ctx context.Context, args []string) int {
 	}
 	rest := global.Args()
 	if *showHelp || len(rest) == 0 {
-		a.printUsage(a.stdout)
+		if err := a.printUsage(a.stdout); err != nil {
+			return a.fail(err)
+		}
 		if len(rest) == 0 && !*showHelp {
 			return exitUsage
 		}
@@ -116,20 +121,19 @@ func (a *app) run(ctx context.Context, args []string) int {
 	if a.timeout <= 0 {
 		return a.fail(usagef("--timeout must be positive"))
 	}
-	if a.configPath == "" {
-		dir, err := resolveConfigDir(a.getenv)
-		if err != nil {
-			return a.fail(usagef("%v", err))
-		}
-		a.configPath = filepath.Join(dir, configFileName)
-	}
-
 	cmd, cmdArgs := rest[0], rest[1:]
+	if cmd == "help" {
+		if len(cmdArgs) > 1 {
+			return a.fail(usagef("usage: soph help [command]"))
+		}
+		if len(cmdArgs) == 1 {
+			cmd, cmdArgs = cmdArgs[0], []string{"--help"}
+		}
+	}
 	var err error
 	switch cmd {
 	case "help", "-h", "--help":
-		a.printUsage(a.stdout)
-		return exitOK
+		err = a.printUsage(a.stdout)
 	case "join":
 		err = a.cmdJoin(ctx, cmdArgs)
 	case "use":
@@ -149,10 +153,13 @@ func (a *app) run(ctx context.Context, args []string) int {
 	case "health", "status", "topology", "metrics":
 		err = a.cmdDiagnostic(ctx, cmd, cmdArgs)
 	case "version":
-		fmt.Fprintln(a.stdout, "soph (Sopholeth client, development build)")
-		return exitOK
+		err = a.cmdVersion(cmdArgs)
 	default:
 		err = usagef("unknown command %q; run 'soph help'", cmd)
+	}
+	var help *commandHelp
+	if errors.As(err, &help) {
+		err = a.printCommandHelp(help.flags)
 	}
 	if err != nil {
 		return a.fail(err)
@@ -201,6 +208,9 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 	for {
 		if err := fs.Parse(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return nil, &commandHelp{flags: fs}
+			}
 			return nil, usagef("%v", err)
 		}
 		rest := fs.Args()
@@ -218,8 +228,8 @@ func (a *app) requestContext(ctx context.Context) (context.Context, context.Canc
 	return context.WithTimeout(ctx, a.timeout)
 }
 
-func (a *app) printUsage(w io.Writer) {
-	fmt.Fprint(w, strings.TrimLeft(`
+func (a *app) printUsage(w io.Writer) error {
+	_, err := fmt.Fprint(w, strings.TrimLeft(`
 soph - Sopholeth client
 
 Usage:
@@ -253,6 +263,8 @@ Global flags:
   --timeout <dur>    per-request timeout (default 15s)
   --config <path>    config file (default $SOPH_CONFIG_DIR/soph.json)
 
+Use 'soph <command> --help' for command-specific flags and arguments.
+
 Exit codes: 0 ok, 1 node or local error, 2 usage, 3 not found on contacted node,
 4 node unreachable or timed out, 5 write pending (only with --require-confirmed).
 
@@ -260,4 +272,5 @@ Reads and listings reflect the contacted node only. A missing key there
 does not mean it is absent from the network. TTL is mandatory and local to
 each replica; the node may clamp the requested value to its bounds.
 `, "\n"))
+	return err
 }

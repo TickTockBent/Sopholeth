@@ -329,7 +329,8 @@ func TestPutGeneratesKeyAndReportsJSON(t *testing.T) {
 	if len(key) != 36 || res["generated_key"] != true {
 		t.Fatalf("generated key result = %v", res)
 	}
-	if res["quorum_status"] != "confirmed" || res["ttl_local"] != float64(1800) {
+	observed, _ := res["observed_current_key"].(map[string]any)
+	if res["quorum_status"] != "confirmed" || observed["ttl_seconds"] != float64(1800) {
 		t.Fatalf("result = %v", res)
 	}
 	if _, ok := res["ttl_requested"]; ok {
@@ -340,18 +341,20 @@ func TestPutGeneratesKeyAndReportsJSON(t *testing.T) {
 	}
 }
 
-func TestPutReportsClampedTTL(t *testing.T) {
+func TestPutSeparatesRequestedAndObservedTTL(t *testing.T) {
 	_, addr := startFakeNode(t)
 	ta := newTestApp(t)
 	ta.mustRun(t, "", "join", addr)
 
 	_, errOut := ta.mustRun(t, "v", "put", "k", "--ttl", "5")
-	if !strings.Contains(errOut, "local ttl 300s (requested 5s, clamped by node)") {
-		t.Fatalf("clamp not reported: %q", errOut)
+	if !strings.Contains(errOut, "requested ttl 5s") ||
+		!strings.Contains(errOut, `observed current key "k": local ttl 300s`) || strings.Contains(errOut, "clamped") {
+		t.Fatalf("requested and observed TTL not separated: %q", errOut)
 	}
 	out, _ := ta.mustRun(t, "v", "--json", "put", "k", "--ttl", "5")
 	res := decodeJSON(t, out)
-	if res["ttl_requested"] != float64(5) || res["ttl_local"] != float64(300) {
+	observed, _ := res["observed_current_key"].(map[string]any)
+	if res["ttl_requested"] != float64(5) || observed["ttl_seconds"] != float64(300) {
 		t.Fatalf("json ttl fields = %v", res)
 	}
 }
@@ -639,7 +642,7 @@ func TestPublicJoinWithTestAnchor(t *testing.T) {
 	if !strings.Contains(out, "public, signed-list") || !strings.Contains(out, "http://"+addr) {
 		t.Fatalf("public join out = %q", out)
 	}
-	if !strings.Contains(errOut, "root 127.0.0.1:1 did not answer") {
+	if !strings.Contains(errOut, "root 127.0.0.1:1 failed health check") {
 		t.Fatalf("dead root should be reported: %q", errOut)
 	}
 	cfg, _ := loadConfig(ta.configPath)

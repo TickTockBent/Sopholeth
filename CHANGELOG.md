@@ -11,8 +11,12 @@
   `$XDG_CONFIG_HOME/sopholeth/soph.json` with no fallback between them.
   Public joining resolves signed discovery and reports clearly that it is
   unavailable until the trust anchor exists. Writes report confirmed versus
-  pending quorum and the TTL the node actually applied. Stable exit codes
-  distinguish missing keys, unreachable nodes, and usage errors.
+  pending quorum, with subsequent current-key TTL observations reported
+  separately. Stable exit codes distinguish missing keys, unreachable nodes,
+  and usage errors.
+- Cancel blocked write input on interruption, reject invalid join health
+  reports without changing saved profiles, and report output failures while
+  preserving known write outcomes. Add command-specific help.
 - Add `internal/client`, the reusable node API client the CLI is built on,
   and `internal/client/clienttest`, an in-memory node for tests.
 
@@ -27,8 +31,8 @@
 ### Documentation and identity
 
 - Adopt **Sopholeth**, pronounced **SOF-oh-leth**, with the identity line
-  **Wisdom through intentional forgetting**. Reserve `soph` for the future
-  client CLI; the current node executable is `server`.
+  **Wisdom through intentional forgetting**. Use `soph` for the client CLI;
+  the node executable is `server`.
 - Replace the README with a private-network quick start and local builds that
   work before artifact and repository renames.
 - Consolidate the project overview and whitepaper into an architecture guide.

@@ -58,7 +58,7 @@ func (a *app) selectNetwork(cfg *Config) (string, *Network, error) {
 
 // connect loads config, selects a network, and returns a client for it.
 func (a *app) connect() (string, *Network, *client.Client, error) {
-	cfg, err := loadConfig(a.configPath)
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -88,7 +88,7 @@ func (a *app) cmdJoin(ctx context.Context, args []string) error {
 		}
 	}
 
-	cfg, err := loadConfig(a.configPath)
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
@@ -158,11 +158,8 @@ func (a *app) cmdJoin(ctx context.Context, args []string) error {
 			"network": net,
 		})
 	}
-	fmt.Fprintf(a.stdout, "joined %s (%s) as %q; now current\n", net.Endpoint, describeMode(net), label)
-	if net.NodeID != "" {
-		fmt.Fprintf(a.stdout, "  node %s, enclave %s\n", net.NodeID, net.Enclave)
-	}
-	return nil
+	return a.printf("joined %s (%s) as %q; now current\n  node %s, enclave %s\n",
+		net.Endpoint, describeMode(net), label, net.NodeID, net.Enclave)
 }
 
 // probe performs the health check that validates an endpoint before it is
@@ -173,6 +170,13 @@ func (a *app) probe(ctx context.Context, endpoint string) (*client.Health, error
 	health, err := client.New(endpoint, a.newHTTPClient()).Health(rctx)
 	if err != nil {
 		return nil, fmt.Errorf("cannot join through %s: %w", endpoint, err)
+	}
+	if health.Status != "healthy" {
+		return nil, fmt.Errorf("cannot join through %s: health status %q, expected healthy", endpoint, health.Status)
+	}
+	if strings.TrimSpace(health.NodeID) == "" || strings.TrimSpace(health.Enclave) == "" ||
+		(health.Network != modePrivate && health.Network != modePublic) {
+		return nil, fmt.Errorf("cannot join through %s: invalid health identity (node_id and enclave must be non-empty, network must be private or public)", endpoint)
 	}
 	return health, nil
 }
@@ -205,7 +209,7 @@ func (a *app) joinPublicDiscovered(ctx context.Context) (Network, error) {
 		health, err := a.probe(ctx, endpoint)
 		if err != nil {
 			lastErr = err
-			fmt.Fprintf(a.stderr, "root %s did not answer: %v\n", root, err)
+			fmt.Fprintf(a.stderr, "root %s failed health check: %v\n", root, err)
 			continue
 		}
 		return Network{
@@ -220,7 +224,7 @@ func (a *app) joinPublicDiscovered(ctx context.Context) (Network, error) {
 			JoinedAt:    time.Now().UTC(),
 		}, nil
 	}
-	return Network{}, fmt.Errorf("no public root answered: %w", lastErr)
+	return Network{}, fmt.Errorf("no public root passed health checks: %w", lastErr)
 }
 
 // newPublicDiscovery builds a discovery hook that resolves and verifies the
@@ -264,7 +268,7 @@ func (a *app) cmdUse(args []string) error {
 	if len(pos) != 1 {
 		return usagef("usage: soph use <name>")
 	}
-	cfg, err := loadConfig(a.configPath)
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
@@ -280,8 +284,7 @@ func (a *app) cmdUse(args []string) error {
 	if a.jsonOut {
 		return a.writeJSON(map[string]any{"name": name, "current": true, "network": net})
 	}
-	fmt.Fprintf(a.stdout, "using %q (%s)\n", name, net.Endpoint)
-	return nil
+	return a.printf("using %q (%s)\n", name, net.Endpoint)
 }
 
 func (a *app) cmdNetworks(args []string) error {
@@ -293,7 +296,7 @@ func (a *app) cmdNetworks(args []string) error {
 	if len(pos) != 0 {
 		return usagef("networks takes no arguments")
 	}
-	cfg, err := loadConfig(a.configPath)
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
@@ -310,8 +313,7 @@ func (a *app) cmdNetworks(args []string) error {
 		return a.writeJSON(map[string]any{"current": cfg.Current, "networks": out})
 	}
 	if len(cfg.Networks) == 0 {
-		fmt.Fprintln(a.stdout, "no saved networks; run 'soph join <node>'")
-		return nil
+		return a.printf("no saved networks; run 'soph join <node>'\n")
 	}
 	for _, name := range cfg.Names() {
 		n := cfg.Networks[name]
@@ -319,7 +321,9 @@ func (a *app) cmdNetworks(args []string) error {
 		if name == cfg.Current {
 			marker = "*"
 		}
-		fmt.Fprintf(a.stdout, "%s %-20s %-28s %-22s enclave=%s\n", marker, name, n.Endpoint, describeMode(n), n.Enclave)
+		if err := a.printf("%s %-20s %-28s %-22s enclave=%s\n", marker, name, n.Endpoint, describeMode(n), n.Enclave); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -333,7 +337,7 @@ func (a *app) cmdForget(args []string) error {
 	if len(pos) != 1 {
 		return usagef("usage: soph forget <name>")
 	}
-	cfg, err := loadConfig(a.configPath)
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
@@ -351,9 +355,11 @@ func (a *app) cmdForget(args []string) error {
 	if a.jsonOut {
 		return a.writeJSON(map[string]any{"forgot": name, "current": cfg.Current})
 	}
-	fmt.Fprintf(a.stdout, "forgot %q\n", name)
+	if err := a.printf("forgot %q\n", name); err != nil {
+		return err
+	}
 	if cfg.Current == "" {
-		fmt.Fprintln(a.stdout, "no network is current; run 'soph use <name>' or 'soph join <node>'")
+		return a.printf("no network is current; run 'soph use <name>' or 'soph join <node>'\n")
 	}
 	return nil
 }
@@ -387,20 +393,11 @@ func (a *app) cmdPut(ctx context.Context, args []string) error {
 		generated = true
 	}
 
-	var data []byte
-	if *file != "" {
-		data, err = os.ReadFile(*file)
-		if err != nil {
-			return fmt.Errorf("read --file: %w", err)
-		}
-	} else {
-		data, err = io.ReadAll(a.stdin)
-		if err != nil {
-			return fmt.Errorf("read stdin: %w", err)
-		}
-	}
-
 	name, net, c, err := a.connect()
+	if err != nil {
+		return err
+	}
+	data, err := a.readInput(ctx, *file)
 	if err != nil {
 		return err
 	}
@@ -411,15 +408,16 @@ func (a *app) cmdPut(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// Read the stored TTL back so the report reflects what the node
-	// actually applied, not what we asked for. Best effort.
-	var stored *client.Metadata
+	// Best-effort observation of the current key, separate from the write
+	// result: another writer may have replaced it before this HEAD request.
+	var observed *client.Metadata
 	mctx, mcancel := a.requestContext(ctx)
 	if m, err := c.Exists(mctx, key); err == nil {
-		stored = m
+		observed = m
 	}
 	mcancel()
 
+	var outputErr error
 	if a.jsonOut {
 		out := map[string]any{
 			"key":           key,
@@ -432,30 +430,29 @@ func (a *app) cmdPut(ctx context.Context, args []string) error {
 		if *ttl > 0 {
 			out["ttl_requested"] = *ttl
 		}
-		if stored != nil {
-			out["ttl_local"] = int(stored.OriginalTTL.Seconds())
-			out["created_at"] = stored.CreatedAt.UTC().Format(time.RFC3339)
+		if observed != nil {
+			out["observed_current_key"] = metadataJSON(*observed, nil)
 		}
-		if err := a.writeJSON(out); err != nil {
-			return err
-		}
+		outputErr = a.writeJSON(out)
 	} else {
 		// The key is the one thing scripts need from stdout.
-		fmt.Fprintln(a.stdout, key)
+		outputErr = a.printf("%s\n", key)
 		var b strings.Builder
 		fmt.Fprintf(&b, "stored %d bytes under %q on %s: quorum %s", len(data), key, net.Endpoint, res.Status)
-		if stored != nil {
-			fmt.Fprintf(&b, ", local ttl %ds", int(stored.OriginalTTL.Seconds()))
-			if *ttl > 0 && int(stored.OriginalTTL.Seconds()) != *ttl {
-				fmt.Fprintf(&b, " (requested %ds, clamped by node)", *ttl)
-			}
-		} else if *ttl > 0 {
+		if *ttl > 0 {
 			fmt.Fprintf(&b, ", requested ttl %ds", *ttl)
 		}
 		if res.Status == client.WritePending {
 			b.WriteString("; stored locally, replication continues in the background")
 		}
 		fmt.Fprintln(a.stderr, b.String())
+		if observed != nil {
+			fmt.Fprintf(a.stderr, "observed current key %q: local ttl %ds (may reflect a subsequent write)\n",
+				key, int(observed.OriginalTTL.Seconds()))
+		}
+	}
+	if outputErr != nil {
+		return fmt.Errorf("write of %q stored locally, quorum %s; output failed: %w", key, res.Status, outputErr)
 	}
 	if *requireConfirmed && res.Status != client.WriteConfirmed {
 		return &pendingError{key: key}
@@ -542,9 +539,8 @@ func (a *app) cmdExists(ctx context.Context, args []string) error {
 	if a.jsonOut {
 		return a.writeJSON(metadataJSON(*meta, map[string]any{"exists": true, "endpoint": net.Endpoint}))
 	}
-	fmt.Fprintf(a.stdout, "%s\tremaining %ds of %ds\tcreated %s\n",
+	return a.printf("%s\tremaining %ds of %ds\tcreated %s\n",
 		key, int(meta.RemainingTTL.Seconds()), int(meta.OriginalTTL.Seconds()), meta.CreatedAt.UTC().Format(time.RFC3339))
-	return nil
 }
 
 func (a *app) cmdList(ctx context.Context, args []string) error {
@@ -613,7 +609,9 @@ func (a *app) cmdList(ctx context.Context, args []string) error {
 		return a.writeJSON(out)
 	}
 	for _, k := range page.Keys {
-		fmt.Fprintln(a.stdout, k)
+		if err := a.printf("%s\n", k); err != nil {
+			return err
+		}
 	}
 	if page.NextCursor != "" {
 		fmt.Fprintf(a.stderr, "more keys available; continue with --cursor %q\n", page.NextCursor)
@@ -678,6 +676,46 @@ func (a *app) cmdDiagnostic(ctx context.Context, which string, args []string) er
 }
 
 // ---------- helpers ----------
+
+// readInput lets process cancellation win even while a pipe is waiting for
+// EOF or a named file is blocked on open/read. io.Reader has no cancellation
+// contract; an uninterruptible read can outlive this call until the CLI exits.
+// The buffered result lets a completed read finish without a waiting caller.
+func (a *app) readInput(ctx context.Context, path string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		var data []byte
+		var err error
+		if path != "" {
+			data, err = os.ReadFile(path)
+			if err != nil {
+				err = fmt.Errorf("read --file: %w", err)
+			}
+		} else {
+			data, err = io.ReadAll(a.stdin)
+			if err != nil {
+				err = fmt.Errorf("read stdin: %w", err)
+			}
+		}
+		done <- result{data, err}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-done:
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return res.data, res.err
+	}
+}
 
 func metadataJSON(m client.Metadata, extra map[string]any) map[string]any {
 	out := map[string]any{

@@ -29,8 +29,10 @@ soph join https://node.example        # TLS if a proxy terminates it
 ```
 
 Join normalizes what you typed to a base URL, calls `/v1/health`, and on
-success saves the connection and makes it current. A failed health check
-saves nothing. The default name is the host you typed; `--name` overrides it.
+success saves the connection and makes it current. The response must report
+`healthy`, a non-empty node ID and enclave, and a `private` or `public` network.
+A failed or invalid health check leaves saved profiles and the current
+selection unchanged. The default name is the host you typed; `--name` overrides it.
 Joining a name that already exists replaces it.
 
 Any working node will do. The client never calls `/v1/bootstrap`, so the
@@ -99,7 +101,9 @@ soph list --prefix demo: --all
 `put` reads the value from stdin or `--file`. Without a key it generates a
 UUID-shaped one. The key is printed to stdout so scripts can capture it;
 everything else goes to stderr. Writing to an existing key replaces the value
-and restarts its TTL, as the protocol defines.
+and restarts its TTL, as the protocol defines. If stdout fails after the node
+accepts a write, the client exits 1 and reports the key and known quorum
+outcome on stderr. It does not retry the write.
 
 `get` writes the value's bytes to stdout exactly as stored, with nothing
 added. An empty value writes nothing and exits 0; a missing key writes
@@ -121,15 +125,21 @@ reported as a usage error.
 
 TTL is mandatory and local to each replica. When `--ttl` is omitted the node
 applies its default (1800 seconds). The node clamps requests to its bounds
-(300 to 86400 seconds by default) without saying so in the write response, so
-after each write the client reads the stored TTL back and reports it:
+(300 to 86400 seconds by default) without saying so in the write response.
+After each write the client makes a best-effort `HEAD` request and reports
+the current key's metadata separately:
 
 ```
-stored 5 bytes under "greeting" on http://192.168.0.1:8080: quorum confirmed, local ttl 300s (requested 5s, clamped by node)
+stored 5 bytes under "greeting" on http://192.168.0.1:8080: quorum confirmed, requested ttl 5s
+observed current key "greeting": local ttl 300s (may reflect a subsequent write)
 ```
 
-The client never computes a network-wide expiration. Each replica starts its
-own TTL when it stores the value.
+Another writer can replace the key before that follow-up read. Its TTL and
+creation time therefore describe the value observed at read time; they do
+not establish the TTL applied to this write or prove clamping. JSON output
+puts these fields under `observed_current_key`, omitted if the read fails.
+The client never computes a network-wide expiration. Each replica starts
+its own TTL when it stores the value.
 
 ### Confirmed and pending writes
 
@@ -166,7 +176,7 @@ as `value_base64` with `"encoding": "base64"`.
 
 ```bash
 soph --json put greeting --ttl 300 < value
-# {"bytes":5,"created_at":"...","endpoint":"http://...","generated_key":false,"key":"greeting","network":"lab","quorum_status":"confirmed","ttl_local":300,"ttl_requested":300}
+# {"bytes":5,"endpoint":"http://...","generated_key":false,"key":"greeting","network":"lab","observed_current_key":{"key":"greeting","created_at":"...","remaining_seconds":298,"ttl_seconds":300},"quorum_status":"confirmed","ttl_requested":300}
 soph --json get greeting
 # {"bytes":5,"created_at":"...","encoding":"base64","key":"greeting","remaining_seconds":298,"ttl_seconds":300,"value_base64":"aGVsbG8="}
 soph --json exists missing
@@ -176,22 +186,28 @@ soph --json exists missing
 Flags may appear before or after positional arguments. A literal `--` ends
 flag parsing for keys that start with a dash.
 
+Use `soph <command> --help` (or `soph help <command>`) for the command's
+arguments and flags. Help exits 0 and does not load config or contact a node.
+
 ## Timeouts and cancellation
 
 `--timeout` bounds each request (default 15s). `list --all` applies it per
-page. Ctrl-C cancels the in-flight request. A timeout or cancellation exits 4
-because the node produced no answer; for a write, that means the outcome is
-unknown, not that the write failed.
+page. Ctrl-C or SIGTERM cancels a request or a blocked input read. Cancelling
+while `put` reads stdin or `--file` exits 4 without sending the value. Input
+reading itself has no timeout. If the write request has started but no node
+response arrives, timeout or cancellation also exits 4; the write's outcome
+is then unknown. Once the node has acknowledged a write, interruption of the
+optional metadata read preserves that known write outcome.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. A pending write is a success unless `--require-confirmed`. |
-| 1 | The node returned an error (for example `507` capacity), or a local failure such as an unreadable `--file`. |
+| 1 | The node returned an error (for example `507` capacity), or a local failure such as unreadable input or failed output. An output failure can follow a successful write. |
 | 2 | Usage: bad arguments, no network selected, unknown network, expired public profile, or a key the node rejects. |
 | 3 | The contacted node has no live value for the key. |
-| 4 | No response: connection refused, DNS failure, timeout, or cancelled. |
+| 4 | Connection refused, DNS failure, timeout, or cancellation (including while reading input). |
 | 5 | Write stored locally with quorum pending, only with `--require-confirmed`. |
 
 ## What the client cannot tell you
