@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Websites
+
+- Move the marketing site to `sites/sopholeth.com` and add starter sites for
+  documentation (`sopholeth.io`), development updates (`sopholeth.dev`), and
+  `soph.stream`. Each folder has its own static Vercel configuration and 404.
+- Link the domain sites and document their independent deployment roots.
+  Devlog automation and the stream experience remain future work.
+
 ### Documentation and identity
 
 - Adopt **Sopholeth**, pronounced **SOF-oh-leth**, with the identity line

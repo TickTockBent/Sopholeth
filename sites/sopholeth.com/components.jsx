@@ -65,9 +65,9 @@ function SiteNav() {
         </a>
         <nav style={{ display: 'flex', gap: 22, alignItems: 'center', fontSize: 12 }}>
           <NavLink href="#architecture">architecture</NavLink>
-          <NavLink href="#patterns">patterns</NavLink>
           <NavLink href="#quickstart">quickstart</NavLink>
-          <NavLink href="#api">api</NavLink>
+          <NavLink href="https://sopholeth.io/">docs</NavLink>
+          <NavLink href="https://sopholeth.dev/">devlog</NavLink>
           <a href={PROJECT_REPOSITORY} style={{
             color: '#22d3ee', border: '1px solid #22d3ee4d',
             padding: '6px 12px', fontSize: 12, letterSpacing: '0.06em',
@@ -312,7 +312,7 @@ function CTAButton({ children, href, primary }) {
 function WhatItIs() {
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
       gap: 20, margin: '36px 0'
     }}>
       <div style={{
@@ -696,7 +696,7 @@ function Patterns() {
         }}>grep</code>.
       </p>
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))',
         gap: 18
       }}>
         {PATTERNS.map((p) => <PatternCard key={p.name} {...p} />)}
@@ -718,7 +718,7 @@ function PatternCard({ name, tag, tagColor, desc, code }) {
         transition: 'all 0.2s',
         background: '#0a0a0fcc'
       }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
         <h3 style={{
           color: '#39ff14', fontSize: 16, margin: 0, fontWeight: 700,
           letterSpacing: '0.02em',
@@ -777,8 +777,8 @@ function TTLDemo() {
         write a key. set a TTL. watch it vanish. this is simulated client-side; the real thing does this across a gossip cluster.
       </p>
 
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22
+      <div className="two-column-grid" style={{
+        display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 22
       }}>
         <div>
           <FieldLabel>key</FieldLabel>
@@ -789,7 +789,7 @@ function TTLDemo() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <input type="range" min="3" max="60" step="1"
             value={ttl} onChange={(e) => setTtl(+e.target.value)}
-            style={{ flex: 1, accentColor: '#39ff14' }} />
+            style={{ flex: 1, minWidth: 0, accentColor: '#39ff14' }} />
             <span style={{ color: '#39ff14', fontSize: 14, minWidth: 42, textAlign: 'right' }}>
               {ttl}s
             </span>
@@ -1081,7 +1081,7 @@ function ApiReference() {
         fontFamily: 'var(--font-mono)', fontSize: 13,
         background: '#0d1117', border: '1px solid #22d3ee33'
       }}>
-        <div style={{
+        <div className="api-row" style={{
           display: 'grid',
           gridTemplateColumns: '80px 1fr 1fr 180px',
           padding: '10px 16px',
@@ -1093,7 +1093,7 @@ function ApiReference() {
           <span>method</span><span>path</span><span>description</span><span>returns</span>
         </div>
         {ENDPOINTS.map((e, i) =>
-        <div key={i} style={{
+        <div key={i} className="api-row" style={{
           display: 'grid',
           gridTemplateColumns: '80px 1fr 1fr 180px',
           padding: '11px 16px',
@@ -1135,7 +1135,7 @@ function Footer() {
       borderTop: '1px solid #22d3ee33',
       fontSize: 12, lineHeight: 1.7
     }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 28 }}>
+      <div className="two-column-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 28 }}>
         <pre style={{
           color: '#39ff14', textShadow: '0 0 6px #39ff1440',
           fontSize: 'clamp(8px, 0.95vw, 11.5px)', lineHeight: 1.2,
@@ -1150,6 +1150,8 @@ function Footer() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <FooterLink glyph="@" label="github / source"
             href={PROJECT_REPOSITORY} />
+            <FooterLink glyph="#" label="documentation" href="https://sopholeth.io/" />
+            <FooterLink glyph="+" label="devlog & releases" href="https://sopholeth.dev/" />
             <FooterLink glyph=">" label="run locally" href="#quickstart" />
             <FooterLink glyph="#" label="architecture"
             href={`${PROJECT_REPOSITORY}/blob/main/docs/architecture.md`} />

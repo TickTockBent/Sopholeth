@@ -20,6 +20,7 @@ Thumbs.db
 test-results/
 monitoring-results/
 node_modules/
+.vercel/
 .mcp.json
 CLAUDE.md
 docs/internal/

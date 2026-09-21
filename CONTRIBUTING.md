@@ -28,6 +28,9 @@ NODE_NETWORK=private NODE_MAX_STORAGE_MB=50 ./bin/server
 See [configuration](docs/configuration.md) for network and listener behavior.
 The [Compose example](README.md#try-a-cluster) contains two enclaves.
 
+For website work, see [sites/README.md](sites/README.md). Each domain has a
+self-contained static site that can be previewed and deployed independently.
+
 ## Changes and review
 
 - Use `gofmt` on changed Go files and keep changes focused.

@@ -6,7 +6,10 @@
 | Pronunciation | **SOF-oh-leth** |
 | Meaning and lead line | **Wisdom through intentional forgetting.** |
 | Future client CLI | **`soph`**; not implemented yet |
-| Intended domains | `sopholeth.io` and `sopholeth.dev` |
+| Marketing and showcase | `sopholeth.com` |
+| Documentation | `sopholeth.io` |
+| Devlog and release notes | `sopholeth.dev` |
+| Reserved experience | `soph.stream`; details to follow |
 | Repository | [TickTockBent/Sopholeth](https://github.com/TickTockBent/Sopholeth) |
 
 Use **Sopholeth** in prose and **sopholeth** for the Go module, distribution
@@ -44,9 +47,11 @@ the future client; it is not a synonym for the node service. The `omega-v1`
 signed format, WebSocket fields, and `/v1/` routes retain their protocol names.
 The old product/version response header has been removed.
 
-The site and dashboard display Sopholeth. `web/CNAME` names the intended site
-domain; editing it does not provision DNS or deploy a site. The public trust
-anchor remains a placeholder, and no public network is claimed to be live.
+The sites and dashboard display Sopholeth. Each domain has its own deployment
+root under [sites/](../sites/README.md). Domain assignment happens in Vercel;
+there is no GitHub Pages `CNAME` file. The public trust anchor remains a
+placeholder, and no public network is claimed to be live. The discovery TXT
+records under `sopholeth.io` are independent of the documentation website.
 
 ## Remaining launch work
 
