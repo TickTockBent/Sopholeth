@@ -3,7 +3,7 @@
 **Wisdom through intentional forgetting.**
 
 Pronounced **SOF-oh-leth**. The client CLI, **`soph`**, is planned in
-[issue #187](https://github.com/TickTockBent/REPRAM/issues/187).
+[issue #187](https://github.com/TickTockBent/Sopholeth/issues/187).
 
 Sopholeth is a distributed network for temporary shared state. Store bytes
 under a key with a time-to-live (TTL), let peers carry them, and retrieve them
