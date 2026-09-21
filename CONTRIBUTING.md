@@ -1,138 +1,51 @@
-# Contributing to REPRAM
+# Contributing to Sopholeth
 
-Thank you for your interest in contributing to REPRAM! We welcome contributions from the community and are grateful for any help you can provide.
+Read the [core principles](docs/core-principles.md) and
+[architecture](docs/architecture.md) before changing behavior. Use the
+[roadmap](docs/roadmap.md) to find current priorities. Discuss changes to
+protocol semantics or project scope in the repository's issue tracker.
 
-## Code of Conduct
+## Development
 
-By participating in this project, you agree to maintain a respectful and collaborative environment. We expect all contributors to:
-- Be respectful and inclusive
-- Accept constructive criticism gracefully
-- Focus on what's best for the project and community
-- Show empathy towards other contributors
+Requirements: Go 1.22 or later, Git, and Make. Docker is optional.
 
-## How to Contribute
+From your checkout:
 
-### 1. Getting Started
-
-1. **Fork the repository** to your GitHub account
-2. **Clone your fork** locally:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/REPRAM.git
-   cd REPRAM
-   ```
-3. **Add upstream remote**:
-   ```bash
-   git remote add upstream https://github.com/TickTockBent/REPRAM.git
-   ```
-4. **Create a feature branch**:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-### 2. Before You Code
-
-- **Read the documentation**:
-  - [Core Principles](docs/core-principles.md) - MUST READ before contributing
-  - [Project Overview](docs/project-overview.md)
-
-- **Check existing issues** to see if someone's already working on it
-- **Open an issue** to discuss significant changes before implementing
-
-### 3. Development Guidelines
-
-#### Code Standards
-
-**Go** (the only implementation; HTTP node and MCP server share this binary):
-- Follow [Effective Go](https://golang.org/doc/effective_go.html) guidelines
-- Use `gofmt` for code formatting
-- Add comments for exported functions and types
-- Keep functions focused and small
-- Test new functionality with unit tests
-
-#### Testing Requirements
-- Write tests for new functionality
-- Ensure all tests pass:
-  ```bash
-  make test
-  ```
-- Include both unit and integration tests where appropriate
-
-#### Commit Guidelines
-- Use clear, descriptive commit messages
-- Follow conventional commits format:
-  ```
-  feat: add new gossip protocol implementation
-  fix: resolve memory leak in storage cleanup
-  docs: update API documentation
-  test: add tests for TTL enforcement
-  refactor: simplify node initialization
-  ```
-- Keep commits atomic and focused
-
-### 4. Submitting a Pull Request
-
-1. **Update your fork**:
-   ```bash
-   git fetch upstream
-   git rebase upstream/main
-   ```
-
-2. **Run all checks locally**:
-   ```bash
-   make build
-   make test
-   ```
-
-3. **Push to your fork**:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-4. **Create Pull Request**:
-   - Use a clear, descriptive title
-   - Reference any related issues
-   - Describe what changed and why
-   - Include testing instructions
-
-## Development Setup
-
-### Prerequisites
-- Go 1.22 or higher
-- Make
-- Git
-- Docker (optional, for containerized testing)
-
-### Quick Start
 ```bash
-# Clone and setup
-git clone https://github.com/YOUR_USERNAME/REPRAM.git
-cd REPRAM
-
-# Build and test
+git switch -c your-change
 make build
 make test
-
-# Start an HTTP node
-make run
-
-# Or start an MCP stdio server (embedded node)
-./bin/repram --mcp
 ```
 
-## Architecture Principles
+Build targets still produce the legacy executable names while the
+[rebrand](docs/rebrand.md) is in progress. To use the new command locally:
 
-When contributing, please maintain:
-1. **Content-agnostic nodes** - Nodes store opaque values without interpreting them; transport and lifecycle metadata exist only to handle the data piece
-2. **Privacy through transience** - The network is safe because it forgets; encryption is the client's concern
-3. **Ephemeral by design** - Everything has a TTL, expired data is permanently gone
-4. **Permissionless client access** - No client accounts or authentication; optional gossip HMAC is a peer transport concern
-5. **Single binary** - One `cmd/repram` entry point, cluster-capable by default
+```bash
+go build -o bin/soph ./cmd/repram
+REPRAM_NETWORK=private REPRAM_MAX_STORAGE_MB=50 ./bin/soph
+```
 
-## Questions?
+See [configuration](docs/configuration.md) for network and listener behavior.
+The [Compose example](README.md#try-a-cluster) contains two enclaves.
 
-- Open a [GitHub Issue](https://github.com/TickTockBent/REPRAM/issues)
-- Check existing [Discussions](https://github.com/TickTockBent/REPRAM/discussions)
+## Changes and review
 
-## License
+- Use `gofmt` on changed Go files and keep changes focused.
+- Add tests for changed behavior, including relevant failure paths. Protocol
+  changes need coverage at the storage, transport, or integration boundary
+  they affect.
+- For code changes, run `make build` and `go test -race ./...`, matching CI.
+  For documentation changes, check links, commands, and claims against the
+  current implementation.
+- Document externally visible behavior and update the changelog when relevant.
+  Distinguish implemented features from plans and historical observations.
+- In a pull request, explain the problem, resulting behavior, validation, and
+  any compatibility implications.
 
-By contributing, you agree that your contributions will be licensed under the same license as the project (see LICENSE file).
+Keep values opaque, TTL mandatory, and client access permissionless. Treat
+encryption, application identity, and application conflict resolution as
+client concerns. Avoid promises of global ordering, exclusive locks,
+guaranteed delivery, or secure erasure that the node does not provide.
+
+Work respectfully, address feedback directly, and keep discussion focused on
+the project. Contributions use the project's [MIT license](LICENSE).

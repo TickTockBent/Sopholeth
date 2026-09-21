@@ -1,171 +1,122 @@
-# Omega Operations
+# Sopholeth omega operations
 
-Operator guide for REPRAM's signed-root-discovery trust anchor. Context and
-rationale live in `docs/REPRAM-2.1-Spec.md`.
+Omega signs the public network's bootstrap root list. The signing tool exists,
+but the production trust anchor and Sopholeth DNS cutover are still pending.
+This is the operator workflow for that launch; the examples do not imply a
+live public service.
 
-The omega *public* key is compiled into every node binary. The omega
-*private* key lives on an air-gapped signing machine and is used only to
-sign root lists. It never touches a node, a CI system, or any network.
+Read the [discovery contract](discovery.md) before deploying roots. Keep
+production signing keys separate from node hosts and test keys.
 
-## Configuration interactions (read first)
+## Build the operator tool
 
-**Root nodes must not set `REPRAM_PEERS`.** The public-network omega
-verification is gated on "public network AND no manual peers." Setting
-`REPRAM_PEERS` on a public-network node short-circuits the entire omega
-path: the node skips the signed-list fetch, `IsRoot()` stays `false`, and
-`/v1/bootstrap` returns 403 for every request. Nodes log a warning at
-startup when they detect this combination, but the failure mode is quiet
-otherwise. Use `REPRAM_NETWORK=private` with `REPRAM_PEERS` for private
-clusters; leave `REPRAM_PEERS` unset on public-network root nodes.
+From the checkout:
 
-## When to use which tool
+```bash
+go build -o bin/soph-omega ./cmd/repram-omega
+```
 
-- `repram-omega keygen` — one time, at network birth, and again only if the
-  key is lost or compromised. Generating a new omega key invalidates every
-  existing signed root list and requires shipping a new binary.
-- `repram-omega sign` — every time the root node set changes and before the
-  current signed list expires.
+This gives the existing tool its intended local command name. Its built-in
+help and publication hints still mention the old project and domain.
+Use **HTTP ports** in root addresses even where legacy help says gossip port.
 
-Both run on the offline signing machine. Do not install `repram-omega` on a
-REPRAM node.
+## Establish the trust anchor
 
-## First-time setup
+On the offline signing machine, using a private working directory:
 
-1. On an air-gapped machine, generate the keypair:
+```bash
+umask 077
+./bin/soph-omega keygen \
+  --out-private omega-v1.key \
+  --out-public omega-v1.pub
+```
 
-   ```
-   repram-omega keygen \
-     --out-private omega-v1.key \
-     --out-public  omega-v1.pub
-   ```
+The tool refuses to overwrite existing files and creates the private key
+with mode `0600`. Retain the private key and a recoverable offline backup.
+Copy only the public key into the release's
+[trust anchor](../internal/trust/omega.go), replacing the placeholder.
+Record the public key, release revision, and operator custody procedure.
 
-   `omega-v1.key` is written with mode `0600`. Back it up to offline media
-   (two copies, two locations). Losing it means rotating the omega version.
+No key generation or trust-anchor change is part of the documentation rebrand.
+Disposable lab keys must never become the public network's trust anchor.
 
-2. Copy the base64 public key from stdout (or from `omega-v1.pub`) into the
-   node source on the online build machine:
+## Sign and publish
 
-   - `internal/trust/omega.go` — `OmegaPubkey` constant.
+The following addresses are placeholders. Replace them with the deployed
+roots' advertised hostnames and HTTP ports:
 
-   Build, tag, release.
+```bash
+./bin/soph-omega sign \
+  --key omega-v1.key \
+  --version omega-v1 \
+  --expires-in 24h \
+  --nodes root-a.example:8080,root-b.example:8080 \
+  > omega-record.txt
+```
 
-## Publishing a signed root list
+`--expires-in` takes a Go duration such as `24h` or `30m`, not a bare
+number of seconds. Standard output contains the signed TXT value; explanatory
+output goes to stderr. Transfer the signed record to the DNS publisher,
+keeping the private key offline.
 
-1. On the signing machine, decide the node set and lifetime. A 24-hour
-   lifetime is a reasonable default; the network operator can refresh more
-   often without cost.
+For the intended launch namespace, publish the signed record at
+`_omega.sopholeth.io` and this pointer at `_bootstrap.sopholeth.io`:
 
-   ```
-   repram-omega sign \
-     --key omega-v1.key \
-     --version omega-v1 \
-     --expires-in 24h \
-     --nodes root-a.example:8080,root-b.example:8080,root-c.example:8080
-   ```
+```text
+omega=_omega.sopholeth.io
+```
 
-   The `--nodes` addresses are `host:http-port` form, not gossip-port —
-   `/v1/bootstrap` listens on the HTTP port. See the `nodes` field
-   description in `docs/REPRAM-2.1-Spec.md` for rationale.
+**Prerequisite:** domain ownership and a release configured to query
+`_bootstrap.sopholeth.io`. Current source still queries the old name, so
+publishing these records alone will not migrate it.
 
-2. The command prints the full TXT-record value on stdout and the
-   publication checklist on stderr. Transfer only the stdout line (it is
-   public data) to the DNS provider's control panel or API.
+After publication, inspect both records:
 
-3. Update two records:
+```bash
+dig +short TXT _bootstrap.sopholeth.io
+dig +short TXT _omega.sopholeth.io
+```
 
-   - `_bootstrap.repram.io  TXT  "omega=_omega.repram.io"` — rarely
-     changes; points discovery at the omega record.
-   - `_omega.repram.io      TXT  "<output of repram-omega sign>"` —
-     republished on every refresh.
+DNS visibility is only the first check. Start the intended release with an
+empty cache and verify signature acceptance, the chosen seeds, and root
+status. Choose a publication schedule with enough margin before expiration
+for DNS propagation and operator recovery. DNS TTL and the signed `exp`
+are separate clocks.
 
-4. Verify propagation:
+## Root configuration
 
-   ```
-   dig +short TXT _bootstrap.repram.io
-   dig +short TXT _omega.repram.io
-   ```
+- Use public mode and leave manual peers unset so verified discovery runs.
+- Make each root's advertised `address:httpPort` exactly match its signed
+  entry. The address must be reachable from intended participants.
+- Set a writable cache directory, explicit payload capacity, and appropriate
+  transport exposure.
+- Enable inbound WebSocket attachments on roots intended to serve as
+  substrates.
+- Observe discovery refresh, peer reachability, storage usage, and quorum
+  outcomes. A healthy HTTP response alone does not validate the network.
 
-5. Nodes pick up the new record on their next refresh cycle (before the
-   previous record's `exp`). There is no need to restart nodes.
+The current environment variable spellings are in
+[node configuration](configuration.md). Changing the root set requires
+signing and publishing a new list; nodes adopt it on refresh.
 
-## Publishing via dnsmasq (operator footgun)
+## Renewal, rotation, and recovery
 
-If your DNS provider is dnsmasq with `txt-record=` lines in a config
-file, **`SIGHUP` does not reload TXT records.** Per `man 8 dnsmasq`,
-`SIGHUP` re-loads `/etc/hosts`, `/etc/ethers`, and the various
-`--*-hostsfile`/`--addn-hosts`/`--hostsdir` paths — but it does not
-re-read the main config or `conf-dir` entries, including `txt-record`
-lines. The signal is accepted without error and the old TXT record
-keeps serving silently.
+For routine renewal, sign a fresh list with the same trusted key before the
+previous list expires. For a root-set change, remember that cached or replayed
+older lists remain valid until their signed expiration.
 
-Workarounds (pick one):
+A new trust key or signed format requires a release plan. Current clients
+trust one compiled key and version. Define the discovery path, overlap,
+upgrade requirements, and retirement behavior before changing either.
+Parallel TXT records behind one shared pointer are not sufficient for
+automatic version selection.
 
-- `sudo systemctl restart dnsmasq` after rewriting the config. Fast
-  (sub-second on most systems). The publish loop needs passwordless
-  sudo on the `restart` verb only — not full sudo — so configure
-  `/etc/sudoers.d/dnsmasq-publish` with the narrowest possible rule.
-- Move the TXT record into a file referenced via `--addn-hosts` or
-  similar, and use `SIGHUP` only on those paths. Workable but adds
-  indirection; the `restart` approach is simpler.
-- Switch off dnsmasq entirely. Any nameserver that exposes a proper API
-  (nsupdate, BIND control, cloud DNS provider APIs) avoids this class
-  of issue.
+If signing is unavailable, an already signed list remains usable only until
+its expiration. Fresh startup has no valid discovery source once both DNS and
+cache are expired. Existing processes may continue peer traffic, but the
+[current running-node expiration gap](discovery.md#refresh-and-current-limits)
+must be resolved before relying on a safe public cutover. Restore the signer
+from its offline recovery procedure and publish a fresh record.
 
-The burn-in's `test/burnin/sign-loop.sh` uses the systemctl-restart
-approach; it documents the passwordless-sudo requirement in the script
-header and is a working reference if you're rolling your own publishing
-loop.
-
-## Changing the root node set
-
-Run `sign` with the new `--nodes` list, publish the new TXT record. A node
-whose advertised `REPRAM_ADDRESS:REPRAM_HTTP_PORT` is removed from the
-list stops answering `/v1/bootstrap` requests within one refresh cycle; a
-newly-added node starts answering on the same schedule.
-
-## Rotating the omega key (version bump)
-
-Required if the private key is lost or compromised. **Rotation is
-binary-coordinated, not DNS-coordinated.** The omega pubkey is baked into
-the node binary — a DNS update alone rotates nothing; existing nodes keep
-verifying against the old pubkey and reject any list signed with the new
-one. Get the ordering wrong and you partition the network.
-
-Correct sequence:
-
-1. **Generate new keypair** on the air-gapped machine: `repram-omega
-   keygen --out-private omega-v2.key --out-public omega-v2.pub`.
-2. **Ship a binary release** with the new pubkey baked in:
-   - `OmegaVersion = "omega-v2"`, new `OmegaPubkey` in `internal/trust/omega.go`.
-   Tag and release.
-3. **Wait for deployment to propagate** across operators and
-   self-hosters. The previous signed-list `exp` is your deadline — past
-   that, un-upgraded nodes can no longer refresh their root list.
-4. **Begin publishing new-key signed lists** via `_omega-v2.repram.io`
-   in parallel with the existing `_omega-v1.repram.io`. Nodes on the new
-   binary start accepting the new lists; nodes still on the old binary
-   continue using the old lists.
-5. **Retire `_omega-v1.repram.io`** once you're confident no `omega-v1`
-   binaries remain in the network.
-
-If the old key is compromised and you can't wait for propagation, shorten
-the transition window by pre-shipping the new binary before publishing any
-old-key list that would span the rotation — or accept a brief period in
-which un-upgraded nodes cannot bootstrap new peers. In either case, do
-not publish new-key signed lists before the binary containing the new
-pubkey has reached all nodes that need to verify them.
-
-## Recovery if the signing machine is unavailable
-
-The network keeps operating until the current signed list's `exp`. Existing
-nodes continue to gossip with each other normally. New nodes cannot bootstrap
-onto the public network once the cached list expires everywhere.
-
-To recover:
-
-1. Restore the private key from offline backup onto a clean air-gapped
-   machine.
-2. `repram-omega sign` with a fresh `exp`.
-3. Publish.
-
-There is no online key-recovery path by design. This is the point.
+The old dnsmasq signing loop is a lab helper with online test keys and
+host-service side effects. It is not the production signing workflow.

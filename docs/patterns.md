@@ -1,90 +1,86 @@
-# Usage Patterns
+# Sopholeth usage patterns
 
-REPRAM is `pipe`, not `grep`. It stores bytes, replicates them, and destroys them on schedule. It doesn't know or care what flows through it. The patterns below are not an exhaustive list — they're illustrations of what falls out of a simple primitive: PUT with TTL, GET by key, silent overwrite, automatic expiration.
+Sopholeth provides PUT with TTL, local reads, silent overwrite, and automatic
+expiration. Applications supply meaning, encryption, and any conflict rules.
+These patterns assume missing or delayed data is an acceptable outcome.
 
-## Agent Patterns
+## Handoffs and temporary work
 
-**Dead drop** — The core pattern. Agent A stores a payload with a known key. Agent B retrieves it later using that key. The data self-destructs after TTL. For rendezvous between agents that don't know each other's endpoints, derive the key from shared context (e.g., `hash(task_id + agent_pair)`) so both parties can compute it independently.
+**Dead drop.** One participant writes a payload and shares its key through an
+agreed channel. Another retrieves it before expiration. For rendezvous,
+participants can derive a key from shared context. Use encryption for
+confidential values. Reading does not consume the entry, and delivery is not
+guaranteed.
 
-**Scratchpad** — An agent stores intermediate reasoning state across multi-step workflows, retrieving and updating as it progresses. Each overwrite refreshes the TTL. When the workflow completes (or the agent dies), the state expires on its own.
+**Scratchpad.** A worker stores intermediate state and overwrites it as work
+progresses. Each write starts a fresh TTL. This suits disposable working
+state, not the only copy of a result that must survive.
 
-**Coordination token** — Multiple agents use a shared key as a lightweight lock or signal. Presence of the key means "in progress"; expiration means "available." Lightweight distributed locking without a lock server.
+**Encrypted relay.** Clients exchange ciphertext through the network and
+share encryption material separately. See the
+[encryption example](encryption-example.md). Nodes can still observe keys,
+value sizes, and traffic; readers can retain ciphertext after expiration.
 
-**Heartbeat / presence** — An agent writes a key on a recurring interval with a short TTL. The key's existence is the liveness signal. If the writer stops writing, the key expires — and the absence *is* the failure notification. No health check infrastructure, no polling, no failure detector. The TTL is the failure detector.
+## Presence and state
 
-**State machine** — A job ID key whose value transitions through states via overwrites (`queued` → `in_progress` → `complete`). The TTL acts as a staleness guarantee: if a job writes `in_progress` with a 10-minute TTL and then crashes, the key expires and any agent polling it knows the job didn't complete. Overwrites reset the TTL, so each state transition refreshes the window.
+**Heartbeat.** A participant refreshes a key before its TTL expires.
+Observers poll GET or HEAD for a recent signal. Absence means no live signal
+at the contacted node; it can reflect a stopped writer, delay, partition,
+overwrite, or node restart. It is not proof of failure. Account for the
+five-minute minimum accepted TTL when choosing refresh intervals.
 
-Both heartbeat and state machine patterns rely on silent overwrite being the defined behavior for existing keys, and reinforce why DELETE doesn't belong in the protocol — in the heartbeat pattern, the *absence* of a write is the meaningful signal. The system's only job is to faithfully forget.
+**Advisory claim.** A participant writes that it intends to work on a task.
+Other participants may use that as a coordination hint. There is no atomic
+create-if-absent, compare-and-swap, or exclusive lock: two workers can both
+observe absence and proceed.
 
-## Beyond Agents — REPRAM as a Primitive
+**Job status.** A worker overwrites a key with `queued`, `in_progress`, or
+`complete`. Readers get a temporary local observation, not a guaranteed
+transition history. A missing completion record means the result is unknown.
+Concurrent writers can disagree; use per-writer keys when branches matter.
 
-The agent patterns above are the primary motivation, but the primitive is general-purpose. Any system that needs temporary, replicated, self-cleaning storage can use REPRAM without modification.
+## Application building blocks
 
-**Circuit breaker** — A service writes a `healthy` key with short TTL. Consumers check before calling. Service dies → key expires → consumers back off. Distributed circuit breaking without a circuit breaker library. Same mechanic as the heartbeat pattern, viewed from the consumer's perspective.
+| Pattern | Useful behavior | Application responsibility |
+| --- | --- | --- |
+| Health hint | Poll a refreshed status value before sending work. | Treat missing or stale data according to local fallback policy. |
+| Temporary broadcast | Publish the latest value under a known key. | Poll; tolerate missed intermediate values and define behavior after expiry. |
+| Session state | Refresh disposable state during activity. | Encrypt sensitive data and authenticate sessions outside the node. |
+| Deduplication hint | Remember recently observed event IDs for a TTL window. | Tolerate concurrent processing; this does not provide exactly-once execution. |
+| Temporary conversation | Give each message a key and discover live messages through room metadata. | Handle encryption, polling, ordering, and metadata races in the client. |
 
-**Ephemeral broadcast** — Write a value to a known key; anyone polling that key gets the current state. Config distribution, feature flags, announcement channels. Stop writing and the broadcast expires — automatic rollback with zero cleanup.
+There is no application subscription or notification endpoint. The WebSocket
+transport is for node gossip, not a client pub/sub API.
 
-**Secure relay** — Encrypt a payload, store it, share the key through a side channel. Recipient retrieves it. REPRAM keeps no payload logs, user accounts, or durable access history, and the ciphertext expires automatically. Participants and network observers may retain their own copies or metadata; REPRAM's nodes simply decline to become the archive.
+## Key naming
 
-**Session continuity** — Store session state under a session ID, overwrite on each interaction to refresh TTL. Any edge server can read the current state. User stops interacting → session expires naturally. No session store, no garbage collection, no stale session cleanup jobs. Enterprise browser session replication without enterprise infrastructure.
+Keys are single URL path segments. Use `:` or `-` for structure, avoid
+`/`, and URL-encode keys when constructing requests. Prefixes are conventions;
+nodes do not understand or reserve them.
 
-**Distributed deduplication** — Write a key when processing an event. Before processing, check if key exists. Key present = already handled. TTL = dedup window. No dedup database, no purge logic.
+| Example | Purpose |
+| --- | --- |
+| `myapp:handoff:<random-id>` | One handoff payload. |
+| `myapp:scratch:<worker-id>` | A worker's temporary state. |
+| `myapp:claim:<task-id>:<worker-id>` | An advisory claim from one worker. |
+| `myapp:heartbeat:<worker-id>` | A refreshed presence signal. |
+| `myapp:state:<job-id>:<writer-id>` | One writer's job observation. |
 
-**Ephemeral pub/sub** — Publisher overwrites a known key on interval. Subscribers poll. No subscription management, no broker, no message ordering. Lossy by design — and for status dashboards, approximate state sync, or coordination signals, that's exactly right.
+The current MCP store tool generates a random UUID-shaped key by default.
+Random keys make accidental collisions unlikely; they do not confer ownership.
+Human-readable prefixes help discovery but may expose application context.
+Anyone can list or overwrite them.
 
-## Key Naming Conventions
+For deterministic rendezvous, agree on an unambiguous serialization of all
+context fields, such as a JSON array. If the context should not be exposed in
+the key name, use HMAC with a separately shared random secret, as in the
+encryption example. A derived key remains listable and is not an access token.
 
-Keys are opaque, single-segment strings. The server enforces one rule: **keys must not contain `/`** (the request returns 400). Everything else is convention — consistent naming helps agents discover each other's data and avoids collisions across unrelated workloads. These conventions are suggestions, not protocol requirements.
+Prefix discovery is local and best effort:
 
-### Namespace prefixes
-
-Use a prefix to indicate the key's role:
-
-| Prefix | Purpose | Example |
-|--------|---------|---------|
-| `handoff:` | Dead drop / agent-to-agent payload | `handoff:task-742:agent-a→agent-b` |
-| `scratch:` | Working state for a single agent | `scratch:agent-c:reasoning-step-3` |
-| `lock:` | Coordination token / mutex | `lock:pipeline:stage-2` |
-| `heartbeat:` | Presence signal | `heartbeat:worker-12` |
-| `state:` | State machine / job status | `state:job-9f3a` |
-| `broadcast:` | Ephemeral broadcast channel | `broadcast:config:feature-flags` |
-
-Separate hierarchy levels with `:` (colon) or `-` (hyphen). The server doesn't parse hierarchy — these are just convention — but `:` plays well with prefix-based listing (`/v1/keys?prefix=lock:`). Don't use `/`: the server rejects it with 400.
-
-### Key generation strategies
-
-**UUID keys** (default for `repram_store`) — Best for scratchpad and one-shot storage where the writer returns the key to the caller. No collision risk.
-
+```bash
+curl "http://localhost:8080/v1/keys?prefix=myapp:heartbeat:&limit=100"
 ```
-scratch:550e8400-e29b-41d4-a716-446655440000
-```
 
-**Deterministic keys** — Best for dead-drop rendezvous where both parties need to compute the key independently. Derive from shared context:
-
-```
-handoff:sha256(task_id + sender + receiver)
-lock:pipeline-name:stage-name
-heartbeat:worker-id
-```
-
-The key derivation function doesn't matter as long as both sides agree. SHA-256 of concatenated context fields is a safe default.
-
-**Human-readable keys** — Fine for development, debugging, and single-tenant deployments. Use namespacing to avoid collisions:
-
-```
-myapp:session:user-42
-myapp:cache:homepage
-```
-
-### Prefix listing for discovery
-
-The `/v1/keys?prefix=` endpoint (and `repram_list_keys` tool) makes prefixes useful for discovery:
-
-- `?prefix=heartbeat:` — list all live agents
-- `?prefix=state:` — list all active jobs
-- `?prefix=lock:pipeline:` — list all held locks in a pipeline
-- `?prefix=myapp:` — list everything in your namespace
-
-### Avoiding collisions
-
-On a shared public network, unrelated agents may store data on the same nodes. UUID keys avoid collisions by default. For deterministic keys, include enough context to be unique — a bare `lock:stage-2` could collide, but `lock:org-acme:pipeline-ingest:stage-2` won't.
+Follow `next_cursor` for additional pages. A listing may change while you
+page through it, and listed keys may expire before retrieval.

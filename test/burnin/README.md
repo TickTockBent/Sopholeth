@@ -1,248 +1,83 @@
-# REPRAM 2.1 — Burn-in Test Harness
+# Sopholeth validation harness
 
-Operator runbook for the 72-hour burn-in test described in
-`docs/internal/REPRAM-2.1-Minimal-BurnIn.md`.
+This directory contains load generators, lab helpers, and historical
+observations. The scripts still use legacy identifiers and some assume the
+original private lab. They need an implementation pass before they form a
+portable public-alpha validation suite.
 
-> **Historical note (#123):** This runbook documents the burn-in that
-> validated REPRAM 2.1, which used 2 Go nodes + 1 TypeScript node. The TS
-> node has been removed; any step below that references `Dockerfile.ts-node`,
-> `repram-burnin/ts-node:latest`, `ticktockbent/repram-node:experimental-ts`,
-> or the `node-c (TS, …)` host is preserved for historical accuracy and
-> **will not work** as written today. New burn-ins should run all three
-> nodes as Go nodes from `Dockerfile.go-node`.
+## Available tools
 
-## What's here
-
-| File | Purpose |
+| File | Purpose and current limits |
 | --- | --- |
-| `setup-keypair.sh` | Generate a single-use omega keypair. |
-| `Dockerfile.go-node` | Burn-in image for the Go node, with baked test pubkey. |
-| `build-images.sh` | Build the burn-in image from a pubkey file. (The TS node image — `Dockerfile.ts-node` — was removed in #123; archived references to it remain elsewhere in this README.) |
-| `sign-loop.sh` | Re-sign + republish the omega TXT record every 25 min. |
-| `workload.js` | k6 workload generator (50 ops/sec, 72h). |
-| `prometheus-scrape.yml` | Drop-in scrape job for the existing Prometheus stack. |
-| `grafana-dashboard.json` | 6-panel dashboard, importable to Grafana. |
+| [workload.js](workload.js) | k6 mixed reads and writes, reference keys, and expired-key probes. |
+| [ramp-to-failure.js](ramp-to-failure.js) | k6 request-rate and payload-size ramps; `TTL_MODE=short` is clamped by the node's five-minute floor. |
+| [run-segments.sh](run-segments.sh) | Segmented soak runner with a hardcoded checkout path, lab endpoints, and Prometheus defaults. |
+| [setup-keypair.sh](setup-keypair.sh) | Creates a disposable lab signing key under the legacy home-directory path. |
+| [build-images.sh](build-images.sh) | Builds the Go test-key image using [Dockerfile.go-node](Dockerfile.go-node); the TS image has been removed. |
+| [sign-loop.sh](sign-loop.sh) | Lab-only online signing and dnsmasq restart loop; modifies host service configuration. |
+| [snapshot.sh](snapshot.sh) | Captures metrics from hardcoded lab hosts. |
+| [ramp-pprof-capture.sh](ramp-pprof-capture.sh) | Profiling helper; review targets and output paths before use. |
+| [prometheus-scrape.yml](prometheus-scrape.yml) and [grafana-dashboard.json](grafana-dashboard.json) | Historical monitoring configuration that needs target and metric review. |
 
-## One-time setup (observer host)
+Use [omega operations](../../docs/omega-operations.md) for the production
+signing workflow. A test-key image is not a public release.
 
-```bash
-# 1. Generate the test keypair (~/.repram-burnin/omega.{priv,pub})
-./test/burnin/setup-keypair.sh
+## Small local workload
 
-# 2. Build both burn-in images
-./test/burnin/build-images.sh
-
-# 3. Tag and push to Docker Hub so the Windows hosts can pull directly.
-#    (Tags use :experimental — never push to :latest, which represents the
-#    production omega pubkey, not the burn-in test key.)
-docker tag repram-burnin/go-node:latest ticktockbent/repram-node:experimental
-docker tag repram-burnin/ts-node:latest ticktockbent/repram-node:experimental-ts
-docker push ticktockbent/repram-node:experimental
-docker push ticktockbent/repram-node:experimental-ts
-# (Both go in the same `repram-node` repo — the -ts suffix marks the
-#  TypeScript impl. The Go image is the unsuffixed :experimental tag.)
-```
-
-The private key in `~/.repram-burnin/omega.priv` stays on the observer
-forever — never copy it to a node. Delete both the privkey and pubkey at
-teardown. The `:experimental` tags on Docker Hub also have the test pubkey
-baked in; delete those tags at teardown too.
-
-## Per-host runbook
-
-Cluster topology:
-
-- **node-a** (root, Go) — `10.0.20.72` (this Linux machine, also runs the observer stack)
-- **node-b** (Go, Windows) — `10.0.10.81`
-- **node-c** (TS, Windows) — `10.0.10.104`
-
-Each node advertises itself as `<lan-ip>:9090` so those exact addresses must
-appear in the signed list (`NODES` in `sign-loop.sh`).
-
-### node-a (root, Go, also the observer)
+With Go and k6 installed, start a disposable private node from the repository
+root. The higher request limit accommodates the setup writes:
 
 ```bash
-docker run -d --name repram-node-a \
-  -p 18080:18080 -p 6060:6060 \
-  -v /var/lib/repram/cache:/data/cache \
-  -e REPRAM_NETWORK=public \
-  -e REPRAM_ENCLAVE=default \
-  -e REPRAM_LOG_LEVEL=info \
-  -e REPRAM_NODE_ID=node-a \
-  -e REPRAM_ADDRESS=10.0.20.72 \
-  -e REPRAM_GOSSIP_PORT=18080 \
-  -e REPRAM_HTTP_PORT=18080 \
-  -e REPRAM_RATE_LIMIT=10000 \
-  -e REPRAM_PPROF_ENABLED=true \
-  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 \
-  --dns 10.0.20.72 \
-  ticktockbent/repram-node:experimental
+go build -o bin/soph ./cmd/repram
+REPRAM_NETWORK=private REPRAM_MAX_STORAGE_MB=50 REPRAM_RATE_LIMIT=1000 \
+  ./bin/soph
 ```
 
-`--dns 127.0.0.1` (or the observer's LAN address) routes DNS through
-dnsmasq so it sees the test omega TXT records. Adjust per host.
-
-### node-b (Go, Windows)
-
-Same as node-a, with `node-b`, `10.0.10.81`, and a Windows-friendly
-bind mount:
-
-```powershell
-docker run -d --name repram-node-b `
-  -p 18080:18080 -p 6060:6060 `
-  -v C:\repram-cache:/data/cache `
-  -e REPRAM_NETWORK=public `
-  -e REPRAM_ENCLAVE=default `
-  -e REPRAM_LOG_LEVEL=info `
-  -e REPRAM_NODE_ID=node-b `
-  -e REPRAM_ADDRESS=10.0.10.81 `
-  -e REPRAM_GOSSIP_PORT=18080 `
-  -e REPRAM_HTTP_PORT=18080 `
-  -e REPRAM_RATE_LIMIT=10000 `
-  -e REPRAM_PPROF_ENABLED=true `
-  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 `
-  --dns 10.0.20.72 `
-  ticktockbent/repram-node:experimental
-```
-
-### node-c (TS, Windows)
-
-```powershell
-docker run -d --name repram-node-c `
-  -p 18080:18080 -p 6060:6060 `
-  -v C:\repram-cache:/data/cache `
-  -e REPRAM_NETWORK=public `
-  -e REPRAM_ENCLAVE=default `
-  -e REPRAM_LOG_LEVEL=info `
-  -e REPRAM_NODE_ID=node-c `
-  -e REPRAM_ADDRESS=10.0.10.104 `
-  -e REPRAM_GOSSIP_PORT=18080 `
-  -e REPRAM_HTTP_PORT=18080 `
-  -e REPRAM_RATE_LIMIT=10000 `
-  -e REPRAM_PPROF_ENABLED=true `
-  -e REPRAM_PPROF_ADDR=0.0.0.0:6060 `
-  --dns 10.0.20.72 `
-  ticktockbent/repram-node:experimental-ts --standalone
-```
-
-The TS image already has `REPRAM_MODE=standalone` baked in.
-
-## Observer processes
-
-Run all three in separate tmux/screen panes so you can read each one's
-output. The processes are independent — restarting any one doesn't affect
-the others.
+In another terminal, from the same checkout:
 
 ```bash
-# 1. dnsmasq — install per distro, then point /etc/dnsmasq.conf at the
-#    burn-in hosts file:
-#      conf-file=/etc/dnsmasq.d/repram-burnin.conf
-#    Restart: sudo systemctl restart dnsmasq
-#    Verify: dig _bootstrap.repram.io @127.0.0.1
-
-# 2. sign-loop: re-signs every 25 min
-PRIVATE_KEY=~/.repram-burnin/omega.priv \
-NODES=10.0.20.72:9090,10.0.10.81:9090,10.0.10.104:9090 \
-DNSMASQ_HOSTS_FILE=/etc/dnsmasq.d/repram-burnin.conf \
-./test/burnin/sign-loop.sh
-
-# 3. workload generator
 k6 run \
-  -e REPRAM_NODES=http://10.0.20.72:18080,http://10.0.10.81:18080,http://10.0.10.104:18080 \
-  -e BURNIN_DURATION=72h \
+  -e REPRAM_NODES=http://localhost:8080 \
+  -e BURNIN_DURATION=1m \
   test/burnin/workload.js
 ```
 
-The bootstrap-gate (`/v1/bootstrap` returning 403 for non-listed nodes)
-isn't probed in this baseline run — every node in the burn-in is in the
-signed list and therefore a root, so there's no negative case to assert.
-The gate is exercised properly in the perturbation test (separate run)
-by adding a fourth, unlisted node.
+Setup writes 200 reference keys and 200 graveyard keys, then waits six minutes
+for the graveyard to expire before the timed workload. This is a local
+exercise, not a replication or public-network validation.
 
-## Monitoring setup (observer)
+The reference set requests a 72-hour TTL, which normal nodes clamp to the
+default 24-hour maximum. A longer soak must configure a matching maximum or
+change the workload to refresh reference keys. Do not skip setup on a fresh
+cluster. When testing multiple nodes, use one enclave; the repository's
+Compose configuration deliberately separates node 3.
 
-```bash
-# 1. Append the scrape jobs to your existing prometheus.yml
-cat test/burnin/prometheus-scrape.yml  # review first
-# (manually merge the scrape_configs into your prometheus.yml)
-sudo systemctl reload prometheus
+The segmented wrapper continues after k6 threshold failures, so a completed
+wrapper run does not by itself mean validation passed. Preserve and inspect
+each segment's results.
 
-# 2. (Optional) Enable Prometheus remote-write so k6 can push workload metrics.
-#    Add to prometheus startup args: --web.enable-remote-write-receiver
-#    Then run k6 with:
-#      K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
-#      k6 run --out experimental-prometheus-rw test/burnin/workload.js
+## Evidence required for launch
 
-# 3. Import the Grafana dashboard
-#    In Grafana UI: Dashboards > Import > paste test/burnin/grafana-dashboard.json
-#    Select your existing Prometheus datasource when prompted.
-```
+The next all-Go run must include multiple substrates and transient clients,
+with parent failure, root changes, partitions, recovery, and capacity
+pressure. Record the commit, node configuration, topology, workload settings,
+fault timings, and acceptance criteria before starting.
 
-### Metrics coverage
+Capture driver results as well as node metrics: request rates, response
+codes, latency, quorum outcomes, dropped iterations, process memory, and
+recovery time. Preserve the actual accepted TTLs. Allocation totals and
+process uptime cannot substitute for request or correctness measurements.
 
-All six dashboard panels have full data on both Go and TS nodes:
+See the [roadmap](../../docs/roadmap.md#before-public-alpha) for the complete
+launch gates. No new burn-in result is claimed by this documentation pass.
 
-| Metric | Source |
-| --- | --- |
-| `go_memstats_heap_inuse_bytes` (Go) / `process_resident_memory_bytes` (TS) | `/v1/metrics` |
-| `go_goroutines` (Go) / `nodejs_eventloop_lag_seconds` (TS) | `/v1/metrics` |
-| `repram_peers_active`, `repram_peer_evictions_total` | `/v1/metrics` (both impls) |
-| `repram_omega_last_refresh_unix_seconds` | `/v1/metrics` (both impls), updated on each successful refresh |
-| k6 metrics | k6 → Prometheus remote-write |
+## Historical evidence
 
-## Pre-flight checks
+- [May 2026 mixed Go/TS report](archive/2026-05-burnin.md): observations from
+  the retired mixed implementation, with evidence limits stated explicitly.
+- [April 2026 raw artifacts](archive-2026-04-25/): original metrics and logs
+  from an earlier run. These are distinct from the May report.
 
-Before kicking off the 72h run:
-
-1. **dnsmasq reachable from each node:** `dig TXT _bootstrap.repram.io @<observer-ip>` returns the omega target; following with `dig TXT _omega.repram.io @<observer-ip>` returns the signed list.
-2. **All three nodes recognize themselves:** check the startup log for `Initial root status: bootstrap root` on node-a and `Initial root status: not a root` on node-b/c.
-3. **Cluster is connected:** `curl http://10.0.20.72:18080/v1/topology` shows all three nodes.
-4. **All three nodes self-recognize as roots:** `Initial root status: bootstrap root` in each startup log (every address in the signed list is a root).
-5. **Cache files exist after the first refresh:** `ls /data/cache/root-list.json` (in container) or the bind-mount equivalent.
-6. **Workload generator can write:** `curl -X PUT http://10.0.20.72:18080/v1/data/test -d hi -H "X-TTL: 300"` returns 201.
-7. **pprof responding:** `curl http://10.0.20.72:6060/debug/pprof/` returns the Go pprof index (Go nodes) or `curl -X POST http://10.0.10.104:6060/debug/pprof/heap` triggers a TS heap snapshot.
-
-If any of these fail, stop and fix before starting the 72h timer.
-
-## Teardown
-
-```bash
-# 1. Capture artifacts (per the burn-in spec)
-mkdir -p burn-in-$(date +%Y-%m-%d)
-cd burn-in-$(date +%Y-%m-%d)
-for node_ip in 10.0.20.72 10.0.10.81 10.0.10.104; do
-    curl -s http://${node_ip}:18080/v1/status > status-${node_ip}.json
-    curl -s http://${node_ip}:18080/v1/topology > topology-${node_ip}.json
-done
-
-# Go nodes: standard pprof binary profiles (go tool pprof compatible)
-for go_ip in 10.0.20.72 10.0.10.81; do
-    curl -s http://${go_ip}:6060/debug/pprof/heap > heap-${go_ip}.pprof
-    curl -s http://${go_ip}:6060/debug/pprof/goroutine > goroutine-${go_ip}.pprof
-done
-
-# TS node: V8 heap snapshot (writes file inside container) + JSON stats
-curl -s -X POST http://10.0.10.104:6060/debug/pprof/heap > heap-ts-response.json
-curl -s http://10.0.10.104:6060/debug/pprof/stats > stats-ts.json
-# The heap response contains {"path":"/tmp/repram-heap-<ts>.heapsnapshot"}.
-# Copy it out of the container:
-#   docker cp repram-node-c:$(jq -r .path heap-ts-response.json) ./heap-ts.heapsnapshot
-# Copy logs, dnsmasq logs, prometheus snapshot, cache files (root-list.json)
-
-# 2. Stop everything
-docker stop repram-node-a repram-node-b repram-node-c
-# Stop k6, probe.sh, sign-loop.sh, dnsmasq
-
-# 3. Delete the test keypair
-shred -u ~/.repram-burnin/omega.priv
-rm ~/.repram-burnin/omega.pub
-
-# 4. Remove burn-in images locally and from Docker Hub (the test pubkey is
-#    baked in; leaving them around invites someone to spin up a stale test
-#    cluster that talks to nothing).
-docker rmi repram-burnin/go-node:latest repram-burnin/ts-node:latest \
-           ticktockbent/repram-node:experimental \
-           ticktockbent/repram-node:experimental-ts
-# Then on hub.docker.com: delete both experimental tags from
-# ticktockbent/repram-node.
-```
+Raw artifacts retain their original metric and project names. The old
+host-by-host command transcript has been removed; it depended on personal
+infrastructure and the deleted TypeScript node.
