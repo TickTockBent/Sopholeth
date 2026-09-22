@@ -20,7 +20,8 @@ import (
 
 func TestCommandHelpHasNoSideEffects(t *testing.T) {
 	commands := map[string]string{
-		"join": "-name", "put": "-ttl", "get": "-output", "list": "-cursor",
+		"serve": "-node",
+		"join":  "-name", "put": "-ttl", "get": "-output", "list": "-cursor",
 		"use": "<name>", "forget": "<name>", "networks": "current",
 		"exists": "<key>", "head": "<key>", "health": "health",
 		"status": "status", "topology": "topology", "metrics": "Prometheus", "version": "version",

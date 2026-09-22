@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Live stream
+
+- Add `/v1/stream`: atomic local snapshots followed by accepted writes and
+  advisory expiration events, including replicated writes. Preview payloads
+  are bounded to 4 KiB. Subscriber queues, snapshot sizes, connections, and
+  network writes have explicit limits; `NODE_STREAM=off` disables the feed.
+- Replace the soph.stream holding page with a live viewer in the existing
+  terminal aesthetic: stable slots, overwrite feedback, local TTLs, preview
+  filtering, full-value inspection, mobile layout, and fresh-snapshot reconnects.
+- Add `soph serve` with named-network selection, explicit node overrides,
+  bind/port controls, initial search, and browser opening. It embeds the same
+  files as the standalone static site. Public deployment and peer failover
+  remain later phases.
+
 ### Client
 
 - Add the `soph` client CLI (#187): a direct HTTP client in `cmd/soph` with
@@ -26,7 +40,7 @@
   documentation (`sopholeth.io`), development updates (`sopholeth.dev`), and
   `soph.stream`. Each folder has its own static Vercel configuration and 404.
 - Link the domain sites and document their independent deployment roots.
-  Devlog automation and the stream experience remain future work.
+  Devlog automation remains future work.
 
 ### Documentation and identity
 

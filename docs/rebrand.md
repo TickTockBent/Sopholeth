@@ -9,7 +9,7 @@
 | Marketing and showcase | `sopholeth.com` |
 | Documentation | `sopholeth.io` |
 | Devlog and release notes | `sopholeth.dev` |
-| Reserved experience | `soph.stream`; details to follow |
+| Live node viewer | `soph.stream`; use an explicit node endpoint until public launch |
 | Repository | [TickTockBent/Sopholeth](https://github.com/TickTockBent/Sopholeth) |
 
 Use **Sopholeth** in prose and **sopholeth** for the Go module, distribution

@@ -3,42 +3,41 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>soph.stream — more soon</title>
-  <meta name="description" content="Something new from Sopholeth. More soon." />
+  <title>soph.stream — temporary shared state</title>
+  <meta name="description" content="A live view of temporary shared state on a Sopholeth node." />
   <meta name="theme-color" content="#0a0a0f" />
-
-  <link rel="canonical" href="https://soph.stream/" />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="soph.stream — more soon" />
-  <meta property="og:description" content="Something new from Sopholeth. More soon." />
-  <meta property="og:site_name" content="Sopholeth" />
-  <meta name="twitter:card" content="summary" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230a0a0f'/%3E%3Ctext x='50' y='70' text-anchor='middle' font-family='monospace' font-weight='700' font-size='60' fill='%23e996f5'%3ES%3C/text%3E%3C/svg%3E" />
+  <script src="/viewer.js" defer></script>
 </head>
-<body data-site="stream">
-  <a class="skip" href="#main">Skip to content</a>
+<body data-site="stream" class="live-viewer">
+  <a class="skip" href="#main">Skip to stream</a>
   <header class="site-header">
     <div class="shell header-inner">
       <a class="brand" href="/" aria-label="soph.stream home"><span>$</span> soph.stream</a>
       <nav aria-label="Sopholeth sites"><a href="https://sopholeth.com/">project</a><a href="https://sopholeth.io/">docs</a><a href="https://sopholeth.dev/">devlog</a></nav>
     </div>
   </header>
-  <main id="main" class="shell">
-    <section class="stream" aria-labelledby="stream-title">
-      <p class="eyebrow">SOPH://STREAM</p>
-      <span class="status">More soon</span>
-      <h1 id="stream-title">soph<span>.stream</span></h1>
-      <div class="signal" aria-hidden="true"><i style="--height:4px"></i><i style="--height:7px"></i><i style="--height:4px"></i><i style="--height:10px"></i><i style="--height:17px"></i><i style="--height:8px"></i><i style="--height:23px"></i><i style="--height:38px"></i><i style="--height:18px"></i><i style="--height:46px"></i><i style="--height:29px"></i><i style="--height:13px"></i><i style="--height:36px"></i><i style="--height:20px"></i><i style="--height:10px"></i><i style="--height:25px"></i><i style="--height:14px"></i><i style="--height:6px"></i><i style="--height:12px"></i><i style="--height:5px"></i><i style="--height:3px"></i></div>
-      <p class="lede">Something new is taking shape.<br />We’ll share more when it’s ready.</p>
-      <p><a class="text-link" href="https://sopholeth.com/">Explore Sopholeth ↗</a></p>
-    </section>
-  </main>
-  <footer class="site-footer">
-    <div class="shell footer-inner">
-      <p>Sopholeth / SOF-oh-leth<br />Wisdom through intentional forgetting.</p>
-      <a href="https://github.com/TickTockBent/Sopholeth">Source on GitHub ↗</a>
+  <main id="main" class="shell viewer">
+    <div class="viewer-heading"><div><p class="eyebrow">SOPH://STREAM</p><h1>Here, until it <em>isn’t.</em></h1></div><p class="local-scope">Temporary shared state.<br />One node’s view, in real time.</p></div>
+    <form id="connect-form" class="connection-controls">
+      <label for="node">Node</label><input id="node" type="text" placeholder="localhost:8080" autocomplete="off" spellcheck="false" required />
+      <button type="submit">connect ↗</button>
+    </form>
+    <div class="stream-toolbar">
+      <p id="connection" class="status" role="status" data-state="idle">Choose a node to begin</p>
+      <label class="search-label" for="query">Filter</label><input id="query" type="search" placeholder="keys + payload previews" autocomplete="off" />
     </div>
-  </footer>
+    <div class="node-identity"><span id="identity">No node selected</span><span><b id="count">0</b> live <span id="queue"></span></span></div>
+    <div id="viewport" class="stream-viewport">
+      <div id="grid" class="live-grid" aria-label="Live values"></div>
+      <div id="empty" class="stream-empty"><span class="empty-mark" aria-hidden="true">[ &nbsp; ]</span><h2 id="empty-title">A window into temporary memory.</h2><p id="empty-message">Connect to a running node. Values arrive, count down, and disappear.</p></div>
+    </div>
+    <p class="stream-note">Read-only · lifetimes are local to this node · select a value to inspect it</p>
+    <noscript>This viewer needs JavaScript to connect to a node.</noscript>
+  </main>
+  <footer class="site-footer"><div class="shell footer-inner"><p>Sopholeth / SOF-oh-leth<br />Wisdom through intentional forgetting.</p><a href="https://github.com/TickTockBent/Sopholeth">Source on GitHub ↗</a></div></footer>
+  <template id="card-template"><button class="value-card" type="button"><span class="card-key"></span><span class="card-payload"></span><span class="card-size"></span><span class="lifetime"><span class="ttl-track"><span class="ttl-fill"></span></span><span class="ttl-left"></span></span></button></template>
+  <dialog id="detail" aria-labelledby="detail-key"><div class="detail-body"><button id="close-detail" class="close-detail" aria-label="Close value details">×</button><p class="eyebrow">LOCAL OBSERVATION</p><h2 id="detail-key"></h2><dl id="detail-meta"></dl><p id="detail-status" role="status"></p><pre id="detail-payload" tabindex="0"></pre><p class="note">The full-value read observes the current key and may differ from the stream preview.</p></div></dialog>
 </body>
 </html>

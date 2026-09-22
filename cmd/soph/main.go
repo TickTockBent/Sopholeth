@@ -150,6 +150,8 @@ func (a *app) run(ctx context.Context, args []string) int {
 		err = a.cmdExists(ctx, cmdArgs)
 	case "list":
 		err = a.cmdList(ctx, cmdArgs)
+	case "serve":
+		err = a.cmdServe(ctx, cmdArgs)
 	case "health", "status", "topology", "metrics":
 		err = a.cmdDiagnostic(ctx, cmd, cmdArgs)
 	case "version":
@@ -256,6 +258,10 @@ Data (against the current network's node):
 
 Diagnostics:
   health | status | topology | metrics
+
+Viewer:
+  serve [--node endpoint] [--port 8181] [--q text] [--open]
+                                     serve soph.stream for the selected network
 
 Global flags:
   --network <name>   use a saved network for this command (also SOPH_NETWORK)

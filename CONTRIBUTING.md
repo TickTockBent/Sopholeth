@@ -17,7 +17,7 @@ make build
 make test
 ```
 
-Build targets produce `bin/server`, `bin/omega`, and `bin/dashboard`.
+Build targets produce `bin/server`, `bin/omega`, `bin/dashboard`, and `bin/soph`.
 To build and run just the node:
 
 ```bash
@@ -30,6 +30,8 @@ The [Compose example](README.md#try-a-cluster) contains two enclaves.
 
 For website work, see [sites/README.md](sites/README.md). Each domain has a
 self-contained static site that can be previewed and deployed independently.
+The stream viewer is also embedded in `soph`; its
+[browser checks](test/stream/README.md) exercise the shared assets.
 
 ## Changes and review
 

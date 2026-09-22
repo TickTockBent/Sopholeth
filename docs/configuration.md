@@ -54,6 +54,7 @@ before public launch; client-side clamping is not a complete wire policy.
 | `NODE_RATE_LIMIT` | `100` | HTTP requests per second per source IP. |
 | `NODE_TRUST_PROXY` | `false` | Trust forwarded client-IP headers when `true`. |
 | `NODE_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
+| `NODE_STREAM` | Enabled | Set to `off` to disable `/v1/stream`. See [stream limits](api.md#live-stream). |
 | `NODE_CACHE_DIR` | See below | Verified public root-list cache directory. |
 | `NODE_PPROF_ENABLED` | `false` | Enable a separate profiling listener. |
 | `NODE_PPROF_ADDR` | `127.0.0.1:6060` | Profiling listener address. |

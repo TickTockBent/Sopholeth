@@ -21,6 +21,15 @@ discovery publication is pending, and the restored Go
 WebSocket tree needs sustained validation. The [rebrand checklist](rebrand.md)
 tracks the naming transition.
 
+## soph.stream delivery sequence
+
+Build soph.stream against real local nodes before opening the public network.
+The [implementation and launch plan](soph-stream-plan.md) defines four phases:
+a working viewer on one local node, a local cluster with CLI integration,
+remote staging using available test endpoints, and public launch after the
+public-alpha gates. Keep the existing Sopholeth aesthetic and named-network
+CLI behavior throughout.
+
 ## Before public alpha
 
 ### Establish precise behavior

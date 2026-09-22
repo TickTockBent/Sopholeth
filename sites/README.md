@@ -8,7 +8,7 @@ no shared build step or dependency on files outside a site's root directory.
 | `sopholeth.com` | `sites/sopholeth.com` | Rebranded marketing and showcase site, moved from `web/`. |
 | `sopholeth.io` | `sites/sopholeth.io` | Documentation landing page, private-node quickstart, and links to the maintained repository guides. |
 | `sopholeth.dev` | `sites/sopholeth.dev` | Devlog and release-notes landing page, starting with the merged rebrand. |
-| `soph.stream` | `sites/soph.stream` | Holding page; the experience will be defined separately. |
+| `soph.stream` | `sites/soph.stream` | Live node viewer; connect through the node field or `?node=`. No public default endpoint is configured yet. |
 
 ## Vercel setup
 
@@ -45,9 +45,16 @@ use the public domains. Python's server uses its own response for a missing
 path; visit `/404.html` to preview the custom error page locally.
 
 The marketing site keeps its existing React/Babel and font CDN dependencies.
-The other starter sites use plain HTML and local CSS, with no browser-side
-JavaScript or external assets required. Edit each site's files directly;
+The docs and devlog sites use plain HTML and local CSS. The stream viewer
+also uses local JavaScript and has no external asset dependencies. Edit each site's files directly;
 their styles are intentionally local so deployments remain independent.
+
+`soph serve` embeds `soph.stream/index.html`, `styles.css`, and `viewer.js`
+through the Go package in [stream.go](stream.go). These files are the single
+source for both distributions; rebuild `bin/soph` after changing them. The
+static Vercel project continues to serve its own directory without a build.
+See the [CLI guide](../docs/cli.md#local-stream-viewer) and
+[local validation instructions](../test/stream/README.md).
 
 ## Content and next steps
 
@@ -55,6 +62,7 @@ their styles are intentionally local so deployments remain independent.
   publishing workflow is chosen. The docs landing page links to them on GitHub.
 - Add devlog entries to `sopholeth.dev/index.html`. Release ingestion, feeds,
   and semi-automated publishing are not implemented in this scaffold.
-- Keep `soph.stream` as a holding page until its scope is defined.
+- Validate `soph.stream` locally and in remote staging before configuring a
+  public network endpoint; follow the [stream plan](../docs/soph-stream-plan.md).
 - The Go dashboard is a separate service under `cmd/dashboard`; it is not
   one of these static sites.

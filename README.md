@@ -65,6 +65,7 @@ printf 'hello' | ./bin/soph put hello --ttl 300
 ./bin/soph get hello
 ./bin/soph exists hello
 ./bin/soph list
+./bin/soph serve                      # open the printed local viewer URL
 ```
 
 The [CLI guide](docs/cli.md) covers named networks, output formats, and
@@ -132,7 +133,7 @@ separation. It publishes its host ports on all interfaces.
 
 The website projects live in [sites/](sites/README.md): `sopholeth.com` for
 marketing and showcases, `sopholeth.io` for docs, `sopholeth.dev` for the devlog
-and release notes, and a holding page for `soph.stream`. Each directory is an
+and release notes, and the live node viewer at `soph.stream`. Each directory is an
 independent Vercel project root.
 
 - [API and MCP reference](docs/api.md)
@@ -141,6 +142,7 @@ independent Vercel project root.
 - [Architecture](docs/architecture.md) and [core principles](docs/core-principles.md)
 - [Signed discovery](docs/discovery.md) and [omega operations](docs/omega-operations.md)
 - [Roadmap](docs/roadmap.md) and [rebrand migration](docs/rebrand.md)
+- [soph.stream implementation and launch plan](docs/soph-stream-plan.md)
 - [Contributing](CONTRIBUTING.md), [validation harness](test/burnin/README.md), and [changelog](CHANGELOG.md)
 
 See [LICENSE](LICENSE) for the current licensing terms.

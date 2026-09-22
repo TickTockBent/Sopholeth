@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>soph.stream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1a1c; --panel:#14232680; --line:#22383c; --ink:#e4ddcf; --dim:#8a9a97; --faint:#4f6367;
+  --bar:#d3a94b; --bar-late:#c8553d; --flash:#8fd3c6;
+  --font:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{ --bg:#efeae0; --panel:#ffffff80; --line:#cfc6b6; --ink:#1d2426; --dim:#5d6a6b; --faint:#a39a8a; --bar:#b98a25; --bar-late:#b3452f; --flash:#2e8f7f; }
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%; scroll-padding-top:env(safe-area-inset-top,0px)}
+body{height:100%; margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 var(--font); display:flex; flex-direction:column; overflow:hidden}
+
+header{display:flex; flex-wrap:wrap; align-items:center; gap:.75rem 1.25rem; padding:.9rem 1.25rem .7rem; border-bottom:1px solid var(--line)}
+.brand{font-size:1.05rem; font-weight:500; letter-spacing:.01em}
+.brand small{display:block; color:var(--dim); font-weight:400; font-size:.78rem}
+.status{color:var(--dim); font-size:.82rem; margin-left:auto; white-space:nowrap}
+.status b{color:var(--ink); font-weight:500}
+.status .dot{display:inline-block; width:.5em; height:.5em; border-radius:50%; background:var(--flash); margin-right:.45em; vertical-align:middle; animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.controls{display:flex; gap:.5rem; flex-basis:100%}
+.controls input,.controls select{font:inherit; color:var(--ink); background:transparent; border:1px solid var(--line); border-radius:4px; padding:.42rem .6rem; min-width:0}
+.controls input{flex:1}
+.controls input::placeholder{color:var(--faint)}
+.controls select{color:var(--dim)}
+.controls :is(input,select):focus-visible{outline:2px solid var(--flash); outline-offset:1px}
+@media(min-width:760px){ .controls{flex-basis:auto; flex:1; max-width:520px} .status{margin-left:0} }
+
+main{flex:1; min-height:0; position:relative; padding:1rem 1.25rem}
+.grid{display:grid; gap:.75rem; height:100%; align-content:start}
+.grid.list{overflow:auto; height:100%; grid-auto-rows:min-content}
+.slot{min-height:0}
+
+.card{position:relative; width:100%; height:100%; display:flex; flex-direction:column; padding:.7rem .8rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--panel); cursor:pointer; text-align:left; color:inherit; font:inherit; overflow:hidden; opacity:0; transform:scale(.97); transition:opacity .35s ease, transform .35s ease, border-color .25s}
+.card.in{opacity:1; transform:none}
+.card.out{opacity:0; transform:scale(.96); transition-duration:.7s}
+.card.flash{border-color:var(--flash)}
+.card.flash::after{content:""; position:absolute; inset:0; background:var(--flash); opacity:.18; animation:flash .9s ease-out forwards; pointer-events:none}
+@keyframes flash{to{opacity:0}}
+.card:focus-visible{outline:2px solid var(--flash); outline-offset:2px}
+.key{font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.payload{flex:1; min-height:0; color:var(--dim); font-size:.82rem; line-height:1.4; margin-top:.35rem; overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; white-space:pre-wrap; word-break:break-word}
+.meter{display:flex; align-items:center; gap:.6rem; margin-top:.5rem}
+.track{flex:1; height:4px; background:var(--line); border-radius:2px; overflow:hidden}
+.fill{height:100%; width:100%; background:var(--bar); border-radius:2px; transform-origin:left; will-change:transform}
+.fill.late{background:var(--bar-late)}
+.left{font-variant-numeric:tabular-nums; font-size:.8rem; color:var(--dim); min-width:6.2ch; text-align:right}
+.card.list-row{height:auto}
+.card.list-row .payload{-webkit-line-clamp:2}
+
+.empty{position:absolute; inset:0; display:grid; place-content:center; text-align:center; color:var(--dim); padding:2rem; pointer-events:none; transition:opacity .5s}
+.empty[hidden]{display:none}
+.empty p{margin:.3rem 0; max-width:38ch}
+.empty p:first-child{color:var(--ink)}
+
+footer{display:flex; flex-wrap:wrap; gap:.5rem 1.5rem; padding:.6rem 1.25rem .8rem; border-top:1px solid var(--line); color:var(--dim); font-size:.78rem}
+footer .queue{color:var(--ink)}
+footer .queue:empty{display:none}
+footer .sim{margin-left:auto; display:flex; gap:.5rem; align-items:center}
+footer button{font:inherit; font-size:.78rem; color:var(--dim); background:transparent; border:1px solid var(--line); border-radius:4px; padding:.25rem .55rem; cursor:pointer}
+footer button[aria-pressed="true"]{color:var(--ink); border-color:var(--dim)}
+footer button:focus-visible{outline:2px solid var(--flash)}
+
+dialog{background:var(--bg); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:0; width:min(680px,calc(100% - 2rem)); max-height:calc(100% - 2rem); font:inherit}
+dialog::backdrop{background:#0008}
+.dlg{padding:1.1rem 1.25rem 1.25rem; display:flex; flex-direction:column; gap:.9rem; max-height:90vh}
+.dlg h2{margin:0; font-size:1rem; font-weight:500; word-break:break-all; padding-right:2.5rem}
+.dlg .close{position:absolute; top:.6rem; right:.6rem; font:inherit; color:var(--dim); background:transparent; border:0; font-size:1.1rem; cursor:pointer; padding:.3rem .5rem}
+.meta{display:grid; grid-template-columns:max-content 1fr; gap:.25rem 1rem; font-size:.82rem; color:var(--dim)}
+.meta dt{margin:0}
+.meta dd{margin:0; color:var(--ink); word-break:break-all}
+.dlg pre{margin:0; padding:.75rem .85rem; border:1px solid var(--line); border-radius:6px; background:var(--panel); white-space:pre-wrap; word-break:break-word; font-size:.82rem; overflow:auto; max-height:40vh}
+.dlg .meter{margin-top:0}
+
+@media(prefers-reduced-motion:reduce){ .card,.fill{transition:none} .status .dot,.card.flash::after{animation:none} }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">soph.stream<small>every soph on the public net, until it isn't</small></div>
+  <div class="controls">
+    <input id="q" type="search" placeholder="Search keys and payloads" aria-label="Search keys and payloads" autocomplete="off">
+    <select id="sort" aria-label="Sort">
+      <option value="">Live grid</option>
+      <option value="soon">Expiring first</option>
+      <option value="late">Expiring last</option>
+      <option value="new">Newest</option>
+      <option value="big">Largest</option>
+    </select>
+  </div>
+  <div class="status"><span class="dot" aria-hidden="true"></span><b id="alive">0</b> alive &nbsp; <b id="seen">0</b> forgotten</div>
+</header>
+
+<main>
+  <div class="grid" id="grid" aria-live="off"></div>
+  <div class="empty" id="empty">
+    <p>The network is empty.</p>
+    <p>That is its default state. Anything written here appears in a free slot, counts down, and is gone.</p>
+  </div>
+</main>
+
+<footer>
+  <span class="queue" id="queue"></span>
+  <span>Payloads shown as text, truncated. Click a soph for the whole thing.</span>
+  <span class="sim">
+    simulated feed
+    <button id="rate" aria-pressed="false" title="Toggle a busy network">busy</button>
+    <button id="theme" title="Toggle light mode">light</button>
+  </span>
+</footer>
+
+<dialog id="dlg"><div class="dlg">
+  <button class="close" id="close" aria-label="Close">✕</button>
+  <h2 id="dkey"></h2>
+  <dl class="meta">
+    <dt>expires in</dt><dd><div class="meter"><div class="track"><div class="fill" id="dfill"></div></div><span class="left" id="dleft"></span></div></dd>
+    <dt>ttl</dt><dd id="dttl"></dd>
+    <dt>written</dt><dd id="dwritten"></dd>
+    <dt>writes</dt><dd id="dwrites"></dd>
+    <dt>size</dt><dd id="dsize"></dd>
+    <dt>received by</dt><dd id="dnode"></dd>
+  </dl>
+  <pre id="dpayload"></pre>
+</div></dialog>
+
+<script>
+(() => {
+"use strict";
+// ---------- state ----------
+const sophs = new Map();          // key -> soph
+const slots = [];                 // index -> key | null
+const waiting = [];               // keys with no slot
+let forgotten = 0, cols = 0, rows = 0, sortMode = "", query = "";
+const $ = id => document.getElementById(id);
+const grid = $("grid"), emptyEl = $("empty");
+const cardRatio = 3/2;
+
+// ---------- layout: viewport-sized slot grid ----------
+function layout(){
+  const w = grid.clientWidth, h = grid.clientHeight, gap = 12;
+  if (window.innerWidth < 640){ cols = 1; rows = Infinity; }
+  else {
+    cols = Math.max(2, Math.floor((w + gap) / (250 + gap)));
+    const cw = (w - gap*(cols-1)) / cols;
+    rows = Math.max(1, Math.floor((h + gap) / (cw/cardRatio + gap)));
+  }
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+  if (sortMode || cols === 1){ grid.classList.add("list"); grid.style.gridTemplateRows = ""; }
+  else { grid.classList.remove("list"); grid.style.gridTemplateRows = `repeat(${rows}, minmax(0,1fr))`; }
+  const n = cols === 1 ? Infinity : cols*rows;
+  if (!sortMode && cols > 1) resizeSlots(n);
+  render();
+}
+function resizeSlots(n){
+  if (slots.length > n){
+    for (let i = n; i < slots.length; i++) if (slots[i]) waiting.unshift(slots[i]);
+    slots.length = n;
+  } else while (slots.length < n) slots.push(null);
+  for (const k of sophs.keys()) if (!slots.includes(k) && !waiting.includes(k)) waiting.push(k);
+  fillSlots();
+}
+function fillSlots(){
+  const free = []; slots.forEach((k,i) => { if (!k) free.push(i); });
+  while (free.length && waiting.length){
+    const i = free.splice(Math.floor(Math.random()*free.length), 1)[0];   // random empty slot
+    const k = waiting.shift(); slots[i] = k; sophs.get(k).slot = i;
+  }
+}
+
+// ---------- rendering ----------
+const cards = new Map(); // key -> element
+function cardFor(s){
+  let el = cards.get(s.key);
+  if (!el){
+    el = document.createElement("button"); el.className = "card"; el.type = "button";
+    el.innerHTML = `<div class="key"></div><div class="payload"></div><div class="meter"><div class="track"><div class="fill"></div></div><span class="left"></span></div>`;
+    el.addEventListener("click", () => openDialog(s.key));
+    cards.set(s.key, el);
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("in")));
+  }
+  el.querySelector(".key").textContent = s.key;
+  el.querySelector(".payload").textContent = s.payload;
+  el.classList.toggle("list-row", !!sortMode || cols === 1);
+  return el;
+}
+function matches(s){ if (!query) return true; const q = query.toLowerCase(); return s.key.toLowerCase().includes(q) || s.payload.toLowerCase().includes(q); }
+function render(){
+  const frag = document.createDocumentFragment();
+  if (sortMode || cols === 1){
+    const list = [...sophs.values()].filter(matches);
+    const now = Date.now();
+    const cmp = { soon:(a,b)=>a.expiresAt-b.expiresAt, late:(a,b)=>b.expiresAt-a.expiresAt, new:(a,b)=>b.writtenAt-a.writtenAt, big:(a,b)=>b.size-a.size }[sortMode] || ((a,b)=>a.writtenAt-b.writtenAt);
+    list.sort(cmp);
+    for (const s of list){ const d = document.createElement("div"); d.className="slot"; d.appendChild(cardFor(s)); frag.appendChild(d); }
+    grid.replaceChildren(frag);
+  } else {
+    for (let i = 0; i < slots.length; i++){
+      const d = document.createElement("div"); d.className = "slot";
+      const s = slots[i] && sophs.get(slots[i]);
+      if (s && matches(s)) d.appendChild(cardFor(s));
+      frag.appendChild(d);
+    }
+    grid.replaceChildren(frag);
+  }
+  $("alive").textContent = sophs.size;
+  $("seen").textContent = forgotten;
+  $("queue").textContent = (!sortMode && cols > 1 && waiting.length) ? `${waiting.length} waiting for a free slot` : "";
+  emptyEl.hidden = sophs.size > 0;
+  tick();
+}
+function fmt(ms){ ms = Math.max(0, ms); const s = Math.floor(ms/1000); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return [h,m,x].map(v => String(v).padStart(2,"0")).join(":"); }
+function tick(){
+  const now = Date.now();
+  for (const [k, el] of cards){
+    const s = sophs.get(k); if (!s) continue;
+    const left = s.expiresAt - now, frac = Math.max(0, left / (s.ttl*1000));
+    const fill = el.querySelector(".fill"); fill.style.transform = `scaleX(${frac})`; fill.classList.toggle("late", frac < .2);
+    el.querySelector(".left").textContent = fmt(left);
+  }
+  if (openKey) updateDialog();
+}
+
+// ---------- feed events ----------
+function put(key, payload, ttl, node){
+  const now = Date.now(), existing = sophs.get(key);
+  if (existing){
+    Object.assign(existing, { payload, ttl, node, expiresAt: now + ttl*1000, size: new TextEncoder().encode(payload).length, writes: existing.writes + 1, writtenAt: now });
+    const el = cards.get(key); if (el){ cardFor(existing); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+    if (sortMode) render(); else tick();
+    return;
+  }
+  const s = { key, payload, ttl, node, writtenAt: now, expiresAt: now + ttl*1000, size: new TextEncoder().encode(payload).length, writes: 1, slot: null };
+  sophs.set(key, s);
+  if (!sortMode && cols > 1){ waiting.push(key); fillSlots(); }
+  render();
+}
+function expire(key){
+  const s = sophs.get(key); if (!s) return;
+  const el = cards.get(key);
+  sophs.delete(key); cards.delete(key); forgotten++;
+  const wi = waiting.indexOf(key); if (wi >= 0) waiting.splice(wi, 1);
+  if (s.slot != null && slots[s.slot] === key) slots[s.slot] = null;
+  if (openKey === key) closeDialog();
+  const finish = () => { if (!sortMode && cols > 1) fillSlots(); render(); };
+  if (el){ el.classList.add("out"); setTimeout(finish, 700); } else finish();
+}
+
+// ---------- dialog ----------
+const dlg = $("dlg"); let openKey = null;
+function openDialog(key){ const s = sophs.get(key); if (!s) return; openKey = key; $("dkey").textContent = s.key; $("dpayload").textContent = s.payload; $("dttl").textContent = `${s.ttl}s`; $("dnode").textContent = s.node; updateDialog(); dlg.showModal(); }
+function updateDialog(){ const s = sophs.get(openKey); if (!s) return; const left = s.expiresAt - Date.now(), frac = Math.max(0, left/(s.ttl*1000)); $("dfill").style.transform = `scaleX(${frac})`; $("dfill").classList.toggle("late", frac < .2); $("dleft").textContent = fmt(left); $("dwritten").textContent = new Date(s.writtenAt).toLocaleTimeString(); $("dwrites").textContent = s.writes; $("dsize").textContent = `${s.size} B`; }
+function closeDialog(){ openKey = null; if (dlg.open) dlg.close(); }
+$("close").addEventListener("click", closeDialog);
+dlg.addEventListener("click", e => { if (e.target === dlg) closeDialog(); });
+dlg.addEventListener("close", () => { openKey = null; });
+
+// ---------- controls ----------
+$("q").addEventListener("input", e => { query = e.target.value.trim(); render(); });
+$("sort").addEventListener("change", e => { sortMode = e.target.value; layout(); });
+$("theme").addEventListener("click", () => { const r = document.documentElement; const light = r.getAttribute("data-theme") !== "light"; r.setAttribute("data-theme", light ? "light" : "dark"); $("theme").textContent = light ? "dark" : "light"; });
+let busy = false;
+$("rate").addEventListener("click", e => { busy = !busy; e.currentTarget.setAttribute("aria-pressed", String(busy)); });
+window.addEventListener("resize", () => { clearTimeout(window.__rl); window.__rl = setTimeout(layout, 120); });
+
+// ---------- loop ----------
+setInterval(() => { const now = Date.now(); for (const [k,s] of sophs) if (s.expiresAt <= now) expire(k); tick(); }, 250);
+
+// ---------- simulated public net (replace with an SSE feed from a node) ----------
+const nodes = ["node-ash-7","node-fra-2","node-sfo-4","node-sin-1","node-yyz-3"];
+const agents = ["scout","planner","reviewer","courier","indexer","watchdog","clerk","scribe"];
+const shortId = () => Math.random().toString(36).slice(2,8);
+const pick = a => a[Math.floor(Math.random()*a.length)];
+const gen = [
+  () => [`heartbeat:${pick(agents)}-${shortId()}`, `{"status":"alive","load":${(Math.random()*2).toFixed(2)},"pid":${1000+Math.floor(Math.random()*9000)}}`, 20 + Math.floor(Math.random()*40)],
+  () => [`handoff:${pick(agents)}→${pick(agents)}`, `task ${shortId()} ready for pickup\ncontext: ${pick(["summarize thread","diff the two specs","verify the checksum","draft the reply","rerun the failing case"])}\nexpect reply on handoff:${shortId()}`, 60 + Math.floor(Math.random()*180)],
+  () => [`task:${shortId()}:state`, pick(["queued","in_progress","in_progress","blocked: waiting on upstream","done"]), 30 + Math.floor(Math.random()*90)],
+  () => [`lock:${pick(["deploy","index-rebuild","nightly-report","cache-warm"])}`, `held by ${pick(agents)}@${pick(nodes)}\nacquired ${new Date().toISOString()}`, 45 + Math.floor(Math.random()*60)],
+  () => [`guest:${shortId()}`, pick(["was here","hello from the other side of the TTL","this message will self-destruct","if you can read this, it hasn't happened yet","gone in a minute, give or take", "left nothing behind, on purpose"]), 40 + Math.floor(Math.random()*120)],
+  () => [`agent:${pick(agents)}:result`, JSON.stringify({ ok:true, items:Math.floor(Math.random()*40), took_ms:Math.floor(Math.random()*900), next:`task:${shortId()}` }, null, 1), 90 + Math.floor(Math.random()*120)],
+  () => [`probe:${pick(["dns","tls","latency","reach"])}:${shortId()}`, `${pick(nodes)} → ${pick(["ok","ok","ok","degraded","timeout"])} ${Math.floor(Math.random()*400)}ms`, 15 + Math.floor(Math.random()*30)],
+];
+function emit(){
+  const [k,p,ttl] = pick(gen)();
+  put(k, p, ttl, pick(nodes));
+  // heartbeats re-put themselves a few times, so the bar visibly resets
+  if (k.startsWith("heartbeat:")){
+    let n = 2 + Math.floor(Math.random()*4);
+    const beat = setInterval(() => { if (!sophs.has(k) || n-- <= 0) return clearInterval(beat); put(k, `{"status":"alive","load":${(Math.random()*2).toFixed(2)},"beat":${n}}`, 20 + Math.floor(Math.random()*20), pick(nodes)); }, 12000 + Math.random()*6000);
+  }
+}
+function schedule(){ setTimeout(() => { emit(); schedule(); }, busy ? 400 + Math.random()*900 : 1800 + Math.random()*4200); }
+
+layout();
+// seed a handful so the grid isn't blank on arrival
+for (let i = 0; i < 5; i++) setTimeout(emit, 300 + i*450);
+schedule();
+})();
+</script>
+</body>
+</html>

@@ -155,6 +155,39 @@ write; the key is still printed and the value is still stored.
 The client never retries a write on its own. A retry is a new write that
 restarts the TTL, and an interrupted request may already have stored data.
 
+## Local stream viewer
+
+```bash
+soph join localhost:18080 --name local
+soph serve                             # http://127.0.0.1:8181
+soph --network local serve --q hello
+soph serve --node localhost:18080 --port 8182 --open
+```
+
+`serve` embeds the same assets as `sites/soph.stream`; it works from any
+directory and needs no separate frontend build. It prints the viewer URL
+to stdout and the watched node/enclave to stderr. `--json` prints one object
+with `url`, `endpoint`, `node`, and `enclave` before serving. Ctrl-C or SIGTERM
+stops the viewer server and exits 0.
+
+Selection is `--node`, otherwise the normal named-network selection. With
+no selection at all it uses `localhost:8080`; an invalid or expired selected
+profile remains an error. Startup checks node health without changing saved
+profiles. `--bind` defaults to `127.0.0.1`; `--port` defaults to `8181` and
+accepts `0` for a free port. `--open` launches the system browser. `--q` sets
+an initial case-insensitive search across keys and payload previews.
+
+The browser connects directly to the node. The local server only serves
+viewer assets. Query parameters `node` and `q` carry the viewer state. An
+HTTPS-hosted viewer requires an HTTPS node; the local HTTP viewer can use a
+local HTTP node. No public default endpoint is configured yet.
+
+The initial viewer supports stable card slots, overwrite feedback, local
+TTL countdowns, preview search, full-value inspection, and a mobile column.
+Reconnects replace the view with a new snapshot from the same node. Peer
+failover, topology refresh, sorting, and theme selection remain later work
+in the [stream plan](soph-stream-plan.md).
+
 ## Diagnostics
 
 ```bash

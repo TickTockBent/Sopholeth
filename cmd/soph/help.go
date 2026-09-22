@@ -27,6 +27,7 @@ func (a *app) printCommandHelp(fs *flag.FlagSet) error {
 		"topology": {"", "Show the node's topology as JSON."},
 		"metrics":  {"", "Show the node's Prometheus metrics."},
 		"version":  {"", "Show the client version."},
+		"serve":    {"[--node endpoint] [--port 8181] [--bind address] [--q text] [--open]", "Serve soph.stream locally. The browser connects directly to the selected node; Ctrl-C stops the viewer server."},
 	}
 	info := commands[fs.Name()]
 	var buf bytes.Buffer

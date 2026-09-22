@@ -81,6 +81,50 @@ Pagination is not a snapshot: concurrent writes and expiration can change the
 set between requests. An empty result may currently serialize as `null`
 rather than `[]`; clients should handle both.
 
+## Live stream
+
+```bash
+curl -N http://localhost:8080/v1/stream
+```
+
+The response is `text/event-stream`, with one JSON object per named event.
+The initial snapshot and subscription are captured together: subsequent
+accepted mutations follow the snapshot in storage order. This is local
+observation, independent of quorum confirmation.
+
+| Event | JSON fields | Meaning |
+| --- | --- | --- |
+| `snapshot` | `now`, `node`, `enclave`, `entries` | Every live local entry at subscription time. Replaces the previous view. |
+| `put` | `now`, `node`, `entry` | An accepted write or overwrite, including replicated writes. |
+| `expire` | `node`, `key`, `revision` | Cleanup removed this revision. Advisory; clients can expire their view by local timestamps. |
+| `clock` | `now` | Node time, sent every 15 seconds to keep the connection active. |
+
+An entry contains `key`, `payload` (base64, empty string for an empty value),
+`truncated`, `size` (full payload bytes), `ttl_seconds`, `written_at`,
+`expires_at`, and `revision`. Timestamps use RFC 3339 with subsecond precision.
+The payload preview contains at most 4096 bytes. `revision` is a decimal
+string identifying a write within this node process; it is not a network-wide
+version and resets after restart. Apply an expiration only to its matching
+revision. Reconnection always starts with a new snapshot; there is no event
+replay or retained history.
+
+Fetch the current full value through `GET /v1/data/<key>`. It may differ from
+the preview because the key can be overwritten or expire between requests.
+The read's TTL headers are exposed to browsers through CORS.
+
+The initial limits are eight active stream connections per node, 64 queued
+events per subscriber, 4096 snapshot entries, and a conservative 4 MiB JSON
+snapshot budget. An individual event has a conservative 16 KiB budget,
+including the escaped key. Oversized snapshots return `503`, without a
+partial result. A full queue or oversized live event drops the subscriber;
+writes continue. Each network write has a five-second deadline. These bounds
+add memory overhead beyond the payload storage capacity setting.
+
+`NODE_STREAM=off` makes the endpoint return `404`. Connection/snapshot limits
+return `503` with `Retry-After: 5`. Normal request admission/rate limits and
+CORS apply; the stream bypasses the ordinary 30-second response timeout.
+Responses set `Cache-Control: no-store` and `X-Accel-Buffering: no`.
+
 ## Node endpoints
 
 | Method and path | Purpose |
@@ -88,6 +132,7 @@ rather than `[]`; clients should handle both.
 | `GET /v1/health` | Process health, node ID, and configured network. |
 | `GET /v1/status` | Node status, storage and runtime statistics. |
 | `GET /v1/topology` | Known peers, enclave membership, and tree attachment state. |
+| `GET /v1/stream` | SSE snapshot and live changes in the local store; see [stream format](#live-stream). |
 | `GET /v1/metrics` | Prometheus metrics grouped under `gossip_*`, `http_*`, and `discovery_*`. |
 | `POST /v1/bootstrap` | Peer bootstrap; gated by root status in public mode. |
 | `POST /v1/gossip/message` | Peer gossip transport. |

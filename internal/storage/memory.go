@@ -14,6 +14,7 @@ type Entry struct {
 	CreatedAt time.Time     `json:"created_at"`
 	TTL       time.Duration `json:"ttl"`
 	ExpiresAt time.Time     `json:"expires_at"`
+	revision  uint64
 }
 
 type MemoryStore struct {
@@ -22,15 +23,21 @@ type MemoryStore struct {
 	cleanup      chan bool
 	maxBytes     int64 // 0 = unlimited
 	currentBytes int64
+	now          func() time.Time
+	sequence     uint64
+	subscribers  map[*Subscription]struct{}
+	closed       bool
 }
 
 // NewMemoryStore creates a new store. maxBytes sets the capacity limit in bytes;
 // 0 means unlimited. When the limit is reached, writes are rejected with ErrStoreFull.
 func NewMemoryStore(maxBytes int64) *MemoryStore {
 	store := &MemoryStore{
-		data:     make(map[string]*Entry),
-		cleanup:  make(chan bool),
-		maxBytes: maxBytes,
+		data:        make(map[string]*Entry),
+		cleanup:     make(chan bool),
+		maxBytes:    maxBytes,
+		now:         time.Now,
+		subscribers: make(map[*Subscription]struct{}),
 	}
 
 	go store.startCleanupWorker()
@@ -56,15 +63,20 @@ func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
 	stored := make([]byte, len(data))
 	copy(stored, data)
 
-	now := time.Now()
+	now := m.now()
+	m.sequence++
 	m.data[key] = &Entry{
 		Data:      stored,
 		CreatedAt: now,
 		TTL:       ttl,
 		ExpiresAt: now.Add(ttl),
+		revision:  m.sequence,
 	}
 
 	m.currentBytes = m.currentBytes - oldSize + newSize
+	if len(m.subscribers) > 0 {
+		m.publishLocked(Event{Kind: "put", Entry: preview(key, m.data[key])})
+	}
 	return nil
 }
 
@@ -77,7 +89,7 @@ func (m *MemoryStore) Get(key string) ([]byte, bool) {
 		return nil, false
 	}
 
-	if time.Now().After(entry.ExpiresAt) {
+	if !m.now().Before(entry.ExpiresAt) {
 		return nil, false
 	}
 
@@ -95,7 +107,7 @@ func (m *MemoryStore) GetWithMetadata(key string) ([]byte, time.Time, time.Durat
 		return nil, time.Time{}, 0, false
 	}
 
-	if time.Now().After(entry.ExpiresAt) {
+	if !m.now().Before(entry.ExpiresAt) {
 		return nil, time.Time{}, 0, false
 	}
 
@@ -107,7 +119,7 @@ func (m *MemoryStore) GetWithMetadata(key string) ([]byte, time.Time, time.Durat
 func (m *MemoryStore) startCleanupWorker() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -122,31 +134,40 @@ func (m *MemoryStore) cleanupExpired() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	now := time.Now()
+	now := m.now()
 	for key, entry := range m.data {
-		if now.After(entry.ExpiresAt) {
+		if !now.Before(entry.ExpiresAt) {
 			m.currentBytes -= int64(len(entry.Data))
 			delete(m.data, key)
+			m.publishLocked(Event{Kind: "expire", Entry: StreamEntry{Key: key, Revision: entry.revision}})
 		}
 	}
 }
 
 func (m *MemoryStore) Close() {
-	close(m.cleanup)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if !m.closed {
+		m.closed = true
+		close(m.cleanup)
+		for sub := range m.subscribers {
+			m.dropLocked(sub)
+		}
+	}
 }
 
 // GetStats returns storage statistics
 func (m *MemoryStore) GetStats() (int, int64) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	count := len(m.data)
 	var totalSize int64
-	
+
 	for _, entry := range m.data {
 		totalSize += int64(len(entry.Data))
 	}
-	
+
 	return count, totalSize
 }
 
@@ -156,13 +177,13 @@ func (m *MemoryStore) GetStats() (int, int64) {
 func (m *MemoryStore) Range(fn func(key string, ttl int) bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
-	now := time.Now()
+
+	now := m.now()
 	for key, entry := range m.data {
-		if now.After(entry.ExpiresAt) {
+		if !now.Before(entry.ExpiresAt) {
 			continue // Skip expired entries
 		}
-		
+
 		remainingTTL := int(entry.ExpiresAt.Sub(now).Seconds())
 		if !fn(key, remainingTTL) {
 			break
@@ -174,14 +195,14 @@ func (m *MemoryStore) Range(fn func(key string, ttl int) bool) {
 func (m *MemoryStore) Scan() []string {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	var keys []string
-	now := time.Now()
+	now := m.now()
 	for key, entry := range m.data {
-		if !now.After(entry.ExpiresAt) { // Not expired
+		if now.Before(entry.ExpiresAt) { // Not expired
 			keys = append(keys, key)
 		}
 	}
-	
+
 	return keys
 }

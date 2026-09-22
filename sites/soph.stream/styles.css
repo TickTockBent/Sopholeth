@@ -94,3 +94,89 @@ code { font-family: inherit; }
   .stream { min-height: 65vh; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+/* Live viewer: the site's terminal palette, typography, and squared panels. */
+.live-viewer { height: 100svh; min-height: 620px; display: flex; flex-direction: column; overflow: hidden; }
+.live-viewer .shell { width: min(1440px, calc(100% - 64px)); }
+.live-viewer .header-inner { min-height: 62px; }
+.live-viewer .footer-inner { padding-block: 14px; }
+.viewer { flex: 1; min-height: 0; padding-block: 24px 12px; display: flex; flex-direction: column; }
+.viewer-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+.viewer-heading .eyebrow { margin-bottom: 8px; }
+.viewer h1 { font-size: clamp(24px, 3.4vw, 42px); margin: 0; letter-spacing: -.055em; }
+.local-scope { color: var(--muted); font-size: 11px; margin: 0; text-align: right; }
+.connection-controls { display: flex; align-items: center; gap: 12px; }
+.viewer input, .viewer button, .close-detail { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 0; }
+.viewer input { padding: 8px 12px; min-width: 0; font-size: 12px; }
+.viewer input::placeholder { color: var(--muted); }
+.viewer button { padding: 8px 14px; cursor: pointer; }
+.viewer button:hover { border-color: var(--accent); }
+.viewer input:focus-visible, .viewer button:focus-visible, .close-detail:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.connection-controls label, .search-label { color: var(--muted); font-size: 11px; }
+#node { flex: 1; }
+.connection-controls button { color: var(--accent); font-size: 11px; }
+.stream-toolbar { display: flex; align-items: center; gap: 12px; padding-block: 14px 12px; }
+.stream-toolbar .status { margin: 0 auto 0 0; }
+.status[data-state="idle"]::before, .status[data-state="disconnected"]::before { background: var(--muted); }
+.status[data-state="connecting"]::before { background: #e9c66c; }
+.status[data-state="connected"]::before { background: #39ff14; }
+#query { width: min(280px, 42%); padding-block: 5px; }
+.node-identity { display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: var(--muted); border-block: 1px solid var(--line); padding-block: 8px; margin-bottom: 12px; }
+#identity { overflow-wrap: anywhere; }
+.node-identity b { color: var(--accent); font-weight: normal; }
+#queue { color: var(--text); }
+.stream-viewport { position: relative; flex: 1; min-height: 0; }
+.live-grid { display: grid; gap: 12px; height: 100%; }
+.value-slot { min-height: 0; min-width: 0; }
+.viewer .value-card { width: 100%; height: 100%; display: flex; flex-direction: column; text-align: left; padding: 15px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); animation: arrive .25s ease-out; }
+.value-card[hidden] { display: none; }
+.value-card.flash { animation: overwrite .7s ease-out; }
+.value-card.out { opacity: 0; transition: opacity .25s; }
+.card-key { font-size: 13px; color: #f0f6fc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; margin-bottom: 10px; }
+.card-payload { font-size: 11px; line-height: 1.6; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card-size { color: var(--muted); font-size: 9px; margin-top: auto; padding-top: 6px; }
+.lifetime { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.ttl-track { flex: 1; height: 3px; background: var(--line); overflow: hidden; }
+.ttl-fill { display: block; height: 100%; background: var(--accent); transform-origin: left; }
+.ttl-fill.late { background: #e9a46c; }
+.ttl-left { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stream-empty { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; pointer-events: none; padding: 20px; }
+.stream-empty[hidden] { display: none; }
+.empty-mark { color: var(--accent); font-size: 26px; margin-bottom: 12px; }
+.stream-empty h2 { font-size: 18px; margin-bottom: 8px; }
+.stream-empty p { font-size: 11px; color: var(--muted); max-width: 50ch; }
+.stream-note { font-size: 9px; color: var(--muted); margin: 10px 0 0; }
+#detail { color: var(--text); background: var(--bg); border: 1px solid var(--accent); padding: 0; width: min(760px, calc(100% - 32px)); max-height: calc(100svh - 48px); }
+#detail::backdrop { background: #000b; }
+.detail-body { padding: 28px; }
+.close-detail { position: absolute; right: 12px; top: 8px; border: 0; padding: 4px 10px; font-size: 24px; cursor: pointer; }
+#detail-key { overflow-wrap: anywhere; }
+#detail-meta { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 6px 18px; font-size: 11px; }
+#detail-meta dt { color: var(--muted); }
+#detail-meta dd { margin: 0; overflow-wrap: anywhere; }
+#detail-status { font-size: 11px; color: var(--accent); }
+#detail-payload { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 35vh; border: 1px solid var(--line); background: var(--surface); margin-bottom: 14px; }
+@keyframes arrive { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes overwrite { from { border-color: var(--accent); background: #e996f522; } to { border-color: var(--line); background: var(--surface); } }
+@media (max-width: 680px) {
+  .live-viewer { height: auto; min-height: 100svh; overflow: auto; }
+  .live-viewer .shell { width: calc(100% - 32px); }
+  .live-viewer .header-inner { gap: 8px; padding-block: 12px; }
+  .viewer { padding-top: 20px; }
+  .viewer-heading { margin-bottom: 16px; }
+  .local-scope { display: none; }
+  .connection-controls { gap: 8px; }
+  .connection-controls label { display: none; }
+  .stream-toolbar { flex-wrap: wrap; }
+  .stream-toolbar .status { flex-basis: 100%; }
+  #query { width: auto; flex: 1; }
+  .node-identity { flex-wrap: wrap; }
+  .stream-viewport { min-height: 260px; }
+  .live-grid { height: auto; grid-template-columns: minmax(0,1fr); }
+  .viewer .value-card { min-height: 160px; }
+  .stream-note { line-height: 1.8; }
+  .detail-body { padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewer .value-card, .value-card.flash, .value-card.out { animation: none; transition: none; }
+}

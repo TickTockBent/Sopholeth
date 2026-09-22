@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -325,13 +326,15 @@ func main() {
 	treeMgr.SetSeedProvider(func() []string { return bootstrapNodes })
 
 	server := &HTTPServer{
-		clusterNode: clusterNode,
-		treeManager: treeMgr,
-		nodeID:      nodeID,
-		network:     network,
-		minTTL:      minTTL,
-		maxTTL:      maxTTL,
-		startTime:   time.Now(),
+		clusterNode:    clusterNode,
+		treeManager:    treeMgr,
+		nodeID:         nodeID,
+		network:        network,
+		minTTL:         minTTL,
+		maxTTL:         maxTTL,
+		startTime:      time.Now(),
+		streamDisabled: strings.EqualFold(os.Getenv("NODE_STREAM"), "off"),
+		streamDone:     make(chan struct{}),
 	}
 
 	// Initialize security middleware
@@ -396,6 +399,7 @@ func main() {
 
 	shutdown := func() {
 		logging.Info("Shutting down — draining in-flight requests...")
+		close(server.streamDone)
 
 		// Shut down pprof first with a short deadline. pprof has no
 		// data-plane responsibilities; a 2s cap prevents a long-running
@@ -525,6 +529,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-TTL")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Created-At, X-Original-TTL, X-Remaining-TTL")
 		w.Header().Set("Access-Control-Max-Age", "3600")
 
 		if r.Method == "OPTIONS" {
@@ -537,13 +542,16 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 type HTTPServer struct {
-	clusterNode *cluster.ClusterNode
-	nodeID      string
-	network     string
-	minTTL      int
-	maxTTL      int
-	startTime   time.Time
-	securityMW  *node.SecurityMiddleware
+	clusterNode    *cluster.ClusterNode
+	nodeID         string
+	network        string
+	minTTL         int
+	maxTTL         int
+	startTime      time.Time
+	securityMW     *node.SecurityMiddleware
+	streamDisabled bool
+	streamDone     chan struct{}
+	streamActive   atomic.Int32
 	// treeManager owns substrate-transient attachment state. Always non-nil
 	// — the constructor wires one up regardless of inbound capability so
 	// transients can also call Attach when they have a substrate peer.
@@ -567,7 +575,16 @@ func (s *HTTPServer) Router() *mux.Router {
 	r.Use(corsMiddleware)
 	r.Use(s.securityMW.Middleware)
 	r.Use(node.MaxRequestSizeMiddleware(s.securityMW.MaxRequestSize()))
-	r.Use(node.TimeoutMiddleware(30 * time.Second))
+	r.Use(func(next http.Handler) http.Handler {
+		timed := node.TimeoutMiddleware(30 * time.Second)(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1/stream" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			timed.ServeHTTP(w, r)
+		})
+	})
 
 	// v1 API endpoints
 	r.HandleFunc("/v1/data/{key}", s.putHandler).Methods("PUT", "OPTIONS")
@@ -577,6 +594,7 @@ func (s *HTTPServer) Router() *mux.Router {
 	r.HandleFunc("/v1/status", s.statusHandler).Methods("GET", "OPTIONS")
 	r.HandleFunc("/v1/metrics", promhttp.Handler().ServeHTTP).Methods("GET", "OPTIONS")
 	r.HandleFunc("/v1/topology", s.topologyHandler).Methods("GET", "OPTIONS")
+	r.HandleFunc("/v1/stream", s.streamHandler).Methods("GET", "OPTIONS")
 
 	// Internal gossip endpoints
 	r.HandleFunc("/v1/gossip/message", s.gossipHandler).Methods("POST", "OPTIONS")

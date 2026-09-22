@@ -44,13 +44,14 @@ Concurrent writers can disagree; use per-writer keys when branches matter.
 | Pattern | Useful behavior | Application responsibility |
 | --- | --- | --- |
 | Health hint | Poll a refreshed status value before sending work. | Treat missing or stale data according to local fallback policy. |
-| Temporary broadcast | Publish the latest value under a known key. | Poll; tolerate missed intermediate values and define behavior after expiry. |
+| Temporary broadcast | Publish the latest value under a known key. | Observe the local stream or poll; tolerate missed intermediate values and define behavior after expiry. |
 | Session state | Refresh disposable state during activity. | Encrypt sensitive data and authenticate sessions outside the node. |
 | Deduplication hint | Remember recently observed event IDs for a TTL window. | Tolerate concurrent processing; this does not provide exactly-once execution. |
 | Temporary conversation | Give each message a key and discover live messages through room metadata. | Handle encryption, polling, ordering, and metadata races in the client. |
 
-There is no application subscription or notification endpoint. The WebSocket
-transport is for node gossip, not a client pub/sub API.
+The [SSE stream](api.md#live-stream) observes local writes and expiration,
+starting with a snapshot on each connection. Reconnects do not replay missed
+events. The WebSocket transport remains a node-gossip interface.
 
 ## Key naming
 
