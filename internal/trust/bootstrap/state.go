@@ -42,6 +42,25 @@ type store struct {
 }
 
 func openStore(ctx context.Context, dir string, create bool) (*store, bool, error) {
+	// go-tuf accepts filesystem paths for its scratch cache. Protect the
+	// entire path from replacement by another user, not just the final 0700
+	// directory. A root-owned sticky /tmp is safe; an attacker-owned or
+	// non-sticky shared writable parent is not.
+	for parent := filepath.Dir(dir); ; parent = filepath.Dir(parent) {
+		info, err := os.Lstat(parent)
+		if err != nil {
+			return nil, false, err
+		}
+		if !info.IsDir() {
+			return nil, false, fmt.Errorf("%w: unsafe state ancestor", ErrState)
+		}
+		if err := checkAncestor(info); err != nil {
+			return nil, false, err
+		}
+		if filepath.Dir(parent) == parent {
+			break
+		}
+	}
 	created := false
 	if create {
 		// The caller supplies an existing parent; do not silently construct a

@@ -14,3 +14,5 @@ func tryLock(*os.File) (bool, error) {
 func checkOwner(os.FileInfo) error {
 	return errors.New("bootstrap: durable trust state is not supported on this platform")
 }
+
+func checkAncestor(info os.FileInfo) error { return checkOwner(info) }

@@ -62,6 +62,11 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(dir))
+	if err != nil {
+		return nil, err
+	}
+	dir = filepath.Join(parent, filepath.Base(dir))
 	bundle := cfg.Bundle
 	bundle.Root = bytes.Clone(bundle.Root)
 	bundle.Repository, _ = httpsOrigin(bundle.Repository)

@@ -26,3 +26,12 @@ func checkOwner(info os.FileInfo) error {
 	}
 	return nil
 }
+
+func checkAncestor(info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || (stat.Uid != 0 && stat.Uid != uint32(os.Geteuid())) ||
+		(info.Mode().Perm()&0022 != 0 && info.Mode()&os.ModeSticky == 0) {
+		return fmt.Errorf("%w: state ancestors must be owned by this user or root and protected from other users' replacement", ErrState)
+	}
+	return nil
+}

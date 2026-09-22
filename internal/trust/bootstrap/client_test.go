@@ -487,3 +487,25 @@ func TestNewRejectsTLSBypassesAndIncompleteInitialization(t *testing.T) {
 		t.Fatalf("incomplete initialization silently reset: %v", err)
 	}
 }
+
+func TestStateParentCannotBeReplacedByOtherUsers(t *testing.T) {
+	r := newRepository(t)
+	parent := t.TempDir()
+	check(t, os.Chmod(parent, 0777))
+	defer os.Chmod(parent, 0700)
+	dir := filepath.Join(parent, "state")
+	if _, err := New(context.Background(), Config{Bundle: r.bundle(), StateDir: dir}); !errors.Is(err, ErrState) {
+		t.Fatalf("unsafe writable parent accepted: %v", err)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("created trust state before validating its ancestors")
+	}
+	check(t, os.Chmod(parent, 0700))
+	alias := filepath.Join(t.TempDir(), "parent")
+	check(t, os.Symlink(parent, alias))
+	c := r.client(filepath.Join(alias, "state"))
+	if c.dir != dir {
+		t.Fatalf("parent symlink was not resolved: %s", c.dir)
+	}
+	r.accept(c)
+}

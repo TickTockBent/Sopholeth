@@ -24,6 +24,12 @@ symlinks, or incompatible network/bundle produce an error. There is no implicit
 trust reset. Custom TLS dialers, disabled certificate validation, and overridden
 TLS hostnames are rejected.
 
+Parent symlinks are resolved once; all ancestors must be owned by the current
+user or root and protected against replacement by another user. Shared writable
+parents require the sticky bit (as on `/tmp`). This also protects the path-based
+scratch cache used by go-tuf, rather than relying only on the state directory's
+own permissions.
+
 The public bundle schema is:
 
 ```json
