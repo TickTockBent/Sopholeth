@@ -133,13 +133,13 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	var r release
 	if opts.Version == latest {
 		r = history[len(history)-1]
-		if r.Schema != 1 || !bytes.Equal(r.Manifest, manifest) {
+		if r.isRenewal() || !bytes.Equal(r.Manifest, manifest) {
 			return report, errors.New("omega: version already has a different approved manifest; choose the next version")
 		}
 	} else {
-		for _, name := range []string{renewalIntentName(opts.Version), renewalIntentName(opts.Version) + ".pending"} {
+		for _, name := range []string{renewalIntentName(opts.Version), renewalIntentName(opts.Version) + ".pending", rotationApplyName(opts.Version), rotationApplyName(opts.Version) + ".pending"} {
 			if _, err := state.root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
-				return report, errors.New("omega: next version is reserved for renewal; complete publish --renew first")
+				return report, errors.New("omega: next version is reserved for renewal or rotation; complete publish --renew or the original rotate --apply first")
 			}
 		}
 		name := releaseName(opts.Version)
@@ -155,7 +155,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 			if err := decodeRecord(pending, &r); err != nil {
 				return report, errors.New("omega: invalid pending release; preserve the journal for recovery")
 			}
-			if r.Schema != 1 || r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
+			if r.isRenewal() || r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
 				return report, errors.New("omega: pending version has different approval; retry its original manifest")
 			}
 			if _, _, err := r.validate(bundle); err != nil {
@@ -170,7 +170,17 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 			if err := decodeRecord(data, &a); err != nil {
 				return report, err
 			}
-			r, err = prepareRelease(a, bundle, opts.Version, previous, manifest, now)
+			var roots [][]byte
+			if len(history) > 0 {
+				latest := history[len(history)-1]
+				keys, err := activeOnlineKeys(state, bundle, latest, a.Keys)
+				if err != nil {
+					return report, err
+				}
+				a.Keys["snapshot"], a.Keys["timestamp"] = keys["snapshot"], keys["timestamp"]
+				roots = latest.Roots
+			}
+			r, err = prepareRelease(a, bundle, opts.Version, previous, manifest, now, roots...)
 			if err != nil {
 				return report, err
 			}
@@ -196,6 +206,15 @@ func publishPrepared(ctx context.Context, state *store, repo *repositoryStore, b
 	m, expires, err := r.validate(bundle)
 	if err != nil {
 		return report, err
+	}
+	if err := applyReleaseRoot(&report, bundle, r); err != nil {
+		return report, err
+	}
+	if report.Rotation == nil {
+		report.Rotation, err = inspectRotation(state, bundle, history)
+		if err != nil {
+			return report, err
+		}
 	}
 	if err := cleanPendingTwins(state, ".", state.read); err != nil {
 		return report, err
@@ -274,6 +293,9 @@ func publishPrepared(ctx context.Context, state *store, repo *repositoryStore, b
 	report.Publication = "verified"
 	report.Release.CheckedAt = checked
 	report.Release.VerifiedAt = checked
+	if report.Rotation != nil && report.Rotation.RootVersion <= r.versions().Root {
+		report.Rotation.State = "applied"
+	}
 	report.Action = "The expected release was verified over HTTPS. Monitor renewal and offline approval deadlines; retain publication history."
 	return report, nil
 }
@@ -323,6 +345,18 @@ func checkRecordedDestination(repo *repositoryStore, history []release) error {
 		return err
 	}
 	for _, name := range names {
+		if strings.HasSuffix(name, ".root.json") {
+			version, err := strconv.ParseInt(strings.TrimSuffix(name, ".root.json"), 10, 64)
+			if err != nil || version < 1 || name != fmt.Sprintf("%d.root.json", version) || len(history) == 0 || version > history[len(history)-1].versions().Root {
+				return errors.New("omega: destination contains a root absent from publication history; restore the journal")
+			}
+			if version > 1 {
+				data, err := repo.read(name)
+				if err != nil || !bytes.Equal(data, history[len(history)-1].Roots[version-2]) {
+					return errors.New("omega: destination root differs from publication history; restore the journal")
+				}
+			}
+		}
 		for _, suffix := range []string{".targets.json", ".snapshot.json"} {
 			if strings.HasSuffix(name, suffix) {
 				version, err := strconv.ParseInt(strings.TrimSuffix(name, suffix), 10, 64)
@@ -393,6 +427,13 @@ func inspectPublication(ctx context.Context, home *store, bundle bootstrap.Bundl
 		return report, nil
 	}
 	r := history[len(history)-1]
+	if err := applyReleaseRoot(&report, bundle, r); err != nil {
+		return publicationFailure(report, err)
+	}
+	report.Rotation, err = inspectRotation(state, bundle, history)
+	if err != nil {
+		return publicationFailure(report, err)
+	}
 	m, expires, err := r.validate(bundle)
 	if err != nil {
 		return publicationFailure(report, err)
@@ -412,6 +453,9 @@ func inspectPublication(ctx context.Context, home *store, bundle bootstrap.Bundl
 	if !verify {
 		report.Publication = "not_checked"
 		report.Action = "Use soph omega status --verify to check the latest prepared release over HTTPS."
+		if rotation := report.Rotation; rotation != nil && rotation.State != "applied" {
+			report.Action = "Rotation is " + rotation.State + ". Rerun rotate for the reported root version; finish an authorized apply with its digest or publish --renew."
+		}
 		if receipt.Error != "" {
 			return publicationFailure(report, errors.New("omega: last publication attempt failed: "+receipt.Error))
 		}
@@ -431,7 +475,13 @@ func inspectPublication(ctx context.Context, home *store, bundle bootstrap.Bundl
 	report.Release.CheckedAt = checked
 	report.Release.VerifiedAt = checked
 	report.Release.LastError = ""
+	if report.Rotation != nil && report.Rotation.RootVersion <= r.versions().Root {
+		report.Rotation.State = "applied"
+	}
 	report.Action = "The expected release was verified over HTTPS. Retain publication history and monitor expiration."
+	if report.Rotation != nil && report.Rotation.State != "applied" {
+		report.Action += fmt.Sprintf(" Rotation is %s; resume soph omega rotate for root version %d.", report.Rotation.State, report.Rotation.RootVersion)
+	}
 	return report, nil
 }
 

@@ -18,6 +18,7 @@ func (a *app) printCommandHelp(fs *flag.FlagSet) error {
 		"omega provision-renewal": {"--home offline-path --network id --renewal-home online-path --disposable", "Provision only the online keys and hand off publication state to a separate home. Repeating the same command recovers the handoff."},
 		"omega publish":           {"--home path --network id --disposable [--renew | --manifest path --repository-dir path --version n]", "Publish an approved manifest through the offline authority, or use --renew from the operational home to refresh due metadata using online keys. Verify the exact release over HTTPS."},
 		"omega status":            {"--home path --network id [--verify]", "Inspect authority and release state. With --verify, fetch and verify the latest prepared release over HTTPS."},
+		"omega rotate":            {"--home offline-path --network id --root-version n --disposable [--apply root-sha256]", "Prepare replacement snapshot/timestamp keys and a root-signed transition. Review the digest and key IDs, then apply that exact digest. Repeating the same version resumes the same transition."},
 		"join":                    {"[endpoint] [--name name] [--public]", "Validate and save a node, making its network current. Without an endpoint, use signed public discovery."},
 		"use":                     {"<name>", "Make a saved network current."},
 		"networks":                {"", "List saved networks; * marks the current one."},

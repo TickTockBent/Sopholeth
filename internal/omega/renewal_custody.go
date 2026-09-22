@@ -49,29 +49,33 @@ func readRenewal(home *store, network string) (renewalCustody, error) {
 	if _, err := bootstrap.ParseBundle(record(c.Bundle)); err != nil {
 		return c, err
 	}
-	root, err := metadata.Root().FromBytes(c.Bundle.Root)
+	return c, verifyOnlineKeys(c.Keys, c.Bundle.Root)
+}
+
+func verifyOnlineKeys(keys map[string]string, raw []byte) error {
+	root, err := metadata.Root().FromBytes(raw)
 	if err != nil {
-		return c, err
+		return err
 	}
 	for _, role := range []string{"snapshot", "timestamp"} {
-		private, err := decodeKey(c.Keys[role])
+		private, err := decodeKey(keys[role])
 		if err != nil {
-			return c, fmt.Errorf("omega: invalid renewal %s key", role)
+			return fmt.Errorf("omega: invalid renewal %s key", role)
 		}
 		key, err := metadata.KeyFromPublicKey(private.Public())
 		if err != nil {
-			return c, err
+			return err
 		}
 		id, err := key.ID()
 		if err != nil {
-			return c, err
+			return err
 		}
 		assignment := root.Signed.Roles[role]
 		if assignment == nil || assignment.Threshold != 1 || len(assignment.KeyIDs) != 1 || assignment.KeyIDs[0] != id {
-			return c, errors.New("omega: renewal key does not match its authorized role")
+			return errors.New("omega: renewal key does not match its authorized role")
 		}
 	}
-	return c, nil
+	return nil
 }
 
 func readPublisherBinding(home *store, bundle bootstrap.Bundle) (publisherBinding, error) {

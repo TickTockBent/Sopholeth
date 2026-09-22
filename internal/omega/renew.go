@@ -85,6 +85,9 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		return report, errors.New("omega: no approved membership; publish using the offline authority first")
 	}
 	latest := history[len(history)-1]
+	if err := applyReleaseRoot(&report, bundle, latest); err != nil {
+		return report, err
+	}
 	m, expires, err := latest.validate(bundle)
 	if err != nil {
 		return report, err
@@ -108,6 +111,18 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	defer repo.close()
 	repo.hook = hook
 	if err := checkRecordedDestination(repo, history); err != nil {
+		return report, err
+	}
+	history, resumed, err := resumeRotationApply(ctx, state, bundle, history, now)
+	if err != nil {
+		return report, err
+	}
+	if resumed {
+		latest = history[len(history)-1]
+		return publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient)
+	}
+	keys, err := activeOnlineKeys(state, bundle, latest, custody.Keys)
+	if err != nil {
 		return report, err
 	}
 
@@ -179,7 +194,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	if err := state.phase("renewal:intent-durable"); err != nil {
 		return report, err
 	}
-	r, err := prepareRenewal(custody.Keys, bundle, latest, intent.Created)
+	r, err := prepareRenewal(keys, bundle, latest, intent.Created)
 	if err != nil {
 		return report, err
 	}

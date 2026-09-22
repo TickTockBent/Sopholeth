@@ -71,14 +71,28 @@ func (v *publicationVerifier) verify(ctx context.Context, bundle bootstrap.Bundl
 	if view.Versions != r.versions() || !bytes.Equal(record(view.Manifest), r.Manifest) {
 		return errors.New("omega: served publication differs from the prepared version or root manifest")
 	}
-	for role, data := range map[string][]byte{"root": bundle.Root, "targets": r.Targets, "snapshot": r.Snapshot, "timestamp": r.Timestamp} {
+	for role, data := range map[string][]byte{"root": r.currentRoot(bundle), "targets": r.Targets, "snapshot": r.Snapshot, "timestamp": r.Timestamp} {
 		if view.MetadataSHA256[role] != digest(data) {
 			return fmt.Errorf("omega: served %s bytes differ from the prepared release", role)
 		}
 	}
-	// A fresh client starts from its bundle and does not download 1.root.json.
-	// Check its served bytes too, for repository completeness and future recovery.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bundle.Repository+"/1.root.json", nil)
+	// Also compare every retained root's exact bytes, including the initial
+	// anchor (which a fresh client does not fetch) and intermediate transitions.
+	roots := append([][]byte{bundle.Root}, r.Roots...)
+	for i, root := range roots {
+		if err := v.verifyRoot(ctx, bundle.Repository, i+1, root); err != nil {
+			return err
+		}
+	}
+	// Do not report success if the lease expires while checking the final object.
+	if !time.Now().Before(view.Expires) {
+		return errors.New("omega: publication expired during verification")
+	}
+	return nil
+}
+
+func (v *publicationVerifier) verifyRoot(ctx context.Context, repository string, version int, expected []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%d.root.json", repository, version), nil)
 	if err != nil {
 		return err
 	}
@@ -88,18 +102,14 @@ func (v *publicationVerifier) verify(ctx context.Context, bundle bootstrap.Bundl
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("omega: initial root fetch returned HTTP %d", response.StatusCode)
+		return fmt.Errorf("omega: root %d fetch returned HTTP %d", version, response.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, int64(len(bundle.Root))+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, int64(len(expected))+1))
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(data, bundle.Root) {
-		return errors.New("omega: served initial root differs from the authority")
-	}
-	// Do not report success if the lease expires while checking the final object.
-	if !time.Now().Before(view.Expires) {
-		return errors.New("omega: publication expired during verification")
+	if !bytes.Equal(data, expected) {
+		return fmt.Errorf("omega: served root %d differs from the prepared history", version)
 	}
 	return nil
 }

@@ -4,13 +4,21 @@
 
 ### Public discovery
 
+- Add `soph omega rotate` for disposable Linux online-key rotation. Prepare and
+  review replacement snapshot/timestamp keys, apply the exact successor-root
+  digest, preserve the original trust bundle and approved membership, and verify
+  the retained root chain over HTTPS. Recover interrupted application through
+  the online renewal command, including higher-version expiry repair. Document
+  adoption, retirement, and recovery limits; root/membership-key rotation and
+  production custody remain pending.
+
 - Add `soph omega provision-renewal` and scheduled `publish --renew` for disposable
   Linux authorities. Hand off the journal recoverably to a separate home with
   only snapshot/timestamp keys, preserve offline-approved membership, recover
   interrupted renewal without offline custody, and cap freshness at approval
   deadlines. Expose renewal timing and warnings in status; document scheduling,
   monitoring, and recovery with example systemd units. Production custody and
-  key rotation remain pending.
+  root/membership-key rotation remain pending.
 
 - Add `soph omega publish` and `status --verify` for disposable Linux authorities.
   Journal exact signed releases separately from authority material, install
@@ -18,12 +26,12 @@
   through the durable HTTPS client. Preserve versions and bytes across retries,
   report publication failures and role deadlines, and retain history for recovery.
   The first backend writes a local directory served by separately configured
-  HTTPS; production custody/hosting and rotation remain pending.
+  HTTPS; production custody/hosting remain pending.
 - Add `soph omega init` and local `status` (#208) for disposable Linux authorities.
   Verify and durably commit the complete authority atomically; retries recover
   the same transaction or inspect the existing keys. Report local identity,
   expiration, and actionable failures in text or JSON. Production custody,
-  rotation and discovery integration remain pending.
+  root/membership-key rotation and discovery integration remain pending.
 - Add the TUF bootstrap client with validated public bundles/manifests,
   bounded HTTPS, durable rollback state, process locks, and expiring cached
   authority. Move disposable lifecycle tests into the application suite and

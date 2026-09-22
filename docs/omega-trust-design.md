@@ -1,14 +1,15 @@
 # Omega trust lifecycle: integration spike and proposed design
 
 Status: trust client, atomic disposable authority initialization, local-directory
-publication, unattended online renewal, and served-release verification implemented.
-Rotation, production custody/hosting, and consumer integration remain pending.
+publication, unattended online renewal, online-key rotation, and served-release
+verification implemented. Membership/root-key rotation, production custody/hosting,
+and consumer integration remain pending.
 The completed [spike](../test/omega-tuf/README.md) established the design for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md). Its scenarios now exercise the
 [durable client](../internal/trust/bootstrap/README.md) in the main Go suite.
 `soph omega init`, `provision-renewal`, local-directory `publish` with online
-renewal, and `status --verify` implement the current operator slices.
+renewal, online-key `rotate`, and `status --verify` implement the current operator slices.
 This does not switch node discovery or establish a production authority.
 The [audit](omega-signing-audit.md) remains the record of the interim protocol.
 
@@ -214,7 +215,7 @@ do not turn on the library's `UnsafeLocalMode` as an unexplained fallback.
 ## One operator workflow
 
 `soph omega init`, `provision-renewal`, local-directory `publish` (including
-`--renew`), and `status --verify` are
+`--renew`), online-key `rotate`, and `status --verify` are
 implemented for disposable authorities on Linux; see the
 [operator guide](omega-operations.md). Initialization prepares
 and verifies the entire authority privately, then commits it with a single
@@ -243,9 +244,11 @@ subsequent planned work:
 - `soph omega status`: display network, accepted versions, role fingerprints,
   bootstrap roots, all expiration deadlines, last verified publication, and
   required action. Provide machine-readable output and failure exit codes.
-- `soph omega rotate`: prepare a reviewable transition, gather required old
-  and new signatures, publish dependent successor metadata, verify fresh and
-  returning clients, and track retirement. Do not overwrite keys in place.
+- `soph omega rotate`: prepare replacement snapshot/timestamp keys and a
+  successor root signed by the unchanged 2-of-3 root quorum. Require its reviewed
+  digest for application, retain numbered roots, and recover publication through
+  the online journal. Membership/root-key rotation and automated deployment
+  adoption tracking remain later slices; do not overwrite keys in place.
 
 Signing and publication need a single-writer lock, durable monotonic counters,
 immutable prepared releases, and an idempotent retry journal. If timestamp N

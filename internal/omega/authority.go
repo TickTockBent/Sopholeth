@@ -76,6 +76,7 @@ type Report struct {
 	Action          string                `json:"action"`
 	Release         *PublicationReport    `json:"release,omitempty"`
 	OperationalHome string                `json:"operational_home,omitempty"`
+	Rotation        *RotationReport       `json:"rotation,omitempty"`
 }
 
 func Init(ctx context.Context, opts InitOptions) (Report, error) {

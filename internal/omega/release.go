@@ -10,7 +10,6 @@ import (
 
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/theupdateframework/go-tuf/v2/metadata"
-	"github.com/theupdateframework/go-tuf/v2/metadata/trustedmetadata"
 	"sopholeth/internal/trust/bootstrap"
 )
 
@@ -30,6 +29,7 @@ type release struct {
 	Timestamp      []byte    `json:"timestamp"`
 	TargetsVersion int64     `json:"targets_version,omitempty"`
 	ApprovedAt     time.Time `json:"approved_at,omitzero"`
+	Roots          [][]byte  `json:"roots,omitempty"`
 }
 
 func digest(data []byte) string        { return fmt.Sprintf("%x", sha256.Sum256(data)) }
@@ -71,8 +71,11 @@ func metadataFile(version int64, data []byte) *metadata.MetaFiles {
 	return &metadata.MetaFiles{Version: version, Length: int64(len(data)), Hashes: metadata.Hashes{"sha256": hash[:]}}
 }
 
-func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previous string, manifest []byte, now time.Time) (release, error) {
-	r := release{Schema: 1, Version: version, Previous: previous, Fingerprint: bundle.Fingerprint(), Created: now, Manifest: manifest}
+func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previous string, manifest []byte, now time.Time, roots ...[]byte) (release, error) {
+	r := release{Schema: 1, Version: version, Previous: previous, Fingerprint: bundle.Fingerprint(), Created: now, Manifest: manifest, Roots: roots}
+	if len(roots) > 0 {
+		r.Schema = 3
+	}
 	if a.Expires.Sub(now) < 24*time.Hour {
 		return r, errors.New("omega: publication requires at least 24 hours of root validity; arrange a root ceremony")
 	}
@@ -111,7 +114,7 @@ func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previou
 func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[string]time.Time, error) {
 	var empty bootstrap.Manifest
 	fail := func(err error) (bootstrap.Manifest, map[string]time.Time, error) { return empty, nil, err }
-	if (r.Schema != 1 && r.Schema != 2) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
+	if r.Schema < 1 || r.Schema > 4 || (r.Schema > 2) != (len(r.Roots) > 0) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
 		return fail(errors.New("omega: invalid release identity or schema"))
 	}
 	canonical, err := approvedManifest(r.Manifest, bundle.Network)
@@ -121,7 +124,7 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 	if !bytes.Equal(canonical, r.Manifest) {
 		return fail(errors.New("omega: release manifest is not canonical"))
 	}
-	tm, err := trustedmetadata.New(bundle.Root)
+	tm, err := trustedRoots(bundle, r.Roots)
 	if err != nil {
 		return fail(err)
 	}
@@ -150,14 +153,14 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 	}
 	expires := map[string]time.Time{"root": tm.Root.Signed.Expires, "targets": targets.Signed.Expires, "snapshot": tm.Snapshot.Signed.Expires, "timestamp": tm.Timestamp.Signed.Expires}
 	approvedAt := r.approvalTime()
-	if r.Schema == 1 && (r.TargetsVersion != 0 || !r.ApprovedAt.IsZero()) {
+	if !r.isRenewal() && (r.TargetsVersion != 0 || !r.ApprovedAt.IsZero()) {
 		return fail(errors.New("omega: approval contains renewal-only fields"))
 	}
-	if r.Schema == 2 && (r.TargetsVersion < 1 || r.TargetsVersion >= r.Version || approvedAt.IsZero() || r.Created.Before(approvedAt)) {
+	if r.isRenewal() && (r.TargetsVersion < 1 || r.TargetsVersion >= r.Version || approvedAt.IsZero() || r.Created.Before(approvedAt)) {
 		return fail(errors.New("omega: invalid renewal approval identity"))
 	}
 	deadline := expires["root"]
-	if r.Schema == 2 {
+	if r.isRenewal() {
 		deadline = minTime(deadline, expires["targets"])
 	}
 	if !expires["targets"].Equal(minTime(approvedAt.Add(90*24*time.Hour), expires["root"])) ||
@@ -165,7 +168,7 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 		!expires["timestamp"].Equal(minTime(r.Created.Add(24*time.Hour), deadline)) {
 		return fail(errors.New("omega: release expiration policy mismatch"))
 	}
-	if r.Schema == 1 && expires["root"].Sub(r.Created) < 24*time.Hour {
+	if !r.isRenewal() && expires["root"].Sub(r.Created) < 24*time.Hour {
 		return fail(errors.New("omega: release approved too close to root expiration"))
 	}
 	m, err := bootstrap.ParseManifest(r.Manifest, bundle.Network)
@@ -173,23 +176,39 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 }
 
 func (r release) objects(bundle bootstrap.Bundle) []publicObject {
-	return []publicObject{
+	objects := []publicObject{
 		{"1.root.json", bundle.Root},
 		{"targets/" + digest(r.Manifest) + ".bootstrap.json", r.Manifest},
 		{fmt.Sprintf("%d.targets.json", r.versions().Targets), r.Targets},
 		{fmt.Sprintf("%d.snapshot.json", r.Version), r.Snapshot},
 	}
+	// Successor dependencies precede the root transition; timestamp is written
+	// last by the publisher. Every numbered root remains available forever.
+	for i, root := range r.Roots {
+		objects = append(objects, publicObject{fmt.Sprintf("%d.root.json", i+2), root})
+	}
+	return objects
 }
+
+func (r release) isRenewal() bool { return r.Schema == 2 || r.Schema == 4 }
+
+func (r release) currentRoot(bundle bootstrap.Bundle) []byte {
+	if len(r.Roots) > 0 {
+		return r.Roots[len(r.Roots)-1]
+	}
+	return bundle.Root
+}
+
 func (r release) versions() bootstrap.Versions {
 	targets := r.Version
-	if r.Schema == 2 {
+	if r.isRenewal() {
 		targets = r.TargetsVersion
 	}
-	return bootstrap.Versions{Root: 1, Targets: targets, Snapshot: r.Version, Timestamp: r.Version}
+	return bootstrap.Versions{Root: int64(len(r.Roots)) + 1, Targets: targets, Snapshot: r.Version, Timestamp: r.Version}
 }
 
 func (r release) approvalTime() time.Time {
-	if r.Schema == 2 {
+	if r.isRenewal() {
 		return r.ApprovedAt
 	}
 	return r.Created
@@ -198,9 +217,16 @@ func (r release) approvalTime() time.Time {
 // Renewal preserves the exact offline-approved targets and manifest. Only the
 // two online roles advance; neither can extend the offline approval deadline.
 func prepareRenewal(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time) (release, error) {
+	return prepareRenewalWithRoots(keys, bundle, previous, now, previous.Roots)
+}
+
+func prepareRenewalWithRoots(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte) (release, error) {
 	r := release{Schema: 2, Version: previous.Version + 1, Previous: digest(record(previous)), Fingerprint: bundle.Fingerprint(),
 		Created: now.Truncate(time.Second), Manifest: previous.Manifest, Targets: previous.Targets,
-		TargetsVersion: previous.versions().Targets, ApprovedAt: previous.approvalTime()}
+		TargetsVersion: previous.versions().Targets, ApprovedAt: previous.approvalTime(), Roots: roots}
+	if len(roots) > 0 {
+		r.Schema = 4
+	}
 	_, expires, err := previous.validate(bundle)
 	if err != nil {
 		return r, err
@@ -231,7 +257,16 @@ func (r release) follows(previous release) error {
 	if r.Created.Before(previous.Created) {
 		return errors.New("omega: release clock moved backward")
 	}
-	if r.Schema == 2 && (r.TargetsVersion != previous.versions().Targets || !r.ApprovedAt.Equal(previous.approvalTime()) ||
+	if len(r.Roots) < len(previous.Roots) || len(r.Roots) > len(previous.Roots)+1 ||
+		(len(r.Roots) > len(previous.Roots) && !r.isRenewal()) {
+		return errors.New("omega: release root chain rolled back or skipped a transition")
+	}
+	for i := range previous.Roots {
+		if !bytes.Equal(r.Roots[i], previous.Roots[i]) {
+			return errors.New("omega: release changed an established root transition")
+		}
+	}
+	if r.isRenewal() && (r.TargetsVersion != previous.versions().Targets || !r.ApprovedAt.Equal(previous.approvalTime()) ||
 		!bytes.Equal(r.Targets, previous.Targets) || !bytes.Equal(r.Manifest, previous.Manifest)) {
 		return errors.New("omega: renewal changed offline-approved membership")
 	}
