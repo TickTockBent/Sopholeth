@@ -1,8 +1,9 @@
 # First public network: omega, then three roots
 
 Status: agreed delivery path, 2026-09-22. Placeholder rejection and the public
-release fingerprint gate are implemented; the omega suite and deployment
-remain pending. The [omega audit](omega-signing-audit.md) records the initial defects;
+release fingerprint gate, durable trust client, and atomic disposable
+`soph omega init`/local `status` are implemented. Publishing, renewal, rotation,
+consumer integration, and deployment remain pending. The [omega audit](omega-signing-audit.md) records the initial defects;
 [issue #80](https://github.com/TickTockBent/Sopholeth/issues/80) tracks launch
 readiness and the live issue queue.
 
@@ -54,8 +55,9 @@ v2.4.2 as the proposed integration baseline, with separate offline approval
 and online renewal roles. The application now uses Go 1.27.1 and includes the
 [durable TUF client](../internal/trust/bootstrap/README.md), with bundle/manifest
 validation, bounded HTTPS, locked state checkpoints, and expiring accepted
-views. Operator commands, the compiled bundle/release gate, and discovery
-consumer/transport integration remain pending.
+views. Atomic disposable authority initialization and local inspection now
+run through `soph omega`. The remaining operator commands, compiled bundle/release
+gate, and discovery consumer/transport integration remain pending.
 
 The proposed command surface is:
 
@@ -66,7 +68,10 @@ The proposed command surface is:
 | `soph omega status` | Report accepted versions, authority fingerprints, roots, expiration, renewal/publication health, and actionable failures, with script-friendly output. |
 | `soph omega rotate` | Prepare and carry out an authenticated successor-key transition with defined overlap, retained transition metadata, adoption checks, and retirement criteria. |
 
-These commands are planned, not available yet. Fold the existing standalone
+`init` and local `status` are implemented for disposable Linux authorities;
+see [atomic initialization and recovery](omega-operations.md#all-or-nothing-commit-and-retry).
+Publishing, renewal, rotation, production custody, and remote status remain
+pending. Fold the existing standalone
 `omega` tool into `soph` and retire that binary, updating builds, releases, and
 documentation. Node hosts receive public trust material, not the ultimate
 private authority key. Routine freshness renewal must run unattended without

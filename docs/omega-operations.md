@@ -1,20 +1,121 @@
 # Sopholeth omega operations
 
-Omega signs the public network's bootstrap root list. This document describes
-the interim standalone tool for development/reference. Production authority
-setup and DNS cutover remain pending; use the
-[public-network plan](public-network-plan.md) for the agreed path to a working
-`soph omega` suite and three public roots. Replace this reference with the
-rehearsed production runbook as that implementation ships.
+`soph omega init` and `soph omega status` now support disposable TUF authority
+initialization on Linux. Publication, online renewal, rotation, production
+custody, and migration of discovery consumers remain the next steps in the
+[public-network plan](public-network-plan.md). No production authority exists.
 
-The [2026-09-22 signing audit](omega-signing-audit.md) records implementation
-findings and their tracking issues. The planned production workflow moves
-operator commands under `soph omega` and defines automated renewal and
-graceful key rotation. The standalone commands below describe the current
-interim tool; the redesign has not been implemented.
+## Initialize a disposable authority
 
-Read the [discovery contract](discovery.md) before deploying roots. Keep
-production signing keys separate from node hosts and test keys.
+Build the existing CLI, then choose **one private custody home** for all
+operator work. Its parent must exist and be protected from replacement by
+other users. The home is created with mode `0700` if absent.
+
+```bash
+make build-soph
+./bin/soph omega init \
+  --home /path/to/private/omega-home \
+  --network rehearsal \
+  --repository https://metadata.example.invalid \
+  --disposable
+./bin/soph --json omega status \
+  --home /path/to/private/omega-home --network rehearsal
+```
+
+`--network` here identifies the authority, not a saved client profile. It goes
+after `omega init` or `omega status`. IDs contain 1–64 ASCII letters, digits,
+underscores or hyphens, beginning with a letter or digit, and are case-sensitive.
+The repository currently accepts HTTPS origins only. The planned
+`sopholeth.io/omega/` base-path and hosting support is separate future work.
+Neither command contacts the repository or reads client profiles.
+
+Initialization creates six distinct Ed25519 keys: a 2-of-3 root quorum and
+separate targets, snapshot, and timestamp keys. It signs and verifies a
+version-1 root with consistent snapshots and a 365-day expiration, then
+produces a public bootstrap bundle accepted by the durable trust client.
+The reported SHA-256 identifies the normalized signed initial root; it is
+**not** the legacy single-key fingerprint used by the current release gate.
+
+### All-or-nothing commit and retry
+
+Each network has one immutable authority slot under the custody home. A
+process lock serializes creation, recovery, and inspection for that slot.
+Everything is prepared in a private `.<network>.pending` directory. All six
+keys and the fixed intent are committed together in `authority.json` before
+any metadata is signed. After that boundary, retries use exactly those keys,
+repository, and expiration; there is no replace/reset/force option.
+
+The complete set is checked against the private keys, the exact serialized
+root/bundle is verified, and files and directories are synchronized before
+an atomic, non-replacing rename makes `<home>/<network>` visible. A caller
+can observe an absent authority or the complete verified authority. Staging
+is never reported as a usable authority, exported, or published.
+
+Rerun the **same init command** after interruption. It automatically completes
+staging or verifies the existing committed authority, returning the same
+fingerprint. Different configuration for an existing or pending network is
+rejected. A process can die after commit but before reporting success; retry
+recognizes that completed transaction. A parent-directory sync failure is
+reported as an unconfirmed durability result, not permission to create new keys.
+
+A torn first private-record write, before any signing, can be discarded and
+retried. A complete staged record is preserved. Subsequent torn public-output
+writes are reconstructed from the durable private record. Missing or corrupt
+**committed** material is damage, not an interrupted initialization: it fails
+closed and requires restoration from verified backups. It cannot trigger key
+regeneration. An expired authority also cannot be reinitialized.
+
+These guarantees require a local Linux filesystem supporting advisory locks,
+hard links, `fsync`, and atomic `RENAME_NOREPLACE`. Process-death and injected
+write/commit failures are tested; physical power-loss behavior still depends
+on the filesystem and storage honoring synchronization. Unsupported operations
+fail without making a partially populated authority slot visible.
+
+The custody home is the durable registry of network identities. Keep using it
+and preserve its backups. An offline command cannot detect a second independent
+home or a deleted registry; changing homes is not a recovery procedure. A
+production ceremony must establish the canonical registry and independent
+custody before this command can create production material.
+
+### Files, custody, and status
+
+A committed network directory contains exactly these files, all mode `0600`:
+
+| File | Purpose |
+| --- | --- |
+| `authority.json` | **Private** initialization record containing all six keys and fixed intent. |
+| `1.root.json` | Verified, signed public initial TUF root. |
+| `bundle.json` | Public network/repository/initial-root bundle for the client. |
+| `complete.json` | Integrity receipt binding the committed files and root fingerprint. |
+
+Back up the private custody home using protected storage and verify a restored
+copy with `omega status`. Only the root and bundle are public handoff artifacts;
+never copy the whole home to a site, repository, node host, or logs. The receipt
+checks consistency; it is not protection against someone who controls the
+operator account and can replace all custody material.
+
+This first implementation deliberately requires `--disposable`: all six keys
+are stored together for development. It does not claim independent root-key
+custody or create independent recovery copies. Production initialization must
+wait for the custody/recovery workflow and rehearsal. Windows public-client
+support remains a [separate required gate](public-network-plan.md#windows-public-client-gate).
+
+`status` verifies local private/public consistency and the completion receipt.
+Text and `--json` output include state, network, repository, initial-root
+fingerprint/version/expiration, and role thresholds/key IDs. They contain no
+private key material. `publication: "not_checked"` explicitly means no remote
+publication or renewal check occurred. No membership manifest exists at this
+stage. Missing, pending, corrupt, or expired authority returns a nonzero exit;
+`--json` includes the failure state and next action. The global `--timeout`
+bounds waiting for the network lock (15 seconds by default).
+
+## Legacy DNS tooling reference
+
+The remaining sections describe the interim standalone `omega` tool and
+current DNS discovery consumers, which are still present until the TUF
+publishing and consumer migration ships. Do not use this legacy workflow for
+the first public network. The [signing audit](omega-signing-audit.md) records
+its known defects; the [trust design](omega-trust-design.md) defines its replacement.
 
 ## Build the operator tool
 

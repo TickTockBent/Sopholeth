@@ -14,20 +14,22 @@ func (*commandHelp) Error() string { return "help requested" }
 
 func (a *app) printCommandHelp(fs *flag.FlagSet) error {
 	commands := map[string]struct{ args, description string }{
-		"join":     {"[endpoint] [--name name] [--public]", "Validate and save a node, making its network current. Without an endpoint, use signed public discovery."},
-		"use":      {"<name>", "Make a saved network current."},
-		"networks": {"", "List saved networks; * marks the current one."},
-		"forget":   {"<name>", "Remove a saved network."},
-		"put":      {"[key] [--ttl seconds] [--file path] [--require-confirmed]", "Write stdin or a file. Generate a key if omitted; print the key to stdout."},
-		"get":      {"<key> [--output path]", "Write the stored value's bytes to stdout or a file."},
-		"exists":   {"<key>", "Check presence and local TTL without the payload. Alias: head."},
-		"list":     {"[--prefix p] [--limit n] [--cursor c] [--all]", "List live keys on the contacted node."},
-		"health":   {"", "Show the node's health and identity as JSON."},
-		"status":   {"", "Show the node's status as JSON."},
-		"topology": {"", "Show the node's topology as JSON."},
-		"metrics":  {"", "Show the node's Prometheus metrics."},
-		"version":  {"", "Show the client version."},
-		"serve":    {"[--node endpoint] [--port 8181] [--bind address] [--q text] [--open]", "Serve soph.stream locally. The browser connects directly to the selected node; Ctrl-C stops the viewer server."},
+		"omega init":   {"--home path --network id --repository https://host --disposable", "Create a complete authority atomically. Repeating the command recovers or verifies the same authority; existing keys are never replaced."},
+		"omega status": {"--home path --network id", "Verify local authority material and show its public identity and expiration. Publication health is not checked."},
+		"join":         {"[endpoint] [--name name] [--public]", "Validate and save a node, making its network current. Without an endpoint, use signed public discovery."},
+		"use":          {"<name>", "Make a saved network current."},
+		"networks":     {"", "List saved networks; * marks the current one."},
+		"forget":       {"<name>", "Remove a saved network."},
+		"put":          {"[key] [--ttl seconds] [--file path] [--require-confirmed]", "Write stdin or a file. Generate a key if omitted; print the key to stdout."},
+		"get":          {"<key> [--output path]", "Write the stored value's bytes to stdout or a file."},
+		"exists":       {"<key>", "Check presence and local TTL without the payload. Alias: head."},
+		"list":         {"[--prefix p] [--limit n] [--cursor c] [--all]", "List live keys on the contacted node."},
+		"health":       {"", "Show the node's health and identity as JSON."},
+		"status":       {"", "Show the node's status as JSON."},
+		"topology":     {"", "Show the node's topology as JSON."},
+		"metrics":      {"", "Show the node's Prometheus metrics."},
+		"version":      {"", "Show the client version."},
+		"serve":        {"[--node endpoint] [--port 8181] [--bind address] [--q text] [--open]", "Serve soph.stream locally. The browser connects directly to the selected node; Ctrl-C stops the viewer server."},
 	}
 	info := commands[fs.Name()]
 	var buf bytes.Buffer

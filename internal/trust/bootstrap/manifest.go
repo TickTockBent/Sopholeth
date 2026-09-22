@@ -50,13 +50,26 @@ func ParseBundle(data []byte) (Bundle, error) {
 }
 
 func (b Bundle) Validate() error {
-	if b.Schema != 1 || !identifier.MatchString(b.Network) {
+	if b.Schema != 1 {
 		return errors.New("bootstrap: invalid bundle schema or network identity")
 	}
-	if _, err := httpsOrigin(b.Repository); err != nil {
-		return fmt.Errorf("bootstrap: repository: %w", err)
+	if _, err := ValidateLocation(b.Network, b.Repository); err != nil {
+		return err
 	}
 	return validateRoot(b.Root)
+}
+
+// ValidateLocation checks the network identity and normalizes the repository
+// before an operator creates keys. Repository base paths are not supported yet.
+func ValidateLocation(network, repository string) (string, error) {
+	if !identifier.MatchString(network) {
+		return "", errors.New("bootstrap: invalid network identity")
+	}
+	origin, err := httpsOrigin(repository)
+	if err != nil {
+		return "", fmt.Errorf("bootstrap: repository: %w", err)
+	}
+	return origin, nil
 }
 
 // Fingerprint identifies the library's normalized serialization of the

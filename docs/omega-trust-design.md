@@ -1,12 +1,13 @@
 # Omega trust lifecycle: integration spike and proposed design
 
-Status: trust client implemented, operator/consumer integration pending.
+Status: trust client and atomic disposable authority initialization implemented;
+publishing, rotation, and consumer integration pending.
 The completed [spike](../test/omega-tuf/README.md) established the design for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md). Its scenarios now exercise the
 [durable client](../internal/trust/bootstrap/README.md) in the main Go suite.
-This does not yet implement `soph omega`, switch node discovery, or establish
-a production authority.
+`soph omega init` and local `status` now implement the first operator slice.
+This does not switch node discovery or establish a production authority.
 The [audit](omega-signing-audit.md) remains the record of the interim protocol.
 
 ## Decision
@@ -210,7 +211,12 @@ do not turn on the library's `UnsafeLocalMode` as an unexplained fallback.
 
 ## One operator workflow
 
-All commands below remain proposed under the existing CLI:
+`soph omega init` and local `status` are implemented for disposable authorities
+on Linux; see the [operator guide](omega-operations.md). Initialization prepares
+and verifies the entire authority privately, then commits it with a single
+atomic, non-replacing directory rename. Repeated invocations recover the same
+transaction or verify the same committed authority. Production custody remains
+pending. The complete command surface below includes subsequent planned work:
 
 - `soph omega init`: create an exclusive staged authority directory, protect
   key files, verify generated key consistency, produce public bundle and
@@ -270,9 +276,11 @@ unsigned replacement from the same compromised delivery channel.
    DNS, and activation come from that runbook, not this spike.
 
 The toolchain upgrade, explicit bundle/manifest types, and durable client from
-steps 1–2 are implemented. The compiled public bundle/release-gate migration,
-node/CLI/dashboard adoption, runtime callbacks, transport checks, and operator
-commands remain pending. The [client reference](../internal/trust/bootstrap/README.md)
+steps 1–2 are implemented. Step 3 now includes atomic disposable `init` and
+local `status`; publishing, renewal, rotation, and standalone-tool retirement
+remain pending. The compiled public bundle/release-gate migration,
+node/CLI/dashboard adoption, runtime callbacks, and transport checks remain
+pending. The [client reference](../internal/trust/bootstrap/README.md)
 records its supported storage platforms and exact validation boundaries.
 
 Native Windows public-client support is required before the TUF consumer

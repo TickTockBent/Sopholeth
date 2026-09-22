@@ -20,6 +20,15 @@ go build -o bin/soph ./cmd/soph
 Published binaries and packages are a release step that has not happened
 yet; see the [roadmap](roadmap.md#before-public-alpha).
 
+## Authority operations
+
+`soph omega init` atomically creates a disposable TUF authority, and
+`soph omega status` verifies local authority material. They use a separate
+private custody home and do not select or modify a saved client network.
+See [omega operations](omega-operations.md) for the commands, all-or-nothing
+commit/retry contract, files, custody limits, and JSON status. Publishing,
+renewal, rotation, and production authority creation remain pending.
+
 ## Join a network
 
 ```bash
