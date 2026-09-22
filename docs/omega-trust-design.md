@@ -115,6 +115,22 @@ not carry trust metadata or choose an arbitrary download URL. If alternate
 locators are added later, they need an explicit policy for allowed origins,
 redirects, and local/private address access.
 
+The planned public home is `https://sopholeth.io/omega/`. Before adopting it,
+extend the client's origin-only repository validation to support a base path
+and confine downloads to that origin and path. Keep node endpoint validation
+as HTTPS origins. Publication should remain independent of docs deployments
+so routine renewal and website rollback cannot inadvertently revert metadata.
+
+When configuring that endpoint, preserve real 404 responses for missing files
+under the site's existing filesystem/404 routing. Serve fixed-name
+`timestamp.json` with `no-cache` or a very short `max-age`; serve numbered root,
+snapshot, and targets metadata with long-lived immutable caching. Never replace
+the contents of an already-published numbered file. Missing future versions
+must not acquire the immutable cache policy: a cached 404 must not delay a
+later root transition. Verify the response headers at the public endpoint as
+part of publication rehearsal. These routing/cache changes are planned;
+the site's Vercel configuration has not been changed for omega hosting yet.
+
 Use consistent snapshots, a fixed target name `bootstrap.json`, numbered
 root/targets/snapshot files, and content-hashed target objects. Upload immutable
 objects before changing `timestamp.json`. Retain every numbered root

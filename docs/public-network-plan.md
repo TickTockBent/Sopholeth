@@ -178,6 +178,14 @@ Replace the interim [omega operations reference](omega-operations.md) with
 an executable production procedure once the suite and endpoint model exist.
 Do not invent command flags or deploy the old signing format to fill gaps.
 
+Prepare the planned metadata home at `https://sopholeth.io/omega/` with client
+base-path support and publication independent of docs deployments. Configure
+short/no caching for fixed-name `timestamp.json`, immutable caching for
+numbered metadata, and uncached 404s for missing future versions. Verify actual
+HTTP status and cache headers alongside the signed publication. The
+[hosting design](omega-trust-design.md#repository-and-bootstrap-manifest)
+records this future work; no Vercel routing/cache change is part of the plan update.
+
 The runbook must record the following, in execution order:
 
 1. Inventory all three hosts: stable node identity, public hostname/address,
