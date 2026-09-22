@@ -80,22 +80,8 @@ func openHome(ctx context.Context, home, network string, create bool) (*store, e
 	if err != nil {
 		return fail(err)
 	}
-	for {
-		if err := ctx.Err(); err != nil {
-			return fail(err)
-		}
-		locked, err := tryLock(s.lock)
-		if err != nil {
-			return fail(err)
-		}
-		if locked {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return fail(ctx.Err())
-		case <-time.After(20 * time.Millisecond):
-		}
+	if err := waitForLock(ctx, s.lock); err != nil {
+		return fail(err)
 	}
 	if create {
 		f, err := os.Open(parent)
@@ -111,6 +97,26 @@ func openHome(ctx context.Context, home, network string, create bool) (*store, e
 		}
 	}
 	return s, nil
+}
+
+func waitForLock(ctx context.Context, file *os.File) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		locked, err := tryLock(file)
+		if err != nil {
+			return err
+		}
+		if locked {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
 }
 
 func (s *store) close() {

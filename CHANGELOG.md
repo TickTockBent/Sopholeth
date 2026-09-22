@@ -4,11 +4,18 @@
 
 ### Public discovery
 
+- Add `soph omega publish` and `status --verify` for disposable Linux authorities.
+  Journal exact signed releases separately from authority material, install
+  immutable public objects before the timestamp, and verify the served release
+  through the durable HTTPS client. Preserve versions and bytes across retries,
+  report publication failures and role deadlines, and retain history for recovery.
+  The first backend writes a local directory served by separately configured
+  HTTPS; unattended renewal, production custody/hosting, and rotation remain pending.
 - Add `soph omega init` and local `status` (#208) for disposable Linux authorities.
   Verify and durably commit the complete authority atomically; retries recover
   the same transaction or inspect the existing keys. Report local identity,
   expiration, and actionable failures in text or JSON. Production custody,
-  publishing, renewal, rotation, and discovery integration remain pending.
+  unattended renewal, rotation, and discovery integration remain pending.
 - Add the TUF bootstrap client with validated public bundles/manifests,
   bounded HTTPS, durable rollback state, process locks, and expiring cached
   authority. Move disposable lifecycle tests into the application suite and

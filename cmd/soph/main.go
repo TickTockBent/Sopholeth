@@ -266,7 +266,7 @@ Viewer:
                                      serve soph.stream for the selected network
 
 Authority operations:
-  omega init | status                initialize or inspect disposable TUF authority material
+  omega init | publish | status      initialize, publish, or inspect a disposable TUF authority
 
 Global flags:
   --network <name>   use a saved network for this command (also SOPH_NETWORK)

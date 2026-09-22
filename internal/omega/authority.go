@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"regexp"
 	"time"
@@ -73,6 +74,7 @@ type Report struct {
 	Publication string                `json:"publication"`
 	Problem     string                `json:"problem,omitempty"`
 	Action      string                `json:"action"`
+	Release     *PublicationReport    `json:"release,omitempty"`
 }
 
 func Init(ctx context.Context, opts InitOptions) (Report, error) {
@@ -250,6 +252,14 @@ func (s *store) prepareAuthority(opts InitOptions, now time.Time) (authority, er
 }
 
 func Status(ctx context.Context, homePath, network string) (Report, error) {
+	return status(ctx, homePath, network, false, nil)
+}
+
+func VerifyPublication(ctx context.Context, homePath, network string, httpClient *http.Client) (Report, error) {
+	return status(ctx, homePath, network, true, httpClient)
+}
+
+func status(ctx context.Context, homePath, network string, verify bool, httpClient *http.Client) (Report, error) {
 	if !networkID.MatchString(network) {
 		err := errors.New("omega: invalid network identity")
 		return failedReport(err), err
@@ -282,7 +292,10 @@ func Status(ctx context.Context, homePath, network string) (Report, error) {
 		err = errors.New("omega: authority belongs to a different network")
 		return failedReport(err), err
 	}
-	return report, err
+	if err != nil {
+		return report, err
+	}
+	return inspectPublication(ctx, home, current, report, verify, httpClient)
 }
 
 func absentReport(network string) (Report, error) {
@@ -317,7 +330,7 @@ func (s *store) inspect(now time.Time) (Report, error) {
 	}
 	report := Report{Schema: 1, State: "initialized", Mode: "disposable", Network: bundle.Network, Repository: bundle.Repository,
 		Fingerprint: bundle.Fingerprint(), RootVersion: root.Signed.Version, RootExpires: root.Signed.Expires,
-		Publication: "not_checked", Roles: map[string]RoleStatus{}, Action: "Back up the private custody home; publication, renewal, and rotation are not implemented yet."}
+		Publication: "not_checked", Roles: map[string]RoleStatus{}, Action: "Back up the private custody home; use soph omega publish for a disposable repository."}
 	for _, name := range metadata.TOP_LEVEL_ROLE_NAMES {
 		role := root.Signed.Roles[name]
 		report.Roles[name] = RoleStatus{Threshold: role.Threshold, KeyIDs: role.KeyIDs}

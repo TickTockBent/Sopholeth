@@ -9,9 +9,9 @@ go test -race ./internal/trust/bootstrap
 ```
 
 The node, CLI, and dashboard still use the interim discovery path. Connecting
-this package to those consumers, building `soph omega`, and replacing the
-legacy public-release anchor are subsequent changes. Public discovery remains
-disabled in ordinary builds; this package creates no production authority.
+this package to those consumers, completing the `soph omega` lifecycle, and
+replacing the legacy public-release anchor are subsequent changes. Public
+discovery remains disabled in ordinary builds; this package creates no production authority.
 
 ## API and formats
 
@@ -68,7 +68,7 @@ The signed top-level `bootstrap.json` target has this schema:
 ```
 
 Network identity must match the bundle. The client accepts 1–16 distinct roots;
-the first public deployment's publishing policy will require three. Identifiers
+the first public deployment's publisher requires three. Identifiers
 use ASCII letters, digits, dots, underscores, and hyphens, starting with a
 letter or digit, with a maximum of 128 characters. Origins must use HTTPS,
 without userinfo, queries, fragments, or application paths. Equivalent host
@@ -144,3 +144,8 @@ power-loss behavior of a particular storage device or network filesystem.
 
 Operator recovery/reset, encrypted key custody, publication, scheduled renewal,
 runtime callbacks, and final node/CLI integration are not implemented here.
+
+The accepted `View.MetadataSHA256` map identifies the exact authenticated bytes
+for root, targets, snapshot, and timestamp. The operator publisher compares
+these hashes with its immutable prepared release, so valid metadata with the
+same version but different bytes cannot produce a false publication success.

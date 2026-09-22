@@ -28,8 +28,8 @@ so public discovery fails closed. Use a private network for development.
 The service executables are `server`, `omega`, and `dashboard`. Internal names
 follow their roles: `NODE_*` configuration, plain MCP tool names, and component
 metrics. See the [migration guide](docs/rebrand.md) when updating an older
-checkout or deployment. The `soph` client talks to any node over HTTP and includes atomic disposable
-authority initialization/local inspection under `soph omega`; see
+checkout or deployment. The `soph` client talks to any node over HTTP and includes
+disposable authority initialization, publication, and verification under `soph omega`; see
 [omega operations](docs/omega-operations.md).
 
 ## Run locally

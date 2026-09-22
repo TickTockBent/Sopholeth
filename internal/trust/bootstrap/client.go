@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"maps"
@@ -45,6 +46,8 @@ type View struct {
 	Manifest Manifest  `json:"manifest"`
 	Expires  time.Time `json:"expires"`
 	Versions Versions  `json:"versions"`
+	// Digests of the exact authenticated metadata, for publisher verification.
+	MetadataSHA256 map[string]string `json:"metadata_sha256"`
 }
 
 // New initializes only an absent state directory. Existing, incomplete state
@@ -316,7 +319,11 @@ func verifyAccepted(a *accepted, network string, now time.Time) (View, error) {
 	if !now.Before(deadline) {
 		return View{}, &metadata.ErrExpiredMetadata{Msg: "bootstrap authority lease has expired"}
 	}
-	return View{Manifest: m, Expires: deadline, Versions: Versions{Root: tm.Root.Signed.Version,
+	hashes := make(map[string]string, len(a.Metadata))
+	for role, data := range a.Metadata {
+		hashes[role] = fmt.Sprintf("%x", sha256.Sum256(data))
+	}
+	return View{Manifest: m, Expires: deadline, MetadataSHA256: hashes, Versions: Versions{Root: tm.Root.Signed.Version,
 		Timestamp: tm.Timestamp.Signed.Version, Snapshot: tm.Snapshot.Signed.Version, Targets: targets.Signed.Version}}, nil
 }
 

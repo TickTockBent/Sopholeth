@@ -3,6 +3,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,7 +117,7 @@ func TestOmegaStatusUninitializedAndInvalidReports(t *testing.T) {
 
 func TestOmegaHelpAndUsage(t *testing.T) {
 	ta := newTestApp(t)
-	for _, args := range [][]string{{"help", "omega"}, {"omega", "--help"}, {"omega", "init", "--help"}, {"omega", "status", "--help"}} {
+	for _, args := range [][]string{{"help", "omega"}, {"omega", "--help"}, {"omega", "init", "--help"}, {"omega", "publish", "--help"}, {"omega", "status", "--help"}} {
 		out, _ := ta.mustRun(t, "", args...)
 		if !strings.Contains(out, "Usage:") {
 			t.Fatalf("missing help for %v", args)
@@ -152,5 +154,45 @@ func TestOmegaOutputFailureDoesNotUndoOrReplaceAuthority(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("output failure caused new authority creation")
+	}
+}
+
+func TestOmegaPublishCLIAndVerifiedStatus(t *testing.T) {
+	ta := newTestApp(t)
+	base := t.TempDir()
+	home := filepath.Join(base, "custody")
+	repository := filepath.Join(base, "repository")
+	server := httptest.NewTLSServer(http.FileServer(http.Dir(repository)))
+	defer server.Close()
+	ta.app.newHTTPClient = server.Client
+	ta.mustRun(t, "", "omega", "init", "--home", home, "--network", "rehearsal", "--repository", server.URL, "--disposable")
+	manifest := filepath.Join(base, "manifest.json")
+	raw := `{"schema":1,"network":"rehearsal","enclave":"default","roots":[{"id":"a","origin":"https://a.example.invalid"},{"id":"b","origin":"https://b.example.invalid"},{"id":"c","origin":"https://c.example.invalid"}]}`
+	if err := os.WriteFile(manifest, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--json", "omega", "publish", "--home", home, "--network", "rehearsal", "--manifest", manifest, "--repository-dir", repository, "--version", "1", "--disposable"}
+	out, _ := ta.mustRun(t, "", args...)
+	result := decodeJSON(t, out)
+	if result["publication"] != "verified" || result["release"].(map[string]any)["version"] != float64(1) {
+		t.Fatalf("unexpected publication: %s", out)
+	}
+	out, _ = ta.mustRun(t, "", "omega", "status", "--home", home, "--network", "rehearsal", "--verify")
+	if !strings.Contains(out, "Publication: verified") || !strings.Contains(out, "Release: 1") || !strings.Contains(out, "Node root: a") || !strings.Contains(out, "timestamp expires:") {
+		t.Fatalf("missing publication information: %s", out)
+	}
+	if err := os.Remove(filepath.Join(repository, "1.snapshot.json")); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := ta.run("", "--json", "omega", "status", "--home", home, "--network", "rehearsal", "--verify")
+	if code != exitError || decodeJSON(t, out)["publication"] != "failed" {
+		t.Fatalf("false verification success: %d %s", code, out)
+	}
+	out, _ = ta.mustRun(t, "", args...)
+	if decodeJSON(t, out)["publication"] != "verified" {
+		t.Fatal("retry did not repair missing immutable object")
+	}
+	if _, err := os.Stat(ta.configPath); !os.IsNotExist(err) {
+		t.Fatal("publisher accessed client profiles")
 	}
 }

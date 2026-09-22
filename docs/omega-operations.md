@@ -1,8 +1,9 @@
 # Sopholeth omega operations
 
-`soph omega init` and `soph omega status` now support disposable TUF authority
-initialization on Linux. Publication, online renewal, rotation, production
-custody, and migration of discovery consumers remain the next steps in the
+`soph omega init`, `publish`, and `status` support disposable TUF authorities
+and verified publication to a local HTTPS-served repository on Linux. Online
+renewal, rotation, production custody/hosting, and migration of discovery
+consumers remain the next steps in the
 [public-network plan](public-network-plan.md). No production authority exists.
 
 ## Initialize a disposable authority
@@ -27,7 +28,8 @@ after `omega init` or `omega status`. IDs contain 1–64 ASCII letters, digits,
 underscores or hyphens, beginning with a letter or digit, and are case-sensitive.
 The repository currently accepts HTTPS origins only. The planned
 `sopholeth.io/omega/` base-path and hosting support is separate future work.
-Neither command contacts the repository or reads client profiles.
+`init` and local `status` do not contact the repository. Operator commands
+do not read or change client profiles.
 
 Initialization creates six distinct Ed25519 keys: a 2-of-3 root quorum and
 separate targets, snapshot, and timestamp keys. It signs and verifies a
@@ -105,12 +107,146 @@ Windows public-client support remains a
 
 `status` verifies local private/public consistency and the completion receipt.
 Text and `--json` output include state, network, repository, initial-root
-fingerprint/version/expiration, and role thresholds/key IDs. They contain no
-private key material. `publication: "not_checked"` explicitly means no remote
-publication or renewal check occurred. No membership manifest exists at this
-stage. Missing, pending, corrupt, or expired authority returns a nonzero exit;
-`--json` includes the failure state and next action. The global `--timeout`
-bounds waiting for the network lock (15 seconds by default).
+fingerprint/version/expiration, and role thresholds/key IDs. Missing, pending,
+corrupt, or expired authority returns a nonzero exit with a corrective action.
+Unknown expiration dates are omitted. No output contains private keys.
+
+## Publish a disposable three-root manifest
+
+Prepare a dedicated directory to be served at the authority bundle's exact
+HTTPS repository origin. Its parent must exist, and it must be outside the
+custody home; neither directory tree may contain the other. The publisher
+creates the final directory if absent. A first publication requires an empty
+directory. Existing site files cannot be adopted as a repository.
+
+This first backend writes to a **local filesystem directory**. The HTTPS
+server is a separate, already configured service; `publish` does not start it,
+upload through an HTTP API, configure Vercel, or deploy root nodes. Verification
+uses normal TLS certificate/hostname checks and refuses redirects. A private
+rehearsal CA can be supplied through the platform's trusted CA configuration
+(for example `SSL_CERT_FILE` on Linux); there is no insecure TLS flag. Hosting
+at `sopholeth.io/omega/` still needs the planned base-path and serving work.
+
+Create the approved manifest, for example `bootstrap.json`:
+
+```json
+{
+  "schema": 1,
+  "network": "rehearsal",
+  "enclave": "default",
+  "roots": [
+    {"id": "root-a", "origin": "https://root-a.example.invalid"},
+    {"id": "root-b", "origin": "https://root-b.example.invalid"},
+    {"id": "root-c", "origin": "https://root-c.example.invalid"}
+  ]
+}
+```
+
+The initial publisher requires exactly three distinct node IDs and HTTPS
+origins, the matching network, and `default`. The manifest schema rejects
+unknown/duplicate fields and malformed endpoints before signing. Node
+reachability and gossip identity are separate deployment checks.
+
+```bash
+./bin/soph --timeout 2m omega publish \
+  --home /path/to/private/omega-home --network rehearsal \
+  --manifest bootstrap.json --repository-dir /path/to/public/omega-repository \
+  --version 1 --disposable
+./bin/soph --json --timeout 2m omega status \
+  --home /path/to/private/omega-home --network rehearsal --verify
+```
+
+Version 1 starts publication. Repeat the **same version and manifest** to
+recover or reverify it. Use the next consecutive version for a new approval;
+versions cannot be skipped or decreased. Reusing a version with different
+membership is an error. Formatting and equivalent origin spellings are
+normalized before the approval is recorded; root-array order is preserved.
+The explicit version makes retries unambiguous, including after the command
+commits but loses its terminal output.
+
+Each approval signs targets, snapshot, and timestamp metadata with their
+respective keys; it copies the existing signed root without using root keys
+to sign again. Proposed lifetimes are 90 days, 7 days, and 24 hours, capped by
+root expiration. Signing requires at least 24 hours of remaining root validity.
+This is a manual approval path with disposable custody. Unattended renewal
+using only separately provisioned online keys is the next slice.
+
+### Publication journal and write order
+
+The authority directory stays immutable. Publication state lives separately
+at `<home>/<network>.publication` (mode `0700`):
+
+- `binding.json` binds the journal to the authority fingerprint, network, and
+  canonical local repository directory.
+- `N.release.json` contains the exact public signed bytes, canonical manifest,
+  creation time, and the preceding release's digest. These immutable records
+  form the durable version history. They contain no private keys.
+- `N.verification.json` records the last check/attempt, its failure if any,
+  and the most recent successful check time for that release.
+- `.verify-*` directories are disposable client-verification scratch. They
+  are removed on completion or the next verification after process death.
+
+The network lock serializes operator work; a separate destination lock prevents
+concurrent publishers from racing the mutable timestamp. The entire signed
+release is durably recorded before any public object is written. There are
+currently at most 10,000 sequential releases per disposable journal; there is
+no history compaction or reset command.
+
+Public files are installed in this order:
+
+1. `1.root.json`, retained unchanged.
+2. `targets/<sha256>.bootstrap.json`, the content-addressed manifest.
+3. `N.targets.json` and `N.snapshot.json`.
+4. `timestamp.json`, atomically replaced only after the immutable objects are
+   durable. It can replace only an exact known older timestamp or retry the
+   current one.
+
+Immutable filenames are never overwritten with different bytes. Public data
+files use mode `0644`; directory access for the HTTPS serving account must be
+configured by the operator. The destination also contains a private, empty
+`.omega-publish.lock`; temporary `.pending` public files may survive a killed
+process. Serve only the documented metadata/target paths and disable directory
+listing. Never serve the custody home.
+
+A retry uses the recorded signatures and expiration; it does not re-sign the
+same version with a new clock. Interrupted writes before the timestamp leave
+the previously advertised release in place. Interruption after the timestamp
+may leave the new release live but unverified; rerunning the command completes
+verification without changing its bytes. A missing public object can be
+restored from its exact journal record. A conflicting object requires explicit
+investigation and is never replaced automatically.
+
+Expired prepared metadata cannot be refreshed in place. Approve the next
+version, retaining the older record and any objects already published. Keep
+all root transitions and all publication history; this implementation performs
+no garbage collection. Missing/corrupt history or a destination ahead of the
+journal requires restoration of the correct history, not initialization of
+fresh counters. Preserve the journal with custody backups. An offline tool
+cannot detect an independent or deleted copy of all ordering state.
+
+### What verification establishes
+
+`publish` reports success only after a fresh instance of the real durable
+bootstrap client fetches the served metadata and accepts its complete chain.
+The accepted versions, root manifest, and SHA-256 hashes of all four metadata
+roles must match the prepared release exactly. An additional fetch checks
+`1.root.json`, which a freshly bundled client normally does not download.
+Stale propagation, missing files, wrong signatures, altered bytes, and HTTPS
+failures return nonzero status even if local publication completed.
+
+`soph omega status --verify` repeats this check without publishing or signing.
+Plain `status` remains offline and reports `publication: "not_checked"` along
+with the latest prepared release, all role deadlines, and historical check
+information. A recorded failure or expired release returns nonzero; a previous
+successful check is not a claim of current availability. Live verification
+reports `publication: "verified"` only after its receipt is persisted. A lost
+verification receipt cannot authorize a write or reset version history.
+
+The global `--timeout` bounds the operator command, including lock waits and
+verification (15 seconds by default); allow more time for slow storage or
+remote rehearsal. Expiry is checked again before reporting verification
+success. Publication checks concern the metadata origin seen by this operator;
+external clients and regional caches still need the planned remote rehearsal.
 
 ## Legacy DNS tooling reference
 
