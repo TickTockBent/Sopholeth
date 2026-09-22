@@ -259,6 +259,13 @@ node/CLI/dashboard adoption, runtime callbacks, transport checks, and operator
 commands remain pending. The [client reference](../internal/trust/bootstrap/README.md)
 records its supported storage platforms and exact validation boundaries.
 
+Native Windows public-client support is required before the TUF consumer
+cutover. The [Windows gate](public-network-plan.md#windows-public-client-gate)
+covers the complete storage backend, including ACL/account policy, ancestor
+paths, locking, durable replacement, and native Windows regression tests.
+The current unsupported-platform error is an interim implementation limit;
+Linux root-node deployment does not define the public CLI's platform scope.
+
 The spike does not close #195 or the related audit issues. It establishes a
 feasible library and trust lifecycle and identifies the integration work
 needed before the first public network can use them.

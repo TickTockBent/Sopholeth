@@ -16,6 +16,8 @@ sequence takes priority over completing the broader viewer and MCP backlog.
   `default` enclave. Enclaves scope replication; they do not provide privacy.
 - The `soph` HTTP client for joining, writing, reading, and listing.
   `soph serve` and soph.stream observe the same nodes in the existing aesthetic.
+- Native Windows support for public CLI discovery, including `soph join` and
+  renewal of saved public profiles. The initial root-node rehearsal uses Linux.
 - Verified discovery, automated renewal, graceful key rotation, and explicit
   recovery procedures, all operated through the existing CLI.
 - Remote endpoints supplied by the project owner for deployment rehearsal.
@@ -115,6 +117,51 @@ Complete verified public-profile and long-running viewer renewal
 ([#198](https://github.com/TickTockBent/Sopholeth/issues/198)). Metadata work
 must preserve a known write outcome, never retry a PUT implicitly, and never
 switch to a different saved network.
+
+### Windows public-client gate
+
+Windows is a required public-client platform. Complete its trust-state backend
+and native integration tests before switching public `soph join`, saved-profile
+renewal, or `soph serve` to the TUF client. Track this with the public-profile
+work in [#198](https://github.com/TickTockBent/Sopholeth/issues/198) and the
+shared trust lifecycle in [#195](https://github.com/TickTockBent/Sopholeth/issues/195).
+Linux operator/root-node development can proceed while this work is prepared;
+Windows root hosting is outside the initial three-root rehearsal.
+
+The current package explicitly rejects Windows state access. Adding a lock
+implementation alone is insufficient: initialization, ownership/permissions,
+ancestor-path checks, and durable replacement currently assume Unix behavior.
+Keep verification, state format, rollback protection, and expiration shared,
+and provide platform-specific storage operations with these required outcomes:
+
+- Native interprocess locking with cancelable waits and recovery after process
+  termination, preserving serialization between separate `soph` processes.
+- Windows account/ACL validation for state and scratch directories, including
+  inherited permissions and protection against replacing ancestor paths.
+  Cover Windows path aliases, junctions/reparse points, and normal user-profile
+  locations; do not translate Unix UID or mode-bit checks mechanically.
+- A documented replacement/flush protocol that preserves committed ordering
+  and verified partial progress across interruption and restart. Keep explicit
+  errors for corrupt state and unsupported filesystems; never fall back to
+  unlocked or memory-only public trust.
+- Native Windows CI exercising first public join, cached restart, concurrent
+  clients, canceled lock waits, process termination, interrupted writes,
+  rotation, rollback rejection, and expiration during an outage. Use disposable
+  authorities and local HTTPS. Cross-compilation or WSL-only tests do not meet
+  this gate; retain the Linux regression suite as well.
+
+**Exit:** a normal Windows user can join the public network, persist and renew
+its profile, restart safely, and use `soph serve` with the same trust guarantees
+as the Linux client. Record supported Windows versions/filesystems and any
+remaining limitations before public release. Windows support for offline
+operator key custody can be scoped separately from this public-client gate.
+
+Implementation references: Microsoft's
+[file locking](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex),
+[file access-control model](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights),
+and [buffer flushing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+### Remaining launch gates
 
 Severity and launch scope are separate. A deferred MCP defect can remain high
 severity without blocking fixed-port roots. Mixed audit roll-ups must identify

@@ -125,6 +125,14 @@ have not had deployment rehearsal. Other platforms return an unsupported-state
 error. There is no fallback to unlocked or memory-only public trust. Existing
 applications keep their current platform behavior until they adopt this API.
 
+Native Windows public discovery is a required
+[integration gate](../../../docs/public-network-plan.md#windows-public-client-gate)
+before public `soph join`, profile renewal, and `soph serve` adopt this package.
+The Windows backend must address ACL/account and path validation, locking,
+and durable state replacement, with tests running on Windows itself. The
+current unsupported-platform error is an interim limit, not the intended
+public-client support policy.
+
 Tests cover disposable HTTPS discovery, renewal without offline keys, old/new
 rotation thresholds, returning clients, missing transitions, rollback at all
 metadata levels, retired keys, all-role expiry, the exact runtime deadline,
