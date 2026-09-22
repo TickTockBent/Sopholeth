@@ -21,8 +21,10 @@ context. This plan incorporates the current repository and CLI behavior.
   [styles](../sites/soph.stream/styles.css) as the starting point.
 - Keep the CLI's named networks, current selection, and explicit overrides.
   Extend saved profiles with topology as needed.
-- Implement a node-native `GET /v1/stream` SSE endpoint. The browser talks
-  directly to the selected node; `soph serve` serves the viewer assets.
+- Implement a node-native `GET /v1/stream` SSE endpoint. The standalone
+  browser viewer talks directly to the selected node. `soph serve` serves
+  the same assets and forwards reads to its startup node, allowing HTTPS
+  port forwarding without exposing a second port to the browser.
 - Show the contacted node's local view, with its identity, enclave, and
   connection state visible. Counts and empty states have that same scope.
 - Preserve actual local TTL behavior, including the five-minute minimum.

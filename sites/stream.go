@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-//go:embed soph.stream/index.html soph.stream/styles.css soph.stream/viewer.js
+//go:embed soph.stream/index.html soph.stream/styles.css soph.stream/viewer.js soph.stream/config.json
 var streamAssets embed.FS
 
 func StreamHandler() http.Handler {
@@ -23,7 +23,7 @@ func StreamHandler() http.Handler {
 			return
 		}
 		switch r.URL.Path {
-		case "/", "/index.html", "/styles.css", "/viewer.js":
+		case "/", "/index.html", "/styles.css", "/viewer.js", "/config.json":
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			files.ServeHTTP(w, r)

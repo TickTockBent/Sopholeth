@@ -24,7 +24,11 @@ this lab. In a second terminal:
 ./bin/soph --config /tmp/soph-stream-local/soph.json serve --open
 ```
 
-Open the printed URL (port 8181 by default). In another terminal:
+Open the printed URL (port 8181 by default). When using an HTTPS development
+proxy, open its forwarded viewer URL, such as
+`https://editor.example/proxy/8181/`. The CLI supplies the selected node even
+without query parameters, and forwards reads through that same viewer port.
+In another terminal:
 
 ```bash
 printf 'Hello from soph put' | ./bin/soph \
@@ -65,7 +69,9 @@ The storage/server tests cover the snapshot-to-event handoff under concurrent
 writes, revision-specific expiration, rejected writes, preview truncation,
 oversized snapshots, slow subscriber eviction, connection limits, replicated
 writes, stream shutdown, and CORS. CLI tests cover viewer assets, selected
-profiles and overrides, help, JSON output, and cancellation.
+profiles and overrides, help, JSON output, and cancellation. They also cover
+read forwarding, encoded keys, upstream error responses, exclusion of proxy
+credentials and write operations, and shutdown with an active stream.
 
 [viewer.cjs](viewer.cjs) drives the actual static files in Chromium using a
 controlled SSE fixture. It covers overwrite positions, stale events, preview
@@ -77,6 +83,7 @@ With Playwright and its Chromium installed in your development environment:
 
 ```bash
 node test/stream/viewer.cjs
+node test/stream/proxy.cjs
 ```
 
 For an existing installation outside this repository, set `PLAYWRIGHT_MODULE`
@@ -84,6 +91,12 @@ to its module path. Set `CHROMIUM_PATH` to use an existing Chromium executable.
 The fixture listens on a disposable loopback port. Its clock advancement
 tests browser expiry without changing the production TTL floor. Run the
 real-node five-minute check above as well.
+
+[proxy.cjs](proxy.cjs) runs the built `bin/soph` behind an HTTPS proxy mounted
+at `/proxy/8181/`. It requires `openssl` to generate a temporary test
+certificate. Chromium checks styling, startup selection without a query,
+streaming updates and reconnects, full-value reads, navigation, and CLI
+shutdown. It verifies that browser requests stay under the HTTPS proxy path.
 
 ## Scope of evidence
 

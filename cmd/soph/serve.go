@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"sopholeth/internal/client"
@@ -96,7 +99,12 @@ func (a *app) cmdServe(ctx context.Context, args []string) error {
 			fmt.Fprintf(a.stderr, "could not open browser: %v; use the link above\n", err)
 		}
 	}
-	server := &http.Server{Handler: sites.StreamHandler(), ReadHeaderTimeout: 5 * time.Second}
+	target, _ := url.Parse(endpoint) // Endpoint selection already validated this URL.
+	server := &http.Server{
+		Handler:           serveViewerHandler(target, *query),
+		ReadHeaderTimeout: 5 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
+	}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	select {
@@ -115,6 +123,55 @@ func (a *app) cmdServe(ctx context.Context, args []string) error {
 		<-done
 		return nil
 	}
+}
+
+// serveViewerHandler exposes only the reads used by the viewer, to the node
+// selected at startup. A browser cannot change the upstream through a request.
+func serveViewerHandler(target *url.URL, query string) http.Handler {
+	assets := sites.StreamHandler()
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(target)
+			r.Out.URL.RawQuery = ""
+			// The outer proxy's cookies and credentials belong to the viewer
+			// host, not the node. Forward only the viewer's content preference.
+			r.Out.Header = make(http.Header)
+			r.Out.Header.Set("Accept", r.In.Header.Get("Accept"))
+			r.Out.Header.Set("User-Agent", client.UserAgent)
+		},
+		FlushInterval: -1,
+		ModifyResponse: func(r *http.Response) error {
+			r.Header.Set("Cache-Control", "no-store")
+			r.Header.Set("X-Accel-Buffering", "no")
+			r.Header.Del("Set-Cookie")
+			return nil
+		},
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/config.json":
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				w.Header().Set("Allow", "GET, HEAD")
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			if r.Method == http.MethodGet {
+				json.NewEncoder(w).Encode(map[string]string{"node": target.String(), "q": query})
+			}
+		case r.URL.Path == "/v1/stream" || strings.HasPrefix(r.URL.Path, "/v1/data/"):
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", "GET")
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			proxy.ServeHTTP(w, r)
+		default:
+			assets.ServeHTTP(w, r)
+		}
+	})
 }
 
 func openBrowser(link string) error {

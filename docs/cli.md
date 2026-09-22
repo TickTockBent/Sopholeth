@@ -177,10 +177,18 @@ profiles. `--bind` defaults to `127.0.0.1`; `--port` defaults to `8181` and
 accepts `0` for a free port. `--open` launches the system browser. `--q` sets
 an initial case-insensitive search across keys and payload previews.
 
-The browser connects directly to the node. The local server only serves
-viewer assets. Query parameters `node` and `q` carry the viewer state. An
-HTTPS-hosted viewer requires an HTTPS node; the local HTTP viewer can use a
-local HTTP node. No public default endpoint is configured yet.
+`soph serve` provides the startup node and filter to the browser, so opening
+the viewer without query parameters still connects to the selected network.
+It forwards streaming and full-value reads to that node through the viewer's
+own address. This also works through HTTPS port forwarding such as
+`https://editor.example/proxy/8181/`; only the viewer port needs forwarding.
+Assets and reads retain the proxy prefix. Forwarded reads target only the
+startup node, and the viewer does not expose write operations.
+
+Query parameters `node` and `q` carry the viewer state and override startup
+defaults. Selecting a different node in the browser connects to it directly.
+The standalone site also connects directly, so an HTTPS-hosted standalone
+viewer requires an HTTPS node. No public default endpoint is configured yet.
 
 The initial viewer supports stable card slots, overwrite feedback, local
 TTL countdowns, preview search, full-value inspection, and a mobile column.

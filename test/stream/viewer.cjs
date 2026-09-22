@@ -29,8 +29,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/octet-stream' }).end(key === 'large' ? 'z'.repeat(6000) : 'current value'); return;
   }
   const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-  if (!['index.html', 'styles.css', 'viewer.js'].includes(file)) { res.writeHead(404).end(); return; }
-  const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
+  if (!['index.html', 'styles.css', 'viewer.js', 'config.json'].includes(file)) { res.writeHead(404).end(); return; }
+  const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json' };
   res.writeHead(200, { 'Content-Type': types[path.extname(file)] }).end(fs.readFileSync(path.join(root, file)));
 });
 (async () => {

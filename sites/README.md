@@ -49,10 +49,13 @@ The docs and devlog sites use plain HTML and local CSS. The stream viewer
 also uses local JavaScript and has no external asset dependencies. Edit each site's files directly;
 their styles are intentionally local so deployments remain independent.
 
-`soph serve` embeds `soph.stream/index.html`, `styles.css`, and `viewer.js`
+`soph serve` embeds `soph.stream/index.html`, `styles.css`, `viewer.js`, and `config.json`
 through the Go package in [stream.go](stream.go). These files are the single
 source for both distributions; rebuild `bin/soph` after changing them. The
 static Vercel project continues to serve its own directory without a build.
+The static `config.json` is empty; `soph serve` supplies the selected node
+and initial filter at that path and forwards viewer reads to the selected
+node. Document-relative asset and API URLs support port-forwarding prefixes.
 See the [CLI guide](../docs/cli.md#local-stream-viewer) and
 [local validation instructions](../test/stream/README.md).
 

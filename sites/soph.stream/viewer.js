@@ -4,6 +4,7 @@
   const grid = $('grid'), viewport = $('viewport'), dialog = $('detail');
   const entries = new Map(), cards = new Map(), retiring = new Map();
   let slots = [], slotElements = [], source = null, endpoint = '', identity = null;
+  let servedNode = '';
   let state = 'idle', query = '', mobile = false, capacity = 0;
   let epoch = Date.now(), anchor = performance.now(), detailKey = null, detailRequest = null;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -18,8 +19,13 @@
     const url = new URL(explicitURL ? value : 'http://' + value);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('Use an HTTP or HTTPS node address, without a path.');
     if (!explicitURL && !url.port) url.port = '8080';
-    if (location.protocol === 'https:' && url.protocol !== 'https:') throw new Error('This HTTPS page needs an HTTPS node. Use soph serve for a local HTTP node.');
+    if (location.protocol === 'https:' && url.protocol !== 'https:' && url.origin !== servedNode) throw new Error('This HTTPS page needs an HTTPS node. Use soph serve for a local HTTP node.');
     return url.origin;
+  }
+  function nodeURL(path) {
+    // soph serve forwards reads to its selected node. Relative URLs retain
+    // a port-forwarding prefix and the browser's HTTPS origin.
+    return endpoint === servedNode ? new URL('./' + path, location.href).href : endpoint + '/' + path;
   }
   function decodePayload(bytes, truncated = false) {
     try {
@@ -65,7 +71,7 @@
     endpoint = target; identity = null; clearView(); saveURL();
     $('node').value = endpoint; $('identity').textContent = endpoint;
     setState('connecting', 'Connecting to node…');
-    const connection = new EventSource(endpoint + '/v1/stream');
+    const connection = new EventSource(nodeURL('v1/stream'));
     source = connection;
     const event = (name, callback) => connection.addEventListener(name, message => {
       if (source !== connection) return;
@@ -246,7 +252,7 @@
     $('detail-status').textContent = 'Stream preview · fetching the current full value…';
     if (!dialog.open) dialog.showModal();
     try {
-      const response = await fetch(endpoint + '/v1/data/' + encodeURIComponent(key), { signal: request.signal, cache: 'no-store' });
+      const response = await fetch(nodeURL('v1/data/' + encodeURIComponent(key)), { signal: request.signal, cache: 'no-store' });
       if (response.status === 404) throw new Error('This key is no longer available on the node.');
       if (!response.ok) throw new Error('Full-value read failed (HTTP ' + response.status + ').');
       const bytes = new Uint8Array(await response.arrayBuffer());
@@ -265,9 +271,17 @@
   $('close-detail').addEventListener('click', closeDetail);
   dialog.addEventListener('close', () => { if (!dialog.open) closeDetail(); });
   dialog.addEventListener('click', event => { if (event.target === dialog) closeDetail(); });
-  const params = new URLSearchParams(location.search);
-  query = params.get('q') || ''; $('query').value = query;
   layout(); new ResizeObserver(layout).observe(viewport);
   setInterval(tick, 250);
-  if (params.get('node')) connect(params.get('node'));
+  async function start() {
+    const response = await fetch('./config.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Viewer configuration unavailable');
+    const config = await response.json();
+    servedNode = config.node ? new URL(config.node).origin : '';
+    const params = new URLSearchParams(location.search);
+    query = params.get('q') ?? config.q ?? ''; $('query').value = query;
+    const node = params.get('node') || servedNode;
+    if (node) connect(node); else render();
+  }
+  start().catch(() => setState('disconnected', 'Unable to load viewer configuration. Reload to try again.'));
 })();
