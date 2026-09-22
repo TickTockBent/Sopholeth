@@ -97,8 +97,11 @@ operator account and can replace all custody material.
 This first implementation deliberately requires `--disposable`: all six keys
 are stored together for development. It does not claim independent root-key
 custody or create independent recovery copies. Production initialization must
-wait for the custody/recovery workflow and rehearsal. Windows public-client
-support remains a [separate required gate](public-network-plan.md#windows-public-client-gate).
+wait for the custody/recovery workflow and rehearsal. `authority.json` schema 1
+is permanently reserved for disposable authorities: production custody requires
+a new schema, not an extension that enables production use of schema 1.
+Windows public-client support remains a
+[separate required gate](public-network-plan.md#windows-public-client-gate).
 
 `status` verifies local private/public consistency and the completion receipt.
 Text and `--json` output include state, network, repository, initial-root

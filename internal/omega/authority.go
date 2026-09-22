@@ -36,6 +36,7 @@ type InitOptions struct {
 
 // This private transaction record is durable before signing. All recovery
 // derives from these same keys, never fresh randomness after that boundary.
+// Schema 1 is disposable-only; production custody requires a new schema.
 type authority struct {
 	Schema     int               `json:"schema"`
 	Mode       string            `json:"mode"`
@@ -67,7 +68,7 @@ type Report struct {
 	Repository  string                `json:"repository,omitempty"`
 	Fingerprint string                `json:"fingerprint,omitempty"`
 	RootVersion int64                 `json:"root_version,omitempty"`
-	RootExpires time.Time             `json:"root_expires"`
+	RootExpires time.Time             `json:"root_expires,omitzero"`
 	Roles       map[string]RoleStatus `json:"roles,omitempty"`
 	Publication string                `json:"publication"`
 	Problem     string                `json:"problem,omitempty"`
@@ -105,7 +106,10 @@ func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(
 			return report, err
 		}
 		if report.Network != opts.Network || report.Repository != repository {
-			return report, errors.New("omega: network already has an authority with different configuration")
+			err := errors.New("omega: network already has an authority with different configuration")
+			report.Problem = err.Error()
+			report.Action = "Check --network and --repository against the existing authority; do not replace its material."
+			return report, err
 		}
 		// A prior caller may have died after rename but before the parent fsync.
 		if err := home.syncDir(); err != nil {
@@ -251,21 +255,22 @@ func Status(ctx context.Context, homePath, network string) (Report, error) {
 		return failedReport(err), err
 	}
 	home, err := openHome(ctx, homePath, network, false)
+	if errors.Is(err, os.ErrNotExist) {
+		return absentReport(network)
+	}
 	if err != nil {
 		return failedReport(err), err
 	}
 	defer home.close()
 	current, err := home.subdir(network)
 	if errors.Is(err, os.ErrNotExist) {
-		report := Report{Schema: 1, Network: network, State: "absent", Publication: "not_checked", Action: "Initialize this network with soph omega init."}
+		report, err := absentReport(network)
 		if _, stageErr := home.root.Lstat("." + network + ".pending"); stageErr == nil {
 			report.State = "pending"
 			report.Action = "Rerun the same soph omega init command to recover and finish the pending transaction."
 		} else if !errors.Is(stageErr, os.ErrNotExist) {
 			return failedReport(stageErr), stageErr
 		}
-		err := errors.New("omega: no committed authority for this network")
-		report.Problem = err.Error()
 		return report, err
 	}
 	if err != nil {
@@ -278,6 +283,11 @@ func Status(ctx context.Context, homePath, network string) (Report, error) {
 		return failedReport(err), err
 	}
 	return report, err
+}
+
+func absentReport(network string) (Report, error) {
+	err := errors.New("omega: no committed authority for this network")
+	return Report{Schema: 1, Network: network, State: "absent", Publication: "not_checked", Problem: err.Error(), Action: "Initialize this network with soph omega init."}, err
 }
 
 func failedReport(err error) Report {

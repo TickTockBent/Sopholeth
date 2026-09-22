@@ -77,6 +77,12 @@ documentation. Node hosts receive public trust material, not the ultimate
 private authority key. Routine freshness renewal must run unattended without
 requiring repeated use of that ultimate key.
 
+Reserve `authority.json` schema 1 permanently for disposable authorities.
+Production custody must introduce a new schema; it must never store production
+authority material in schema 1 or extend that schema to enable production use.
+The new schema must represent the independent custody and recovery workflow,
+rather than carrying forward the disposable file containing all six keys.
+
 Implement the related findings in the selected design:
 
 - Persist authenticated ordering and reject rollback

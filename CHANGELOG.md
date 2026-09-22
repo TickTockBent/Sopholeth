@@ -4,11 +4,16 @@
 
 ### Public discovery
 
+- Add `soph omega init` and local `status` (#208) for disposable Linux authorities.
+  Verify and durably commit the complete authority atomically; retries recover
+  the same transaction or inspect the existing keys. Report local identity,
+  expiration, and actionable failures in text or JSON. Production custody,
+  publishing, renewal, rotation, and discovery integration remain pending.
 - Add the TUF bootstrap client with validated public bundles/manifests,
   bounded HTTPS, durable rollback state, process locks, and expiring cached
   authority. Move disposable lifecycle tests into the application suite and
-  retire the isolated spike. Node/CLI discovery and `soph omega` integration
-  remain pending. Upgrade builds, Docker builders, and CI to Go 1.27.1.
+  retire the isolated spike. Node/CLI discovery integration remains pending.
+  Upgrade builds, Docker builders, and CI to Go 1.27.1.
 - Reject unset and all-zero omega trust anchors before DNS lookup or cached
   root authorization (#192). Ordinary builds have public discovery disabled;
   private networks, explicit dashboard seeds, and disposable test keys remain

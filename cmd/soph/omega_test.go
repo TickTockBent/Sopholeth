@@ -15,7 +15,7 @@ func TestOmegaCLI(t *testing.T) {
 	args := []string{"--json", "omega", "init", "--home", home, "--network", "rehearsal", "--repository", "https://metadata.example.invalid", "--disposable"}
 	out, _ := ta.mustRun(t, "", args...)
 	result := decodeJSON(t, out)
-	if result["state"] != "initialized" || result["publication"] != "not_checked" {
+	if result["state"] != "initialized" || result["publication"] != "not_checked" || result["root_expires"] == nil {
 		t.Fatal("unexpected init output")
 	}
 	out, _ = ta.mustRun(t, "", "--json", "omega", "status", "--home", home, "--network", "rehearsal")
@@ -35,6 +35,81 @@ func TestOmegaCLI(t *testing.T) {
 	code, out, _ := ta.run("", "--json", "omega", "status", "--home", home, "--network", "rehearsal")
 	if code != exitError || decodeJSON(t, out)["state"] != "invalid" {
 		t.Fatal("status did not report corrupted authority")
+	}
+}
+
+func TestOmegaInitConfigurationConflictReport(t *testing.T) {
+	ta := newTestApp(t)
+	home := filepath.Join(t.TempDir(), "custody")
+	args := []string{"--json", "omega", "init", "--home", home, "--network", "rehearsal", "--disposable", "--repository", "https://metadata.example.invalid"}
+	out, _ := ta.mustRun(t, "", args...)
+	original := decodeJSON(t, out)
+	args[len(args)-1] = "https://other.example.invalid"
+	code, out, errOut := ta.run("", args...)
+	result := decodeJSON(t, out)
+	if code != exitError || result["problem"] == nil || !strings.Contains(errOut, result["problem"].(string)) {
+		t.Fatalf("conflict must report the failure in JSON and stderr: exit=%d out=%s stderr=%s", code, out, errOut)
+	}
+	if result["fingerprint"] != original["fingerprint"] || result["repository"] != original["repository"] {
+		t.Fatal("conflict report changed the existing authority's identity")
+	}
+	if action, _ := result["action"].(string); !strings.Contains(action, "--repository") || !strings.Contains(action, "do not replace") {
+		t.Fatalf("conflict action does not explain how to proceed: %s", out)
+	}
+}
+
+func TestOmegaStatusUninitializedAndInvalidReports(t *testing.T) {
+	for _, kind := range []string{"missing-home", "missing-parent", "missing-network", "pending", "damaged", "unsafe-home"} {
+		t.Run(kind, func(t *testing.T) {
+			ta := newTestApp(t)
+			home := filepath.Join(t.TempDir(), "custody")
+			state, action := "absent", "Initialize this network with soph omega init."
+			if kind == "missing-parent" {
+				home = filepath.Join(home, "nested")
+			} else if kind == "damaged" {
+				ta.mustRun(t, "", "omega", "init", "--home", home, "--network", "rehearsal", "--repository", "https://metadata.example.invalid", "--disposable")
+				if err := os.Remove(filepath.Join(home, "rehearsal", "bundle.json")); err != nil {
+					t.Fatal(err)
+				}
+				state, action = "invalid", "restore verified recovery material"
+			} else if kind != "missing-home" {
+				if err := os.Mkdir(home, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if kind == "pending" {
+					if err := os.Mkdir(filepath.Join(home, ".rehearsal.pending"), 0700); err != nil {
+						t.Fatal(err)
+					}
+					state, action = "pending", "Rerun the same soph omega init command"
+				} else if kind == "unsafe-home" {
+					if err := os.Chmod(home, 0755); err != nil {
+						t.Fatal(err)
+					}
+					state, action = "invalid", "restore verified recovery material"
+				}
+			}
+			args := []string{"omega", "status", "--home", home, "--network", "rehearsal"}
+			code, out, _ := ta.run("", append([]string{"--json"}, args...)...)
+			result := decodeJSON(t, out)
+			if code != exitError || result["state"] != state || result["problem"] == nil {
+				t.Fatalf("unexpected status: exit=%d out=%s", code, out)
+			}
+			if next, _ := result["action"].(string); !strings.Contains(next, action) {
+				t.Fatalf("wrong operator action: %s", out)
+			}
+			if _, exists := result["root_expires"]; exists {
+				t.Fatalf("unknown root expiration must be omitted: %s", out)
+			}
+			code, out, _ = ta.run("", args...)
+			if code != exitError || !strings.Contains(out, action) {
+				t.Fatalf("text status has the wrong operator action: %s", out)
+			}
+			if kind == "missing-home" || kind == "missing-parent" {
+				if _, err := os.Lstat(home); !os.IsNotExist(err) {
+					t.Fatal("status created the missing custody home")
+				}
+			}
+		})
 	}
 }
 
