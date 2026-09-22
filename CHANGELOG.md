@@ -44,6 +44,9 @@
 
 ### Documentation and identity
 
+- Record the omega signing audit and first public-network plan: implement
+  the unified `soph omega` suite, then rehearse and activate three roots in
+  the `default` enclave. Defer MCP and reconcile the viewer/roadmap sequence.
 - Adopt **Sopholeth**, pronounced **SOF-oh-leth**, with the identity line
   **Wisdom through intentional forgetting**. Use `soph` for the client CLI;
   the node executable is `server`.

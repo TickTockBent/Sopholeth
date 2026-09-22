@@ -1,9 +1,11 @@
 # Sopholeth omega operations
 
-Omega signs the public network's bootstrap root list. The signing tool exists,
-but the production trust anchor and Sopholeth DNS cutover are still pending.
-This is the operator workflow for that launch; the examples do not imply a
-live public service.
+Omega signs the public network's bootstrap root list. This document describes
+the interim standalone tool for development/reference. Production authority
+setup and DNS cutover remain pending; use the
+[public-network plan](public-network-plan.md) for the agreed path to a working
+`soph omega` suite and three public roots. Replace this reference with the
+rehearsed production runbook as that implementation ships.
 
 The [2026-09-22 signing audit](omega-signing-audit.md) records implementation
 findings and their tracking issues. The planned production workflow moves
@@ -36,8 +38,10 @@ umask 077
   --out-public omega-v1.pub
 ```
 
-The tool refuses to overwrite existing files and creates the private key
-with mode `0600`. Retain the private key and a recoverable offline backup.
+The tool checks for existing output paths and creates the private key with
+mode `0600`, but the audit found a concurrent overwrite race and partial-pair
+failure. These must be resolved in `soph omega init` before production use.
+For disposable development keys, retain the private key and a recoverable backup.
 Copy only the public key into the release's
 [trust anchor](../internal/trust/omega.go), replacing the placeholder.
 Record the public key, release revision, and operator custody procedure.

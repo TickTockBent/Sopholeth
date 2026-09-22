@@ -25,7 +25,7 @@ Before public activation, address the confirmed implementation defects below and
 | 9 | Refresh public CLI discovery automatically | [#198](https://github.com/TickTockBent/Sopholeth/issues/198) |
 | 10 | Automate renewal and verify publication | [#199](https://github.com/TickTockBent/Sopholeth/issues/199) |
 
-Findings 5 and 8 reuse existing tickets. Runtime expiration was split out of #172 into #193; selected trust items from roll-up #178 now have focused tickets. Public cutover remains tracked separately in [#80](https://github.com/TickTockBent/Sopholeth/issues/80). Its historical instructions must be reconciled with the chosen production design before use.
+Findings 5 and 8 reuse existing tickets. Runtime expiration was split out of #172 into #193; selected trust items from roll-up #178 now have focused tickets. Public cutover remains tracked separately in [#80](https://github.com/TickTockBent/Sopholeth/issues/80). The subsequent issue triage replaced its historical cutover instructions; the [public-network plan](public-network-plan.md) records the agreed omega-first, three-root delivery path.
 
 **Findings, ordered by consequence**
 
@@ -124,14 +124,14 @@ A documented normal rotation should cover: create the successor key; authorize i
 
 Document operator custody, which steps require the protected authority, publisher credentials, renewal ownership, version retention, overlap/retirement criteria, and failure recovery. Exact lifetimes and overlap periods should be chosen from the intended outage tolerance and client-offline behavior. Keep the operational interface small even if its underlying trust protocol has several metadata roles.
 
-**Suggested implementation order**
+**Implementation order after triage**
 
 The issues describe required outcomes for the public implementation. Replacing an interim component can satisfy a finding; retaining the current signing format is not a requirement.
 
-1. Fix placeholder rejection, expiration enforcement, retry scheduling, exclusive key publication, and signer validation using disposable keys. Carry the reproduction cases into regression tests that assert rejection/correct recovery.
-2. Choose the authority/freshness model and authenticated bootstrap transport. Prototype client integration and operator ergonomics before generating the production anchor.
-3. Exercise renewal, key rotation, signer/publisher outage, replay, invalid signatures, expired cache, and stale-client recovery against a disposable network.
-4. Establish production key custody and recovery, prepare a verifiable release, then publish and activate the default-enclave public roots.
+1. Reject the placeholder, choose the authority/freshness model and authenticated bootstrap transport, and prototype client integration and operator ergonomics using disposable keys.
+2. Deliver the `soph omega` suite with expiration, rollback, retry, initialization, validation, and verified publication behavior in that selected design. Carry the audit reproduction cases into regression tests; rehearse renewal, rotation, outage, and stale-client recovery.
+3. Resolve root-facing launch defects and document/rehearse the three-root deployment, using the HTTP CLI and viewer. MCP and broader transient features are deferred as described in the public-network plan.
+4. Establish production custody and recovery, prepare a verifiable release, then publish and activate the three default-enclave public roots through the rehearsed procedure.
 
 **Validation and limits**
 

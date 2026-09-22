@@ -3,8 +3,14 @@
 Status: Phase 1 implemented for local review, with the initial `soph serve`
 from Phase 2. Local validation is documented in
 [the stream test guide](../test/stream/README.md). Multi-node viewer failover,
-remote staging, and public launch remain pending. Each phase has an
-acceptance gate before the next phase begins.
+remote staging, and public launch remain pending.
+
+Sequencing update, 2026-09-22: the [public-network plan](public-network-plan.md)
+takes priority. Build `soph omega`, then rehearse and stand up three public
+roots in the `default` enclave using the existing CLI/viewer. The phases below
+retain viewer feature scope and acceptance criteria; completing all Phase 2
+polish is no longer a prerequisite for remote root work. MCP is deferred, and
+the editor-proxy connection problem is parked.
 
 The first deliverable is a live view of real Sopholeth data: write with
 `soph put`, see a card appear, overwrite it in place, and watch it expire.
@@ -131,8 +137,9 @@ configuration or override instead of assuming all three replicate together.
 ## Phase 3: remote endpoints and hosted staging
 
 Remote test endpoints are available from the project owner for this phase.
-Their addresses and deployment details can be supplied when the local gates
-pass; they are not a prerequisite for starting the implementation.
+Their addresses and deployment details will be recorded during the three-root
+rehearsal. Viewer polish does not gate preparing those endpoints; discovery
+and root-facing correctness requirements follow the public-network plan.
 
 ### Deliver
 
@@ -173,9 +180,11 @@ driver.
 
 - Validated quorum, replication, enclave, lifecycle, and discovery-expiration
   behavior with the required multi-node failure and sustained-load evidence.
-- Production signing-key setup, a real compiled trust anchor, independent
-  reachable roots, signed discovery publication, monitoring, and operator
-  recovery procedures. Follow [omega operations](omega-operations.md).
+- The working `soph omega` suite, a production public trust bundle, three
+  independent reachable roots, verified publication, monitoring, and operator
+  recovery procedures. Follow the [public-network plan](public-network-plan.md);
+  [omega operations](omega-operations.md) remains an interim reference until
+  the production workflow replaces it.
 - Published release artifacts and an HTTPS stream endpoint for the intended
   public enclave, with tested resource limits and the stream disable switch.
 - The viewer at `soph.stream`, configured to use that endpoint by default,
@@ -194,7 +203,8 @@ operator procedures accompany the release.
 
 ## Work that can proceed alongside local development
 
-Inventory hosting options and remote endpoints, prepare operator procedures,
-and work through existing public-alpha correctness tasks while the viewer is
-being built. The first implementation milestone remains Phase 1; remote
-deployment and the broader viewer features follow its acceptance gate.
+Phase 1 and initial `soph serve` are available. The next implementation
+milestone is the omega suite, followed by the three-root runbook and remote
+rehearsal. Use the viewer to observe those nodes and address failures on that
+path. Broader viewer features can follow without becoming prerequisites for
+the trust and network work.

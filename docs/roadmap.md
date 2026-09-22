@@ -21,14 +21,23 @@ discovery publication is pending, and the restored Go
 WebSocket tree needs sustained validation. The [rebrand checklist](rebrand.md)
 tracks the naming transition.
 
-## soph.stream delivery sequence
+## First public network
 
-Build soph.stream against real local nodes before opening the public network.
-The [implementation and launch plan](soph-stream-plan.md) defines four phases:
-a working viewer on one local node, a local cluster with CLI integration,
-remote staging using available test endpoints, and public launch after the
-public-alpha gates. Keep the existing Sopholeth aesthetic and named-network
-CLI behavior throughout.
+Build the working `soph omega` suite first, then document and rehearse a public
+network with three fixed-port roots in the shared `default` enclave. The
+[public-network plan](public-network-plan.md) defines the implementation
+order, required evidence, and operator cutover. It takes priority over the
+remaining viewer and MCP backlog.
+
+The local viewer and initial `soph serve` are implemented. Use them and the
+`soph` HTTP client to validate the remote roots. The
+[viewer plan](soph-stream-plan.md) retains the remaining feature work; finishing
+its local-cluster polish is not a prerequisite for omega development.
+Keep the existing aesthetic and named-network behavior.
+
+MCP is explicitly deferred. Dashboard deployment and full transient-writer
+participation are later surfaces; any endpoint exposed by a root must still
+meet its applicable safety and lifecycle requirements.
 
 ## Before public alpha
 
@@ -43,24 +52,26 @@ CLI behavior throughout.
   bounds, message IDs and types, payload limits, addresses, and enclave scope.
 - Handle signed-list expiration while a node is running. Root status and
   recovery seeds must not remain authorized solely by an expired list.
-- Make listener binding explicit, especially for embedded MCP nodes.
-- Test startup, cancellation, repeated shutdown, and WebSocket reconnection
-  as complete lifecycles.
+- Make standalone listener binding and public exposure explicit. Embedded
+  MCP listener and ephemeral-port work is deferred.
+- Test startup, cancellation, repeated shutdown, and exposed connection
+  lifecycles. Complete broader transient reconnection tests before supporting
+  that participation mode.
 
 ### Produce repeatable evidence
 
 - Keep build and race tests green; add parser fuzzing and targeted
   integration coverage for the behavior above.
-- Run an all-Go cluster with multiple substrates and transient clients.
-  Exercise parent loss, root loss, churn, partitions, healing, duplicate
-  delivery, and capacity exhaustion.
+- Validate the initial three-root standalone deployment and HTTP clients:
+  root loss, churn, partitions, healing, duplicate delivery, and capacity
+  exhaustion. The broader substrate/transient matrix is required before
+  supporting that later mode; MCP-specific tests are deferred.
 - Measure throughput, latency, process memory, and quorum outcomes from both
   the load driver and nodes. Do not infer request throughput from allocations.
 - Run a ramp to failure and a sustained soak with recorded commits,
   configuration, workloads, fault timings, and recovery outcomes.
-- Update the [burn-in harness](../test/burnin/README.md) so its scripts and
-  dashboards can reproduce the run without personal paths or obsolete
-  implementation dependencies.
+- Use and adapt the [burn-in harness](../test/burnin/README.md) for the actual
+  three-root configuration, preserving driver failures and accepted TTLs.
 
 Historical runs provide useful observations but do not validate the current
 tree, a public deployment, or untested failure modes.
@@ -70,9 +81,11 @@ tree, a public deployment, or untested failure modes.
 - Publish the renamed artifacts and site after validating this code rebrand.
 - Reconcile the legacy proprietary appendix in `LICENSE` with the intended
   distribution terms before public release.
-- Generate the first real omega key offline, document custody and recovery,
-  and bake its public key into the release.
-- Deploy independent, reachable roots across failure domains.
+- Complete the unified `soph omega` workflow, rotation and recovery rehearsal,
+  and production operator guide before creating the real authority. Install
+  only its public trust material in the release and on nodes.
+- Deploy three independent, reachable roots across failure domains using the
+  rehearsed runbook and shared `default` enclave.
 - Publish signed discovery under the acquired domain, with monitoring for
   expiration, failed refreshes, unreachable roots, and degraded replication.
 - Verify startup with valid DNS, valid cached fallback, invalid signatures,
@@ -107,8 +120,9 @@ Keep the application protocol above Sopholeth:
 leave, and later find no live transcript served by the application. Publish
 the client protocol so another application can reproduce the interaction.
 
-Use the same milestone to dogfood MCP handoffs and presence signals. Keep
-agent orchestration and application identity outside the node.
+MCP handoffs and presence signals can be evaluated later; they do not gate
+the public network or demo. Keep agent orchestration and application identity
+outside the node.
 
 ## Probe simulation
 
