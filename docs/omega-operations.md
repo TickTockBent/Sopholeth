@@ -5,6 +5,12 @@ but the production trust anchor and Sopholeth DNS cutover are still pending.
 This is the operator workflow for that launch; the examples do not imply a
 live public service.
 
+The [2026-09-22 signing audit](omega-signing-audit.md) records implementation
+findings and their tracking issues. The planned production workflow moves
+operator commands under `soph omega` and defines automated renewal and
+graceful key rotation. The standalone commands below describe the current
+interim tool; the redesign has not been implemented.
+
 Read the [discovery contract](discovery.md) before deploying roots. Keep
 production signing keys separate from node hosts and test keys.
 
