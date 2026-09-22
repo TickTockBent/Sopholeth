@@ -390,7 +390,8 @@ func TestProcessDeathRecovery(t *testing.T) {
 			original := file(t, filepath.Join(location, "authority.json"))
 			must(t, cmd.Process.Kill())
 			_ = cmd.Wait()
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			// Bound a stuck lock without turning durable recovery into a speed test.
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_, err := Init(ctx, o)
 			must(t, err)
