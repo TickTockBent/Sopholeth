@@ -3,8 +3,45 @@ name: Test
 on:
   push:
     branches: [ main ]
+    paths:
+      - '**/*.go'
+      - '**/testdata/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'vendor/**'
+      - 'Makefile'
+      - '.github/workflows/test.yml'
+      - 'cmd/dashboard/web/**'
+      - 'sites/soph.stream/index.html'
+      - 'sites/soph.stream/styles.css'
+      - 'sites/soph.stream/viewer.js'
+      - 'sites/soph.stream/config.json'
   pull_request:
     branches: [ main ]
+    paths:
+      - '**/*.go'
+      - '**/testdata/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'vendor/**'
+      - 'Makefile'
+      - '.github/workflows/test.yml'
+      - 'cmd/dashboard/web/**'
+      - 'sites/soph.stream/index.html'
+      - 'sites/soph.stream/styles.css'
+      - 'sites/soph.stream/viewer.js'
+      - 'sites/soph.stream/config.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:

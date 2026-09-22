@@ -1,0 +1,32 @@
+name: Deployment filters
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/vercel-ignore.sh'
+      - 'sites/*/vercel.json'
+      - 'test/ci/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/vercel-ignore.sh'
+      - 'sites/*/vercel.json'
+      - 'test/ci/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  filters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deployment decisions against Git histories
+        run: python3 -m unittest discover -s test/ci -v

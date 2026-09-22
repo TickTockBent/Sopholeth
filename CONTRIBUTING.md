@@ -54,3 +54,39 @@ guaranteed delivery, or secure erasure that the node does not provide.
 
 Work respectfully, address feedback directly, and keep discussion focused on
 the project. See the project's [license](LICENSE) for the current terms.
+
+## CI selection
+
+GitHub workflows use
+[path filters](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)
+on main pushes and pull requests. They evaluate the push/PR diff, not just its
+last commit. The expected work is:
+
+| Change | Go build/race tests | Node Docker image | Vercel |
+| --- | --- | --- | --- |
+| Repository documentation | Skip | Skip | Skip |
+| Marketing, docs, or devlog site | Skip | Skip | Changed site only |
+| Embedded stream viewer assets | Run | Skip | soph.stream only |
+| CLI, omega tool, or dashboard code/assets | Run | Skip | Skip |
+| Node runtime or its internal packages | Run | Run | Skip |
+| Go test files or testdata | Run | Skip | Skip |
+| Go dependency manifests/vendor | Run | Run | Skip |
+| Dockerfile or .dockerignore | Skip | Run | Skip |
+
+The Go workflow also watches `Makefile` and its own definition; Docker watches
+its workflow. Embedded inputs include `cmd/dashboard/web/` and the four
+explicit files in `sites/stream.go`. The image builds only `cmd/server`, so
+`internal/client` and `internal/dashboard` are excluded. Update filters when
+adding an imported package, embedded resource, or build input that changes
+these boundaries.
+
+Docker still runs for `v*` tags and manual dispatch, including deliberate
+base-image refreshes. New commits cancel superseded PR runs; main/release
+publishing runs finish normally. A separate fast workflow tests the deployment
+filters when their scripts, configurations, tests, or workflow files change.
+
+Main currently has no required checks. A workflow skipped by native path
+filters has no completed check; if branch protection later requires one,
+introduce an always-reported gate instead of requiring a filtered workflow.
+See [site deployment filtering](sites/README.md#deploy-only-changed-sites) for
+Vercel comparison and first-deployment behavior.

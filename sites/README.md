@@ -1,7 +1,8 @@
 # Sopholeth websites
 
 Each domain is a separate static site and a separate Vercel project. There is
-no shared build step or dependency on files outside a site's root directory.
+no shared asset build or runtime dependency on files outside a site's root
+directory. Deployment filtering uses a shared Git-based check.
 
 | Domain | Vercel Root Directory | Contents |
 | --- | --- | --- |
@@ -30,6 +31,35 @@ do not create projects or provision domains.
 
 Website DNS for `sopholeth.io` does not replace the network's
 `_bootstrap.sopholeth.io` and `_omega.sopholeth.io` TXT records.
+
+## Deploy only changed sites
+
+Each `vercel.json` sets an
+[`ignoreCommand`](https://vercel.com/docs/project-configuration/vercel-json#ignorecommand)
+that loads [vercel-ignore.sh](../scripts/vercel-ignore.sh) from the checked-out
+Git commit. It does not require filesystem access outside the Vercel Root
+Directory. The check compares only the current site's folder:
+
+- Existing branches compare against `VERCEL_GIT_PREVIOUS_SHA`, the last
+  successful deployment for that project/branch. Skipped or failed deployments
+  cannot hide an earlier site change.
+- A new preview branch compares its full diff from the merge base with `main`,
+  so a final docs-only commit cannot hide earlier site edits.
+- First production deployments and unavailable history build conservatively.
+  The check fetches missing history when possible; Git failures allow a build.
+
+Keep Vercel system environment variables exposed. The command returns zero to
+skip an unchanged site and one to deploy. Repository docs, Go changes, and
+sibling sites do not cause a deployment when the comparison is available.
+Vercel can still show a short canceled build request for this check; its
+[Ignored Build Step](https://vercel.com/docs/monorepos#ignoring-the-build-step)
+uses a build slot. A manual redeploy can bypass the ignore check in Vercel.
+
+Run `python3 -m unittest discover -s test/ci -v` to exercise the actual commands
+against disposable Git histories, including new branches and shallow clones.
+The filter checks have their own small CI workflow and do not require Go or
+Docker. If a site gains shared asset inputs, extend its filter before relying
+on changes outside its folder to trigger a deployment.
 
 ## Local preview
 
