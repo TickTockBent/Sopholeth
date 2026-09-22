@@ -142,6 +142,7 @@ independent Vercel project root.
 - [Architecture](docs/architecture.md) and [core principles](docs/core-principles.md)
 - [Signed discovery](docs/discovery.md) and [omega operations](docs/omega-operations.md)
 - [First public-network plan: omega, then three roots](docs/public-network-plan.md)
+- [Omega trust design and integration spike](docs/omega-trust-design.md)
 - [Roadmap](docs/roadmap.md) and [rebrand migration](docs/rebrand.md)
 - [soph.stream implementation and launch plan](docs/soph-stream-plan.md)
 - [Contributing](CONTRIBUTING.md), [validation harness](test/burnin/README.md), and [changelog](CHANGELOG.md)

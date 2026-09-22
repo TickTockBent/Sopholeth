@@ -1,0 +1,39 @@
+name: Omega TUF spike
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'test/omega-tuf/**'
+      - '!test/omega-tuf/**/*.md'
+      - '.github/workflows/omega-tuf-spike.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'test/omega-tuf/**'
+      - '!test/omega-tuf/**/*.md'
+      - '.github/workflows/omega-tuf-spike.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: test/omega-tuf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: test/omega-tuf/go.sum
+      - name: Verify dependencies
+        run: go mod verify
+      - name: Exercise disposable authority lifecycle
+        run: go test -mod=readonly -race -v ./...

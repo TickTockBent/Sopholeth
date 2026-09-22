@@ -46,8 +46,11 @@ authorities throughout development and rehearsal.
 Choose the authority, membership-signing, and freshness-renewal roles before
 implementing changes to the wire format. Evaluate TUF with a small integration
 spike covering a reviewed library release, Go toolchain compatibility,
-persisted client state, and operator complexity. TUF remains a candidate;
-neither a dependency nor a replacement protocol has been selected.
+persisted client state, and operator complexity. The completed
+[spike and design recommendation](omega-trust-design.md) establish go-tuf
+v2.4.2 as the proposed integration baseline, with separate offline approval
+and online renewal roles. Production dependency, toolchain, and protocol
+changes remain pending.
 
 The proposed command surface is:
 

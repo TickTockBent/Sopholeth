@@ -33,6 +33,10 @@ self-contained static site that can be previewed and deployed independently.
 The stream viewer is also embedded in `soph`; its
 [browser checks](test/stream/README.md) exercise the shared assets.
 
+The [omega trust spike](test/omega-tuf/README.md) is a separate Go module with
+its own pinned toolchain and checks. Root-level `go test ./...` does not test
+that module; use its documented commands when changing the spike.
+
 ## Changes and review
 
 - Use `gofmt` on changed Go files and keep changes focused.
@@ -71,6 +75,7 @@ last commit. The expected work is:
 | Node runtime or its internal packages | Run | Run | Skip |
 | Go test files or testdata | Run | Skip | Skip |
 | Go dependency manifests/vendor | Run | Run | Skip |
+| Isolated omega TUF spike | Separate spike workflow | Skip | Skip |
 | Dockerfile or .dockerignore | Skip | Run | Skip |
 
 The Go workflow also watches `Makefile` and its own definition; Docker watches
