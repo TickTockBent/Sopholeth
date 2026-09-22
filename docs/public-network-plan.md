@@ -9,6 +9,11 @@ production custody/hosting, and deployment remain pending. The peer-plane
 audit adds three launch blockers: unauthenticated peer mutations (#211),
 serial write broadcast (#212), and identity-blind liveness (#213). These must
 be resolved before the remote three-root rehearsal and public exposure.
+The public-ingress and release audit adds six more blockers: uncounted key
+and entry overhead (#217), stream collapse (#218), missing server timeouts
+(#219), full-keyspace listing (#220), the IPv6-bypassable rate limiter
+(#221), and ungated publishing (#223). Fix #223 before building any release
+candidate.
 The [omega audit](omega-signing-audit.md) records the initial defects;
 [issue #80](https://github.com/TickTockBent/Sopholeth/issues/80) tracks launch
 readiness and the live issue queue.
@@ -143,7 +148,8 @@ Implement the root-facing gates in this dependency order:
 | 1 | SYNC storm: [#150](https://github.com/TickTockBent/Sopholeth/issues/150) | Under-peered recovery terminates with bounded work, making fault/load runs possible. |
 | 2 | Peer identity, admission, and liveness: [#211](https://github.com/TickTockBent/Sopholeth/issues/211), [#213](https://github.com/TickTockBent/Sopholeth/issues/213), with authenticated transport [#194](https://github.com/TickTockBent/Sopholeth/issues/194) and eligible confirmations [#164](https://github.com/TickTockBent/Sopholeth/issues/164) | Only verified identities can change their peer records or supply eligible confirmations; liveness proves the expected responder. |
 | 3 | Bounded outbound delivery: [#212](https://github.com/TickTockBent/Sopholeth/issues/212), coordinated with inbound forwarding [#167](https://github.com/TickTockBent/Sopholeth/issues/167) and write outcomes [#170](https://github.com/TickTockBent/Sopholeth/issues/170) | Slow peers cannot hold up a healthy quorum or starve healthy delivery; all work has explicit limits and lifetimes. |
-| 4 | Remaining exposed-root gates in [#80](https://github.com/TickTockBent/Sopholeth/issues/80) | Complete unique message IDs, ingress validation, deduplication, capacity handling, topology recovery, race-free peer state, and shutdown, including applicable WebSocket safeguards. |
+| 4 | Bounded public ingress: [#217](https://github.com/TickTockBent/Sopholeth/issues/217), [#219](https://github.com/TickTockBent/Sopholeth/issues/219), [#220](https://github.com/TickTockBent/Sopholeth/issues/220), [#221](https://github.com/TickTockBent/Sopholeth/issues/221), and the stream [#218](https://github.com/TickTockBent/Sopholeth/issues/218) | No single client can exhaust a root's memory, connections, or CPU, or disable the stream for other viewers. |
+| 5 | Remaining exposed-root gates in [#80](https://github.com/TickTockBent/Sopholeth/issues/80) | Complete unique message IDs, ingress validation, deduplication, capacity handling, topology recovery, race-free peer state, and shutdown, including applicable WebSocket safeguards. |
 
 ### Authenticated peer identity and admission
 
@@ -206,6 +212,40 @@ order; when quorum is unavailable, report the correct pending outcome.
 Verify healthy-peer delivery and bounded work under sustained load, including
 inbound forwarding above the fanout threshold. Record these results in #180.
 
+### Bounded public ingress
+
+The client API is open to anyone, so no single client may be able to exhaust
+a root. These gates hold regardless of peer identity work and can proceed in
+parallel with it.
+
+- Capacity counts key bytes and a fixed per-entry overhead, not payload bytes
+  alone. Enforce a maximum key length with the launch value cap (planned at
+  128 KB) on client ingress and on gossip and WebSocket ingress (#177). Size
+  the gossip body limit from the value cap instead of the global request
+  limit. Public roots run with an explicit storage cap (#217).
+- The node server sets header, body, and idle deadlines, limits header size,
+  and bounds connections per client and in total. `/v1/stream` stays usable
+  under these limits (#219).
+- Listing costs about the page size, with a default and maximum `limit`.
+  Neither listing nor expiry sweeps hold the store lock for O(n) work on
+  request paths (#220).
+- Rate limiting aggregates IPv6 clients by prefix, keeps its bucket table
+  bounded, adds a global ceiling, and does not serialize every request on
+  one lock (#221).
+- One oversized key or event cannot drop other stream subscribers. The
+  snapshot degrades as the store grows instead of failing, and one client
+  cannot hold every subscription slot (#218). soph.stream depends on this.
+
+Test key-only and maximum-length entries against a small cap, slow headers and
+bodies, idle connection floods, listing at 10^5 to 10^6 keys alongside writes,
+address rotation within one IPv6 /64, a long key during active streams, and a
+store past the snapshot limits.
+
+Decide which operator data public roots expose. `/v1/topology` lists mesh
+members' addresses, and `/v1/status` and `/v1/metrics` expose runtime state
+([#222](https://github.com/TickTockBent/Sopholeth/issues/222)). Record the
+decision in the exposure policy.
+
 ### Preserve the data contract and public client
 
 Settle the remaining replay/freshness policy before encoding assumptions in
@@ -261,6 +301,24 @@ Implementation references: Microsoft's
 [file locking](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex),
 [file access-control model](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights),
 and [buffer flushing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+### Release integrity
+
+Releases compile in the omega trust anchor, so the build pipeline is part of
+the trust chain. Before building any release candidate
+([#223](https://github.com/TickTockBent/Sopholeth/issues/223)):
+
+- Protect `main` (pull requests, required Test workflow, no force-push) and
+  restrict `v*` tag creation.
+- Publish only after tests pass, from a tagged commit reachable from `main`.
+  Main pushes do not publish `:latest`.
+- Keep the expected release fingerprint in a protected environment, so
+  changing a repository variable cannot redirect the gate.
+
+Artifact verification is conditional on the supported install path
+([#224](https://github.com/TickTockBent/Sopholeth/issues/224)): SHA-pinned
+actions, digest-pinned base images, and signed images or checksums with
+published verification steps.
 
 ### Remaining launch gates
 
@@ -346,6 +404,9 @@ thresholds before running the workload. Required evidence includes:
   honest pending outcomes without quorum, and bounded queues/concurrency
   both below and above the fanout threshold. Use a disposable larger topology
   for the latter; three roots alone do not exercise epidemic forwarding.
+- A single client cannot exhaust a root through key-only or long-key writes,
+  slow or idle connections, repeated listing, or IPv6 address rotation, and
+  cannot disable the stream for other viewers (#217–#221).
 - Renewal and planned rotation while clients run, including a client that
   returns after an extended absence. Observe actual local TTLs and avoid
   claiming that connectivity recovery restores missed data.
@@ -391,3 +452,9 @@ The subsequent peer-plane audit added #211 (critical), #212 (high), and #213
 that their affected paths were unchanged from the audit's `c4dadbe` baseline.
 This plan incorporates their dependencies and required evidence; the review
 did not rerun the audit's HTTP reproductions or resolve the findings.
+
+A public-ingress and release audit against `c4dadbe` added #217–#221 and #223
+as launch blockers, #222 and #224 as conditional, and deferred #214. It
+reproduced #217, #218, and #220 with probe tests; #219, #221, and #223 come
+from source and repository-settings review. Omega PR #216 did not touch the
+affected paths.

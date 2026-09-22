@@ -67,6 +67,11 @@ meet its applicable safety and lifecycle requirements.
   bounds, message IDs and types, payload limits, addresses, and enclave scope.
 - Handle signed-list expiration while a node is running. Root status and
   recovery seeds must not remain authorized solely by an expired list.
+- Bound public ingress so one client cannot exhaust a root: count keys and
+  per-entry overhead against capacity, limit key and value size on every
+  ingress path, set server deadlines and connection limits, make listing cost
+  proportional to the page, aggregate IPv6 clients for rate limiting, and keep
+  the stream available as data grows (#217–#221).
 - Make standalone listener binding and public exposure explicit. Embedded
   MCP listener and ephemeral-port work is deferred.
 - Test startup, cancellation, repeated shutdown, and exposed connection
@@ -93,6 +98,9 @@ tree, a public deployment, or untested failure modes.
 
 ### Prepare operations
 
+- Gate publishing on review and tests: protect `main` and release tags, and
+  publish only from tested release tags (#223). Pin and sign release
+  artifacts as the supported install path requires (#224).
 - Publish the renamed artifacts and site after validating this code rebrand.
 - Reconcile the legacy proprietary appendix in `LICENSE` with the intended
   distribution terms before public release.
