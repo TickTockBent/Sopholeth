@@ -100,6 +100,28 @@ class VercelIgnoreTests(unittest.TestCase):
         shutil.rmtree(self.repo / "scripts")
         self.assertEqual(self.decisions(self.base), dict.fromkeys(SITES, 0))
 
+    def test_vercel_cleanup_preserves_git_history(self):
+        self.change("docs/only.md")
+        for site in SITES:
+            with self.subTest(site=site):
+                checkout = Path(self.temp.name) / site
+                shutil.copytree(self.repo, checkout)
+                paths = [str(p.relative_to(checkout)) for p in checkout.rglob("*") if p.is_file()]
+                # Vercel applies the site's .vercelignore to the clone before
+                # running ignoreCommand. Evaluate its gitignore-style rules
+                # with Git, including metadata such as .git/HEAD and objects.
+                ignore_file = ROOT / "sites" / site / ".vercelignore"
+                ignored = subprocess.run(
+                    ["git", "-c", f"core.excludesFile={ignore_file}",
+                     "check-ignore", "--no-index", "--stdin"],
+                    cwd=checkout, input="\n".join(paths) + "\n",
+                    capture_output=True, text=True, timeout=15,
+                )
+                self.assertIn(ignored.returncode, (0, 1), ignored.stderr)
+                for path in ignored.stdout.splitlines():
+                    (checkout / path).unlink()
+                self.assertEqual(self.decisions(self.base, repo=checkout), dict.fromkeys(SITES, 0))
+
     def test_rename_between_sites_deploys_both(self):
         self.git("mv", "sites/sopholeth.com/index.html", "sites/sopholeth.dev/moved.html")
         self.commit()
