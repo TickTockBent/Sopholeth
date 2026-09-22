@@ -29,6 +29,15 @@ network with three fixed-port roots in the shared `default` enclave. The
 order, required evidence, and operator cutover. It takes priority over the
 remaining viewer and MCP backlog.
 
+Before remote rehearsal and public exposure, resolve unauthenticated peer
+mutations ([#211](https://github.com/TickTockBent/Sopholeth/issues/211)),
+identity-blind liveness ([#213](https://github.com/TickTockBent/Sopholeth/issues/213)),
+and serial broadcast stalls ([#212](https://github.com/TickTockBent/Sopholeth/issues/212)).
+Settle peer identity and admission before discovery transport integration;
+the launch plan sequences implementation after the remaining omega work and
+the SYNC-storm prerequisite. A shared-secret lab does not satisfy these
+public launch gates.
+
 The local viewer and initial `soph serve` are implemented. Use them and the
 `soph` HTTP client to validate the remote roots. The
 [viewer plan](soph-stream-plan.md) retains the remaining feature work; finishing
@@ -43,9 +52,15 @@ meet its applicable safety and lifecycle requirements.
 
 ### Establish precise behavior
 
+- Authenticate peer identity and changes to addresses/enclaves, define
+  admission and safe identity replacement, and require fresh authenticated
+  liveness responses. Persist root identities across restarts.
 - Count confirmations from distinct eligible replicas. Cover duplicate,
   unknown, cross-enclave, and late ACKs, relayed ACKs, and topology changes
   while a write is pending.
+- Bound send/forward concurrency, queues, and lifetimes. Slow peers must not
+  block a healthy quorum or healthy-peer delivery, and write deadlines must
+  cover dispatch as well as quorum waiting. Preserve truthful pending outcomes.
 - Preserve local TTL semantics. Test delayed replication, clock disagreement,
   overwrite near expiration, and cleanup accounting.
 - Validate incoming gossip independently of client HTTP validation: TTL

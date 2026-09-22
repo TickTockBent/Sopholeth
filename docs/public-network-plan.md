@@ -5,7 +5,10 @@ release fingerprint gate, durable trust client, and atomic disposable
 `soph omega init`, local-directory `publish`, unattended online renewal, and
 HTTPS verification in `status`, and online-key `rotate` are implemented for
 disposable authorities. Membership/root-key rotation, consumer integration,
-production custody/hosting, and deployment remain pending.
+production custody/hosting, and deployment remain pending. The peer-plane
+audit adds three launch blockers: unauthenticated peer mutations (#211),
+serial write broadcast (#212), and identity-blind liveness (#213). These must
+be resolved before the remote three-root rehearsal and public exposure.
 The [omega audit](omega-signing-audit.md) records the initial defects;
 [issue #80](https://github.com/TickTockBent/Sopholeth/issues/80) tracks launch
 readiness and the live issue queue.
@@ -106,6 +109,12 @@ Implement the related findings in the selected design:
   retry timing ([#172](https://github.com/TickTockBent/Sopholeth/issues/172)).
 - Authenticate bootstrap connections and carry endpoint transport information
   consistently ([#194](https://github.com/TickTockBent/Sopholeth/issues/194)).
+  Before integrating that transport into discovery consumers, settle the
+  peer identity and admission model with #211/#213 in the next section.
+  Signed discovery authenticates metadata; it does not prove who sent a
+  peer message. Per-node credentials must remain separate from omega's
+  authority and publication keys. This design dependency does not displace
+  the remaining omega operator work.
 - Make initialization exclusive and recoverable
   ([#196](https://github.com/TickTockBent/Sopholeth/issues/196)); validate keys,
   inputs, and exact signed output
@@ -127,10 +136,77 @@ does not serve as the production workflow.
 Fix the under-peered SYNC storm
 ([#150](https://github.com/TickTockBent/Sopholeth/issues/150)) before cluster
 fault/load runs. It is triggered by normal recovery, even in a small network.
-Then address the root-facing correctness, resource, and lifecycle gates
-identified in #80: distinct eligible confirmations, unique message IDs,
-validated ingress, bounded forwarding and deduplication, capacity handling,
-topology recovery, race-free peer state, and completed shutdown.
+Implement the root-facing gates in this dependency order:
+
+| Order | Work | Required outcome |
+| --- | --- | --- |
+| 1 | SYNC storm: [#150](https://github.com/TickTockBent/Sopholeth/issues/150) | Under-peered recovery terminates with bounded work, making fault/load runs possible. |
+| 2 | Peer identity, admission, and liveness: [#211](https://github.com/TickTockBent/Sopholeth/issues/211), [#213](https://github.com/TickTockBent/Sopholeth/issues/213), with authenticated transport [#194](https://github.com/TickTockBent/Sopholeth/issues/194) and eligible confirmations [#164](https://github.com/TickTockBent/Sopholeth/issues/164) | Only verified identities can change their peer records or supply eligible confirmations; liveness proves the expected responder. |
+| 3 | Bounded outbound delivery: [#212](https://github.com/TickTockBent/Sopholeth/issues/212), coordinated with inbound forwarding [#167](https://github.com/TickTockBent/Sopholeth/issues/167) and write outcomes [#170](https://github.com/TickTockBent/Sopholeth/issues/170) | Slow peers cannot hold up a healthy quorum or starve healthy delivery; all work has explicit limits and lifetimes. |
+| 4 | Remaining exposed-root gates in [#80](https://github.com/TickTockBent/Sopholeth/issues/80) | Complete unique message IDs, ingress validation, deduplication, capacity handling, topology recovery, race-free peer state, and shutdown, including applicable WebSocket safeguards. |
+
+### Authenticated peer identity and admission
+
+#211 is critical; #213 is high severity. Both block launch independently of
+the initial root count. Define how a node proves its identity, which verified
+identities may join and vote, and how credentials, addresses, and enclave
+membership change. Identity authentication alone does not establish quorum
+eligibility or prevent one participant from presenting many identities.
+Carry that policy into #164's distinct eligible voters and stable per-write
+quorum target, rather than deriving trust from arbitrary peer-table entries.
+
+The implementation and its regression tests must establish that:
+
+- Bootstrap, SYNC, and PONG cannot overwrite another node's address or enclave
+  from an unverified claim. Matching `From` and `NodeInfo.ID`, or an endpoint
+  echoing a claimed ID, is not proof. Treat third-party referrals as discovery
+  candidates until verified. Bound verification and peer-endpoint work, with
+  a destination policy that prevents injected addresses from directing roots
+  at arbitrary third parties or internal services. The client rate limiter's
+  peer exemption is not a substitute for dedicated peer-plane limits.
+- Reject a nonempty `To` that names another node. Accept liveness only from
+  the expected authenticated identity, correlated to a fresh outstanding
+  probe; HTTP 200 or an unrelated PONG is insufficient.
+- Persist root identities and credentials across restarts, and validate their
+  explicitly configured, reachable advertised endpoints. An address collision
+  requires verified ownership and a defined replacement procedure before
+  retiring the stale identity. A new claimant must not be able to evict an
+  existing peer merely by naming its address.
+- Cover forged PONGs, bootstrap ID collisions, SYNC injection, request floods,
+  stale or mismatched probes, wrong destinations, repeated restarts at the
+  same address, and two IDs claiming one address. Assert that neither false
+  membership/quorum nor permanent duplicate send paths survive.
+
+A shared `NODE_CLUSTER_SECRET` is an interim option only for a controlled lab
+with restricted peer ingress and trusted transport. It does not establish
+individual identity, resolve #212/#213, or satisfy the public-mesh gate. A
+closed lab must not silently redefine the agreed public network's admission
+scope. Keep omega authority keys off node hosts; provision node credentials
+separately.
+
+### Bounded replication and truthful write outcomes
+
+#212 is a high-severity launch blocker even among trusted peers. Coordinate
+its send path with #167's receive/forward path without treating either issue
+as a duplicate. Specify total concurrency, per-peer in-flight limits, bounded
+queues and overload behavior, fair scheduling, per-send deadlines, and
+cancellation. An unbounded goroutine per message is not an acceptable fix.
+
+The write budget must cover dispatch and quorum waiting together. Observe
+eligible quorum completion without first waiting for every peer send, and
+preserve an honest confirmed/pending outcome after local acceptance (#170).
+Define a separate bounded lifetime for replication still owed when the client
+request finishes, including shutdown behavior; response cancellation must
+not discard healthy delivery. Never retry the client's PUT implicitly.
+
+Test one and two peers that accept connections but never answer, a slow peer,
+shuffled peer order, queue saturation, cancellation, and shutdown. A healthy
+quorum must complete within the declared request budget regardless of peer
+order; when quorum is unavailable, report the correct pending outcome.
+Verify healthy-peer delivery and bounded work under sustained load, including
+inbound forwarding above the fanout threshold. Record these results in #180.
+
+### Preserve the data contract and public client
 
 Settle the remaining replay/freshness policy before encoding assumptions in
 tests. Preserve the [current contract](core-principles.md): TTL begins on
@@ -216,7 +292,9 @@ The runbook must record the following, in execution order:
 1. Inventory all three hosts: stable node identity, public hostname/address,
    failure domain, fixed listening ports, TLS termination, DNS control,
    service/container runtime, and resource budgets. Record the expected
-   release and operator access separately from credentials.
+   release and operator access separately from credentials. Specify persistent
+   per-node credential storage and recovery, advertised-endpoint validation,
+   and the authenticated procedure for replacing an identity at an address.
 2. Specify the signed endpoint representation and root self-recognition,
    `default` enclave, replication and quorum policy, cache/state directories,
    restart policy, and permitted ingress. Record the forwarding-header policy
@@ -226,7 +304,8 @@ The runbook must record the following, in execution order:
    bootstrap and roots becoming reachable at different times.
 4. Publish the three-root manifest through `soph omega`, verify it from an
    external client, and establish root membership and peer connectivity on
-   every node. A health response alone is insufficient.
+   every node. Verify authenticated peer identities and distinct eligible
+   quorum voters; a health response alone is insufficient.
 5. Enable scheduled renewal, expiration alerts, process/resource monitoring,
    and replication/discovery health checks. Identify who owns each alert and
    which credentials the renewal service needs.
@@ -240,8 +319,9 @@ exact procedure. The existing lab dnsmasq scripts are not a substitute.
 
 **Exit:** an operator can reproduce the three-root setup from the runbook;
 addresses, commands, configuration, release, expected observations, and
-recovery steps are concrete and recorded. Private key material is excluded
-from the repository, node deployment, and validation artifacts.
+recovery steps are concrete and recorded. Private keys are excluded from the
+repository and validation artifacts. Node hosts receive only their own node
+credentials and public omega trust material.
 
 ## 4. Validate, then activate
 
@@ -255,6 +335,17 @@ thresholds before running the workload. Required evidence includes:
   truthful confirmed/pending outcomes under the chosen quorum policy.
 - One-root failure and return, cold starts, partitions/healing, invalid and
   expired discovery, valid cache fallback, and an unavailable publisher.
+- Peer takeover/injection and enclave-spoofing attempts cannot alter trusted
+  membership or produce false confirmed writes (#211/#164). Admission and
+  verification floods remain bounded under the actual ingress policy.
+- Repeated root restarts retain their identities. A rehearsed identity
+  replacement, conflicting address claims, and wrong advertised endpoints
+  neither leave ghosts nor evict a valid peer based on a claim (#213).
+- Unanswering/slow peers and shuffled send order cannot delay a healthy
+  quorum until every send finishes (#212/#167). Verify healthy-root delivery,
+  honest pending outcomes without quorum, and bounded queues/concurrency
+  both below and above the fanout threshold. Use a disposable larger topology
+  for the latter; three roots alone do not exercise epidemic forwarding.
 - Renewal and planned rotation while clients run, including a client that
   returns after an extended absence. Observe actual local TTLs and avoid
   claiming that connectivity recovery restores missed data.
@@ -294,3 +385,9 @@ Launch labels distinguish required work, conditional exposed surfaces, and
 deferred work. These counts are a dated snapshot, not a release checklist to
 clear indiscriminately. The [live tracker and closure evidence](https://github.com/TickTockBent/Sopholeth/issues/80)
 are authoritative as implementation proceeds.
+
+The subsequent peer-plane audit added #211 (critical), #212 (high), and #213
+(high), all launch blockers. Source review against main `821c25e` confirmed
+that their affected paths were unchanged from the audit's `c4dadbe` baseline.
+This plan incorporates their dependencies and required evidence; the review
+did not rerun the audit's HTTP reproductions or resolve the findings.
