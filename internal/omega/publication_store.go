@@ -415,6 +415,14 @@ func loadReleases(s *store, bundle bootstrap.Bundle) ([]release, error) {
 		if _, _, err := r.validate(bundle); err != nil {
 			return nil, err
 		}
+		if len(releases) == 0 && r.Schema != 1 {
+			return nil, errors.New("omega: publication history must begin with offline approval")
+		}
+		if len(releases) > 0 {
+			if err := r.follows(releases[len(releases)-1]); err != nil {
+				return nil, err
+			}
+		}
 		releases = append(releases, r)
 		previous = digest(data)
 	}

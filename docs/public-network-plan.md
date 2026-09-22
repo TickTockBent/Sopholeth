@@ -2,8 +2,8 @@
 
 Status: agreed delivery path, 2026-09-22. Placeholder rejection and the public
 release fingerprint gate, durable trust client, and atomic disposable
-`soph omega init`, local-directory `publish`, and HTTPS verification in `status`
-are implemented for disposable authorities. Unattended renewal, rotation,
+`soph omega init`, local-directory `publish`, unattended online renewal, and
+HTTPS verification in `status` are implemented for disposable authorities. Rotation,
 consumer integration, production custody/hosting, and deployment remain pending.
 The [omega audit](omega-signing-audit.md) records the initial defects;
 [issue #80](https://github.com/TickTockBent/Sopholeth/issues/80) tracks launch
@@ -58,7 +58,8 @@ and online renewal roles. The application now uses Go 1.27.1 and includes the
 [durable TUF client](../internal/trust/bootstrap/README.md), with bundle/manifest
 validation, bounded HTTPS, locked state checkpoints, and expiring accepted
 views. Atomic disposable authority initialization, journaled local-directory
-publication, and HTTPS verification now run through `soph omega`. The remaining
+publication, unattended renewal with separate online custody, and HTTPS
+verification now run through `soph omega`. The remaining
 operator work, compiled bundle/release gate, and discovery consumer/transport
 integration remain pending.
 
@@ -67,16 +68,21 @@ The proposed command surface is:
 | Command | Required outcome |
 | --- | --- |
 | `soph omega init` | Safely create authority and recovery material, identify its fingerprint, and produce the public trust bundle needed by a release. Existing or interrupted initialization must not silently replace keys. |
+| `soph omega provision-renewal` | Recoverably hand off publication history to a separate operational home containing only snapshot/timestamp keys. |
 | `soph omega publish` | Validate an approved root manifest, sign through the chosen key store, publish it, and verify the metadata clients actually receive. Return failure when publication or verification fails. |
 | `soph omega status` | Report accepted versions, authority fingerprints, roots, expiration, renewal/publication health, and actionable failures, with script-friendly output. |
 | `soph omega rotate` | Prepare and carry out an authenticated successor-key transition with defined overlap, retained transition metadata, adoption checks, and retirement criteria. |
 
-`init`, `publish`, and `status --verify` are implemented for disposable Linux
-authorities; see [omega operations](omega-operations.md). Publication currently
+`init`, `provision-renewal`, `publish` (including `--renew`), and `status --verify`
+are implemented for disposable Linux authorities; see
+[omega operations](omega-operations.md). Publication currently
 uses a local directory served by separately configured HTTPS, with immutable
 release history, timestamp-last writes, and verification of the exact served
-release through the real client. Unattended renewal, rotation, production
-custody, and hosted publication remain pending. Fold the existing standalone
+release through the real client. Renewal preserves the exact approved membership,
+uses only online keys, and caps freshness at the offline approval deadlines.
+The operator guide includes scheduler examples and monitoring fields. Rotation,
+production custody, and hosted publication remain pending. Fold the existing
+standalone
 `omega` tool into `soph` and retire that binary, updating builds, releases, and
 documentation. Node hosts receive public trust material, not the ultimate
 private authority key. Routine freshness renewal must run unattended without
@@ -102,8 +108,9 @@ Implement the related findings in the selected design:
   ([#196](https://github.com/TickTockBent/Sopholeth/issues/196)); validate keys,
   inputs, and exact signed output
   ([#197](https://github.com/TickTockBent/Sopholeth/issues/197)).
-- Automate renewal, verify publication, and expose expiration/failure signals
-  ([#199](https://github.com/TickTockBent/Sopholeth/issues/199)).
+- Unattended disposable renewal, verified publication, and expiration/failure
+  signals are implemented; deployment-specific scheduling and alert wiring
+  remain part of rehearsal ([#199](https://github.com/TickTockBent/Sopholeth/issues/199)).
 
 **Exit:** disposable-key integration tests demonstrate initialization,
 publication, verified discovery, renewal, rotation without rebuilding every

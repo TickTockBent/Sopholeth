@@ -62,19 +62,20 @@ type RoleStatus struct {
 // Report contains public information only. Local initialization cannot report
 // publication health; that requires a separate verified publication workflow.
 type Report struct {
-	Schema      int                   `json:"schema"`
-	State       string                `json:"state"`
-	Mode        string                `json:"mode,omitempty"`
-	Network     string                `json:"network,omitempty"`
-	Repository  string                `json:"repository,omitempty"`
-	Fingerprint string                `json:"fingerprint,omitempty"`
-	RootVersion int64                 `json:"root_version,omitempty"`
-	RootExpires time.Time             `json:"root_expires,omitzero"`
-	Roles       map[string]RoleStatus `json:"roles,omitempty"`
-	Publication string                `json:"publication"`
-	Problem     string                `json:"problem,omitempty"`
-	Action      string                `json:"action"`
-	Release     *PublicationReport    `json:"release,omitempty"`
+	Schema          int                   `json:"schema"`
+	State           string                `json:"state"`
+	Mode            string                `json:"mode,omitempty"`
+	Network         string                `json:"network,omitempty"`
+	Repository      string                `json:"repository,omitempty"`
+	Fingerprint     string                `json:"fingerprint,omitempty"`
+	RootVersion     int64                 `json:"root_version,omitempty"`
+	RootExpires     time.Time             `json:"root_expires,omitzero"`
+	Roles           map[string]RoleStatus `json:"roles,omitempty"`
+	Publication     string                `json:"publication"`
+	Problem         string                `json:"problem,omitempty"`
+	Action          string                `json:"action"`
+	Release         *PublicationReport    `json:"release,omitempty"`
+	OperationalHome string                `json:"operational_home,omitempty"`
 }
 
 func Init(ctx context.Context, opts InitOptions) (Report, error) {
@@ -120,6 +121,9 @@ func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(
 		return report, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Report{}, err
+	}
+	if err := rejectOrphanedOperationalState(home, opts.Network); err != nil {
+		return failedReport(err), err
 	}
 	stageName := "." + opts.Network + ".pending"
 	if err := home.root.Mkdir(stageName, 0700); err != nil && !errors.Is(err, os.ErrExist) {
@@ -272,8 +276,22 @@ func status(ctx context.Context, homePath, network string, verify bool, httpClie
 		return failedReport(err), err
 	}
 	defer home.close()
+	if c, err := readRenewal(home, network); err == nil {
+		report, err := inspectBundle(c.Bundle, time.Now().UTC())
+		report.OperationalHome = home.root.Name()
+		if err != nil {
+			return report, err
+		}
+		report.State = "renewal_ready"
+		return inspectPublication(ctx, home, c.Bundle, report, verify, httpClient)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return failedReport(err), err
+	}
 	current, err := home.subdir(network)
 	if errors.Is(err, os.ErrNotExist) {
+		if err := rejectOrphanedOperationalState(home, network); err != nil {
+			return failedReport(err), err
+		}
 		report, err := absentReport(network)
 		if _, stageErr := home.root.Lstat("." + network + ".pending"); stageErr == nil {
 			report.State = "pending"
@@ -295,7 +313,17 @@ func status(ctx context.Context, homePath, network string, verify bool, httpClie
 	if err != nil {
 		return report, err
 	}
-	return inspectPublication(ctx, home, current, report, verify, httpClient)
+	_, bundle, err := current.verify()
+	if err != nil {
+		return report, err
+	}
+	operational, cleanup, err := operationalHome(ctx, home, bundle)
+	if err != nil {
+		return publicationFailure(report, err)
+	}
+	defer cleanup()
+	report.OperationalHome = operational.root.Name()
+	return inspectPublication(ctx, operational, bundle, report, verify, httpClient)
 }
 
 func absentReport(network string) (Report, error) {
@@ -324,6 +352,10 @@ func (s *store) inspect(now time.Time) (Report, error) {
 		err := errors.New("omega: completion receipt does not match authority material")
 		return failedReport(err), err
 	}
+	return inspectBundle(bundle, now)
+}
+
+func inspectBundle(bundle bootstrap.Bundle, now time.Time) (Report, error) {
 	root, err := metadata.Root().FromBytes(bundle.Root)
 	if err != nil {
 		return failedReport(err), err

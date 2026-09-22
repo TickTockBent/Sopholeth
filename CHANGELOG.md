@@ -4,18 +4,26 @@
 
 ### Public discovery
 
+- Add `soph omega provision-renewal` and scheduled `publish --renew` for disposable
+  Linux authorities. Hand off the journal recoverably to a separate home with
+  only snapshot/timestamp keys, preserve offline-approved membership, recover
+  interrupted renewal without offline custody, and cap freshness at approval
+  deadlines. Expose renewal timing and warnings in status; document scheduling,
+  monitoring, and recovery with example systemd units. Production custody and
+  key rotation remain pending.
+
 - Add `soph omega publish` and `status --verify` for disposable Linux authorities.
   Journal exact signed releases separately from authority material, install
   immutable public objects before the timestamp, and verify the served release
   through the durable HTTPS client. Preserve versions and bytes across retries,
   report publication failures and role deadlines, and retain history for recovery.
   The first backend writes a local directory served by separately configured
-  HTTPS; unattended renewal, production custody/hosting, and rotation remain pending.
+  HTTPS; production custody/hosting and rotation remain pending.
 - Add `soph omega init` and local `status` (#208) for disposable Linux authorities.
   Verify and durably commit the complete authority atomically; retries recover
   the same transaction or inspect the existing keys. Report local identity,
   expiration, and actionable failures in text or JSON. Production custody,
-  unattended renewal, rotation, and discovery integration remain pending.
+  rotation and discovery integration remain pending.
 - Add the TUF bootstrap client with validated public bundles/manifests,
   bounded HTTPS, durable rollback state, process locks, and expiring cached
   authority. Move disposable lifecycle tests into the application suite and

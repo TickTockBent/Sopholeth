@@ -1,0 +1,19 @@
+# Disposable Linux rehearsal only. Adjust paths and install soph before enabling.
+[Unit]
+Description=Verify and renew Sopholeth metadata for %i
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=oneshot
+User=soph-omega
+Group=soph-omega
+UMask=0077
+ExecStart=/usr/local/bin/soph --json --timeout 2m omega publish --home /srv/omega-online --network %i --renew --disposable
+TimeoutStartSec=150
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/srv/omega-online /srv/omega-public
+InaccessiblePaths=-/srv/omega-offline

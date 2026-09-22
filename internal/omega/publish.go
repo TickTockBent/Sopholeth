@@ -33,6 +33,9 @@ type PublicationReport struct {
 	CheckedAt  time.Time            `json:"checked_at,omitzero"`
 	VerifiedAt time.Time            `json:"last_verified_at,omitzero"`
 	LastError  string               `json:"last_error,omitempty"`
+	RenewAfter time.Time            `json:"renew_after"`
+	RenewalDue bool                 `json:"renewal_due"`
+	Warnings   []string             `json:"warnings,omitempty"`
 }
 
 type verificationRecord struct {
@@ -45,7 +48,7 @@ type verificationRecord struct {
 }
 
 func Publish(ctx context.Context, opts PublishOptions) (Report, error) {
-	return publish(ctx, opts, time.Now().UTC().Truncate(time.Second), nil)
+	return publish(ctx, opts, time.Time{}, nil)
 }
 
 func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(string) error) (report Report, resultErr error) {
@@ -67,6 +70,10 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 		return report, err
 	}
 	defer current.close()
+	liveClock := now.IsZero()
+	if liveClock {
+		now = time.Now().UTC().Truncate(time.Second)
+	}
 	report, err = current.inspect(now)
 	if err != nil {
 		return report, err
@@ -85,13 +92,29 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	if err != nil {
 		return report, err
 	}
-	repo, err := openRepository(ctx, opts.Directory, home.root.Name())
+	operational, cleanup, err := operationalHome(ctx, home, bundle)
+	if err != nil {
+		return report, err
+	}
+	defer cleanup()
+	if liveClock {
+		now = time.Now().UTC().Truncate(time.Second)
+	}
+	report.OperationalHome = operational.root.Name()
+	canonical, err := canonicalPath(opts.Directory)
+	if err != nil {
+		return report, err
+	}
+	if containsPath(home.root.Name(), canonical) || containsPath(canonical, home.root.Name()) {
+		return report, errors.New("omega: repository and offline custody home must be disjoint")
+	}
+	repo, err := openRepository(ctx, opts.Directory, operational.root.Name())
 	if err != nil {
 		return report, err
 	}
 	defer repo.close()
 	repo.hook = hook
-	state, _, err := openPublication(home, bundle, repo, true)
+	state, _, err := openPublication(operational, bundle, repo, true)
 	if err != nil {
 		return report, err
 	}
@@ -110,10 +133,15 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	var r release
 	if opts.Version == latest {
 		r = history[len(history)-1]
-		if !bytes.Equal(r.Manifest, manifest) {
+		if r.Schema != 1 || !bytes.Equal(r.Manifest, manifest) {
 			return report, errors.New("omega: version already has a different approved manifest; choose the next version")
 		}
 	} else {
+		for _, name := range []string{renewalIntentName(opts.Version), renewalIntentName(opts.Version) + ".pending"} {
+			if _, err := state.root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
+				return report, errors.New("omega: next version is reserved for renewal; complete publish --renew first")
+			}
+		}
 		name := releaseName(opts.Version)
 		pending, pendingErr := state.read(name + ".pending")
 		if pendingErr != nil && !errors.Is(pendingErr, os.ErrNotExist) {
@@ -127,7 +155,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 			if err := decodeRecord(pending, &r); err != nil {
 				return report, errors.New("omega: invalid pending release; preserve the journal for recovery")
 			}
-			if r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
+			if r.Schema != 1 || r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
 				return report, errors.New("omega: pending version has different approval; retry its original manifest")
 			}
 			if _, _, err := r.validate(bundle); err != nil {
@@ -147,12 +175,21 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 				return report, err
 			}
 		}
+		if len(history) > 0 {
+			if err := r.follows(history[len(history)-1]); err != nil {
+				return report, err
+			}
+		}
 		// Reserve the exact signed bytes before any write to the public directory.
 		if err := state.install(name, record(r)); err != nil {
 			return report, err
 		}
 		history = append(history, r)
 	}
+	return publishPrepared(ctx, state, repo, bundle, history, r, report, now, opts.HTTPClient)
+}
+
+func publishPrepared(ctx context.Context, state *store, repo *repositoryStore, bundle bootstrap.Bundle, history []release, r release, report Report, now time.Time, hc *http.Client) (_ Report, resultErr error) {
 	if err := state.syncDir(); err != nil {
 		return report, err
 	}
@@ -163,7 +200,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	if err := cleanPendingTwins(state, ".", state.read); err != nil {
 		return report, err
 	}
-	report.Release = &PublicationReport{Version: r.Version, Versions: r.versions(), Roots: m.Roots, Expires: expires}
+	report.Release = publicationReport(r, m, expires, now)
 	if err := state.phase("release:durable"); err != nil {
 		return report, err
 	}
@@ -178,14 +215,14 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 		}
 	}()
 	if !now.Before(expires["timestamp"]) {
-		return report, errors.New("omega: recorded release has expired; publish the next version with renewed approval")
+		return report, errors.New("omega: recorded release has expired; use the next release, renewing online only while offline approval remains valid")
 	}
 	if err := checkTimestamp(repo, r, history); err != nil {
 		return report, err
 	}
 	// Validate TLS configuration and initialize a fresh real client before
 	// touching public objects. The private journal supplies expected ordering.
-	verifier, cleanup, err := newPublicationVerifier(ctx, state, bundle, opts.HTTPClient)
+	verifier, cleanup, err := newPublicationVerifier(ctx, state, bundle, hc)
 	if err != nil {
 		return report, err
 	}
@@ -237,7 +274,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	report.Publication = "verified"
 	report.Release.CheckedAt = checked
 	report.Release.VerifiedAt = checked
-	report.Action = "The expected release was verified over HTTPS. Retain publication history; unattended renewal and rotation remain pending."
+	report.Action = "The expected release was verified over HTTPS. Monitor renewal and offline approval deadlines; retain publication history."
 	return report, nil
 }
 
@@ -327,11 +364,7 @@ func saveVerification(state *store, r release, result error, now time.Time) erro
 	return state.replaceRecord(verificationName(r), record(v))
 }
 
-func inspectPublication(ctx context.Context, home, current *store, report Report, verify bool, hc *http.Client) (Report, error) {
-	_, bundle, err := current.verify()
-	if err != nil {
-		return report, err
-	}
+func inspectPublication(ctx context.Context, home *store, bundle bootstrap.Bundle, report Report, verify bool, hc *http.Client) (Report, error) {
 	state, _, err := openPublication(home, bundle, nil, false)
 	if errors.Is(err, os.ErrNotExist) {
 		if !verify {
@@ -364,7 +397,7 @@ func inspectPublication(ctx context.Context, home, current *store, report Report
 	if err != nil {
 		return publicationFailure(report, err)
 	}
-	report.Release = &PublicationReport{Version: r.Version, Versions: r.versions(), Roots: m.Roots, Expires: expires}
+	report.Release = publicationReport(r, m, expires, time.Now().UTC())
 	receipt, err := readVerification(state, r)
 	if err == nil {
 		report.Release.CheckedAt = receipt.CheckedAt
@@ -374,7 +407,7 @@ func inspectPublication(ctx context.Context, home, current *store, report Report
 		return publicationFailure(report, err)
 	}
 	if !time.Now().Before(expires["timestamp"]) {
-		return publicationFailure(report, errors.New("omega: latest recorded release has expired; publish the next version"))
+		return publicationFailure(report, errors.New("omega: latest recorded release has expired; run publish --renew from the provisioned operational home or publish a new offline approval"))
 	}
 	if !verify {
 		report.Publication = "not_checked"
@@ -405,6 +438,23 @@ func inspectPublication(ctx context.Context, home, current *store, report Report
 func publicationFailure(report Report, err error) (Report, error) {
 	report.Publication = "failed"
 	report.Problem = err.Error()
-	report.Action = "Preserve the journal and resolve the reported publication failure; retry the same version, or the next version for expired approval."
+	report.Action = "Preserve the journal and resolve the publication failure. Retry the appropriate publishing command; expired root or membership approval requires the offline authority."
 	return report, err
+}
+
+const renewalInterval = 6 * time.Hour
+
+func publicationReport(r release, m bootstrap.Manifest, expires map[string]time.Time, now time.Time) *PublicationReport {
+	renewAfter := minTime(r.Created.Add(renewalInterval), expires["timestamp"])
+	p := &PublicationReport{Version: r.Version, Versions: r.versions(), Roots: m.Roots, Expires: expires, RenewAfter: renewAfter, RenewalDue: !now.Before(renewAfter)}
+	if p.RenewalDue {
+		p.Warnings = append(p.Warnings, "Freshness renewal is due; run soph omega publish --renew from the operational home.")
+	}
+	if !now.Before(expires["targets"].Add(-30 * 24 * time.Hour)) {
+		p.Warnings = append(p.Warnings, "Membership approval needs offline review and republication before its deadline.")
+	}
+	if !now.Before(expires["root"].Add(-180 * 24 * time.Hour)) {
+		p.Warnings = append(p.Warnings, "Root approval needs an offline ceremony before its deadline.")
+	}
+	return p
 }

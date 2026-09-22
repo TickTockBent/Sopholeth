@@ -25,13 +25,15 @@ yet; see the [roadmap](roadmap.md#before-public-alpha).
 `soph omega init` atomically creates a disposable TUF authority.
 `soph omega publish` publishes an approved numbered release to a local
 HTTPS-served repository and verifies it through the trust client.
+`soph omega provision-renewal` moves publication state to a separate home with
+only the two online keys. `soph omega publish --renew` is the scheduled renewal
+command and works without access to the offline authority.
 `soph omega status` inspects local material; `--verify` checks the served release.
 These commands use a separate private custody home and do not select or modify
 a saved client network.
 See [omega operations](omega-operations.md) for the commands, all-or-nothing
 commit/retry contract, publication journal, custody limits, and JSON status.
-Unattended renewal, rotation, production hosting, and production authority
-creation remain pending.
+Rotation, production hosting, and production authority creation remain pending.
 
 ## Join a network
 

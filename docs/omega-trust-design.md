@@ -1,14 +1,14 @@
 # Omega trust lifecycle: integration spike and proposed design
 
 Status: trust client, atomic disposable authority initialization, local-directory
-publication, and served-release verification implemented. Unattended renewal,
-rotation, production custody/hosting, and consumer integration remain pending.
+publication, unattended online renewal, and served-release verification implemented.
+Rotation, production custody/hosting, and consumer integration remain pending.
 The completed [spike](../test/omega-tuf/README.md) established the design for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md). Its scenarios now exercise the
 [durable client](../internal/trust/bootstrap/README.md) in the main Go suite.
-`soph omega init`, local-directory `publish`, and `status --verify` implement
-the first operator slices.
+`soph omega init`, `provision-renewal`, local-directory `publish` with online
+renewal, and `status --verify` implement the current operator slices.
 This does not switch node discovery or establish a production authority.
 The [audit](omega-signing-audit.md) remains the record of the interim protocol.
 
@@ -213,14 +213,16 @@ do not turn on the library's `UnsafeLocalMode` as an unexplained fallback.
 
 ## One operator workflow
 
-`soph omega init`, local-directory `publish`, and `status --verify` are
+`soph omega init`, `provision-renewal`, local-directory `publish` (including
+`--renew`), and `status --verify` are
 implemented for disposable authorities on Linux; see the
 [operator guide](omega-operations.md). Initialization prepares
 and verifies the entire authority privately, then commits it with a single
 atomic, non-replacing directory rename. Repeated invocations recover the same
 transaction or verify the same committed authority. Production custody remains
 pending. Publication uses a separate immutable release journal, explicit
-consecutive approval versions, timestamp-last writes, and exact served-byte
+consecutive release versions, independent approval/renewal versions,
+timestamp-last writes, and exact served-byte
 verification through a fresh durable client. See the operator guide for its
 retry and expiration contract. The complete command surface below includes
 subsequent planned work:
@@ -229,6 +231,9 @@ subsequent planned work:
   key files, verify generated key consistency, produce public bundle and
   fingerprints, and record the recoverable initialization state. An existing
   or interrupted initialization cannot silently replace keys.
+- `soph omega provision-renewal`: bind a separate operational home and transfer
+  the journal recoverably, enabling it only after the history and two online
+  keys are durable. Keep root and membership keys in the offline home.
 - `soph omega publish`: validate membership approval, prepare immutable
   objects, sign permitted roles, publish timestamp last, then independently
   fetch and verify the served result and expected versions. Nonzero exit on
@@ -284,8 +289,9 @@ unsigned replacement from the same compromised delivery channel.
 
 The toolchain upgrade, explicit bundle/manifest types, and durable client from
 steps 1–2 are implemented. Step 3 now includes atomic disposable `init`,
-journaled local-directory `publish`, and local/HTTPS-verified `status`.
-Unattended renewal, rotation, production custody/hosting, and standalone-tool
+journaled local-directory `publish`, restricted online custody provisioning,
+unattended renewal, and local/HTTPS-verified `status`. Rotation, production
+custody/hosting, and standalone-tool
 retirement remain pending. The compiled public bundle/release-gate migration,
 node/CLI/dashboard adoption, runtime callbacks, and transport checks remain
 pending. The [client reference](../internal/trust/bootstrap/README.md)

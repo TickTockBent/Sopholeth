@@ -14,26 +14,30 @@ import (
 
 func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help")) {
-		return a.printf("Usage: soph [global flags] omega <init|publish|status> [flags]\n\n  init     Atomically initialize a disposable authority, or recover the same transaction.\n  publish  Publish a numbered disposable release and verify it over HTTPS.\n  status   Inspect local authority and publication state; --verify checks HTTPS.\n\nUse 'soph omega <command> --help' for flags.\n")
+		return a.printf("Usage: soph [global flags] omega <init|provision-renewal|publish|status> [flags]\n\n  init     Atomically initialize a disposable authority, or recover the same transaction.\n  provision-renewal  Provision online keys and hand off the publication journal.\n  publish  Publish an approved release, or --renew using online keys, and verify HTTPS.\n  status   Inspect local authority and publication state; --verify checks HTTPS.\n\nUse 'soph omega <command> --help' for flags.\n")
 	}
 	cmd := args[0]
-	if cmd != "init" && cmd != "status" && cmd != "publish" {
+	if cmd != "init" && cmd != "status" && cmd != "publish" && cmd != "provision-renewal" {
 		return usagef("unknown omega command %q; run 'soph omega --help'", cmd)
 	}
 	fs := flag.NewFlagSet("omega "+cmd, flag.ContinueOnError)
-	home := fs.String("home", "", "private custody home, shared by all operator commands (required)")
+	home := fs.String("home", "", "offline authority home, or operational home for --renew/status (required)")
 	network := fs.String("network", "", "authority network identity (required; independent of client profiles)")
 	var repository string
 	var disposable bool
 	var manifestPath, directory string
 	var version int64
-	var verify bool
-	if cmd == "init" || cmd == "publish" {
+	var verify, renew bool
+	var renewalHome string
+	if cmd == "init" || cmd == "publish" || cmd == "provision-renewal" {
 		fs.BoolVar(&disposable, "disposable", false, "use development/rehearsal keys; production custody is not implemented")
 	}
 	if cmd == "init" {
 		fs.StringVar(&repository, "repository", "", "HTTPS metadata repository origin (required; base paths are planned)")
+	} else if cmd == "provision-renewal" {
+		fs.StringVar(&renewalHome, "renewal-home", "", "separate private operational home for online keys and publication state (required)")
 	} else if cmd == "publish" {
+		fs.BoolVar(&renew, "renew", false, "renew due freshness or recover/verify the current release using only online custody")
 		fs.StringVar(&manifestPath, "manifest", "", "approved three-root manifest JSON file (required)")
 		fs.StringVar(&directory, "repository-dir", "", "dedicated public directory served at the authority's HTTPS origin (required)")
 		fs.Int64Var(&version, "version", 0, "release number: latest for retry, next for new approval (required; starts at 1)")
@@ -58,6 +62,16 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 			return usagef("omega init requires --repository and --disposable")
 		}
 		report, err = omega.Init(opCtx, omega.InitOptions{Home: *home, Network: *network, Repository: repository, Disposable: disposable})
+	} else if cmd == "provision-renewal" {
+		if !disposable || renewalHome == "" {
+			return usagef("omega provision-renewal requires --renewal-home and --disposable")
+		}
+		report, err = omega.ProvisionRenewal(opCtx, omega.ProvisionRenewalOptions{Home: *home, Network: *network, RenewalHome: renewalHome, Disposable: disposable})
+	} else if cmd == "publish" && renew {
+		if !disposable || manifestPath != "" || directory != "" || version != 0 {
+			return usagef("omega publish --renew requires --disposable and accepts no manifest, repository-dir, or version; the operational journal supplies them")
+		}
+		report, err = omega.Renew(opCtx, omega.RenewOptions{Home: *home, Network: *network, Disposable: disposable, HTTPClient: a.newHTTPClient()})
 	} else if cmd == "publish" {
 		if !disposable || manifestPath == "" || directory == "" || version < 1 {
 			return usagef("omega publish requires --manifest, --repository-dir, --version, and --disposable")
@@ -107,6 +121,9 @@ func (a *app) printOmegaReport(r omega.Report) error {
 			fmt.Fprintf(&out, "%s: %d-of-%d; key IDs %s\n", role, keys.Threshold, len(keys.KeyIDs), strings.Join(keys.KeyIDs, ", "))
 		}
 	}
+	if r.OperationalHome != "" {
+		fmt.Fprintf(&out, "Operational home: %s\n", r.OperationalHome)
+	}
 	fmt.Fprintf(&out, "Publication: %s\n", r.Publication)
 	if release := r.Release; release != nil {
 		fmt.Fprintf(&out, "Release: %d (root %d, targets %d, snapshot %d, timestamp %d)\n", release.Version, release.Versions.Root, release.Versions.Targets, release.Versions.Snapshot, release.Versions.Timestamp)
@@ -115,6 +132,10 @@ func (a *app) printOmegaReport(r omega.Report) error {
 		}
 		for _, role := range []string{"targets", "snapshot", "timestamp"} {
 			fmt.Fprintf(&out, "%s expires: %s\n", role, release.Expires[role].Format("2006-01-02T15:04:05Z07:00"))
+		}
+		fmt.Fprintf(&out, "Renew after: %s (due: %t)\n", release.RenewAfter.Format("2006-01-02T15:04:05Z07:00"), release.RenewalDue)
+		for _, warning := range release.Warnings {
+			fmt.Fprintf(&out, "Warning: %s\n", warning)
 		}
 		if !release.VerifiedAt.IsZero() {
 			fmt.Fprintf(&out, "Last verified: %s\n", release.VerifiedAt.Format("2006-01-02T15:04:05Z07:00"))

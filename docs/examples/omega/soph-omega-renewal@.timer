@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Sopholeth metadata renewal hourly for %i
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=2m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
