@@ -160,6 +160,9 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	if err != nil {
 		return report, err
 	}
+	if err := cleanPendingTwins(state, ".", state.read); err != nil {
+		return report, err
+	}
 	report.Release = &PublicationReport{Version: r.Version, Versions: r.versions(), Roots: m.Roots, Expires: expires}
 	if err := state.phase("release:durable"); err != nil {
 		return report, err
@@ -189,6 +192,11 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	defer cleanup()
 	if err := repo.targetsDir(); err != nil {
 		return report, err
+	}
+	for _, dir := range []string{".", "targets"} {
+		if err := cleanPendingTwins(repo.store, dir, repo.read); err != nil {
+			return report, err
+		}
 	}
 	for _, obj := range r.objects(bundle) {
 		if err := ctx.Err(); err != nil {

@@ -205,8 +205,12 @@ Immutable filenames are never overwritten with different bytes. Public data
 files use mode `0644`; directory access for the HTTPS serving account must be
 configured by the operator. The destination also contains a private, empty
 `.omega-publish.lock`; temporary `.pending` public files may survive a killed
-process. Serve only the documented metadata/target paths and disable directory
-listing. Never serve the custody home.
+process. Publishing again sweeps the journal and public repository, including
+`targets/` and older releases, removing `.pending` twins only when the final
+object exists with identical bytes. Pending data without a matching final
+object is left for normal recovery or investigation. Serve only the
+documented metadata/target paths and disable directory listing. Never serve the
+custody home.
 
 A retry uses the recorded signatures and expiration; it does not re-sign the
 same version with a new clock. Interrupted writes before the timestamp leave

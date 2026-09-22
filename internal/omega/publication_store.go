@@ -324,6 +324,63 @@ func directoryNames(s *store) ([]string, error) {
 	defer f.Close()
 	return f.Readdirnames(-1)
 }
+
+// cleanPendingTwins removes only temporary files with byte-identical final
+// objects, including leftovers from older releases. The caller holds the
+// publication locks and validates dir before entry; read applies the private
+// journal or public repository file checks. Unmatched pending data is retained.
+func cleanPendingTwins(s *store, dir string, read func(string) ([]byte, error)) error {
+	f, err := s.root.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if !strings.HasSuffix(name, ".pending") {
+			continue
+		}
+		pending := filepath.Join(dir, name)
+		final := strings.TrimSuffix(pending, ".pending")
+		data, err := read(final)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		temporary, err := read(pending)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(data, temporary) {
+			continue
+		}
+		// Make the final object and its directory entry durable before removing
+		// the temporary name, then persist the removal as well.
+		object, err := s.root.Open(final)
+		if err != nil {
+			return err
+		}
+		if err := errors.Join(object.Sync(), object.Close()); err != nil {
+			return err
+		}
+		if err := f.Sync(); err != nil {
+			return err
+		}
+		if err := s.root.Remove(pending); err != nil {
+			return err
+		}
+		if err := f.Sync(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func loadReleases(s *store, bundle bootstrap.Bundle) ([]release, error) {
 	names, err := directoryNames(s)
 	if err != nil {

@@ -236,7 +236,76 @@ func TestPublishInterruptionsReusePreparedBytes(t *testing.T) {
 			if !bytes.Equal(journal, file(t, filepath.Join(f.statePath(), "1.release.json"))) {
 				t.Fatal("retry re-signed or renumbered prepared release")
 			}
+			for _, dir := range []string{f.statePath(), f.opts.Directory, filepath.Join(f.opts.Directory, "targets")} {
+				pending, err := filepath.Glob(filepath.Join(dir, "*.pending"))
+				must(t, err)
+				if len(pending) != 0 {
+					t.Fatalf("retry left pending files: %v", pending)
+				}
+			}
 		})
+	}
+}
+
+func TestPublishRetrySweepsOnlyMatchingPendingTwins(t *testing.T) {
+	f := newPublishFixture(t)
+	_, err := Publish(context.Background(), f.opts)
+	must(t, err)
+	var first release
+	must(t, decodeRecord(file(t, filepath.Join(f.statePath(), "1.release.json")), &first))
+	f.opts.Version = 2
+	f.changeRoot()
+	_, err = Publish(context.Background(), f.opts)
+	must(t, err)
+	var second release
+	must(t, decodeRecord(file(t, filepath.Join(f.statePath(), "2.release.json")), &second))
+
+	finals := map[string][]byte{}
+	preserved := map[string][]byte{}
+	var twins []string
+	for _, pair := range []struct {
+		dir, old, current string
+		mode              os.FileMode
+	}{
+		{f.statePath(), "1.release.json", "2.release.json", 0600},
+		{f.opts.Directory, "1.snapshot.json", "2.snapshot.json", 0644},
+		{filepath.Join(f.opts.Directory, "targets"), digest(first.Manifest) + ".bootstrap.json", digest(second.Manifest) + ".bootstrap.json", 0644},
+	} {
+		old := filepath.Join(pair.dir, pair.old)
+		finals[old] = file(t, old)
+		must(t, os.Link(old, old+".pending"))
+		twins = append(twins, old+".pending")
+		current := filepath.Join(pair.dir, pair.current)
+		finals[current] = file(t, current)
+		for name, data := range map[string][]byte{
+			pair.current + ".pending":  []byte("different pending bytes"),
+			"uncommitted.json.pending": []byte("no final object"),
+		} {
+			path := filepath.Join(pair.dir, name)
+			preserved[path] = data
+			must(t, os.WriteFile(path, data, pair.mode))
+		}
+	}
+	// Identical bytes also qualify when the pending file is a separate inode.
+	for _, path := range []string{filepath.Join(f.statePath(), "binding.json"), filepath.Join(f.opts.Directory, "1.root.json")} {
+		finals[path] = file(t, path)
+		must(t, os.WriteFile(path+".pending", finals[path], 0600))
+		twins = append(twins, path+".pending")
+	}
+	_, err = Publish(context.Background(), f.opts)
+	must(t, err)
+	for _, path := range twins {
+		assertAbsent(t, path)
+	}
+	for path, data := range preserved {
+		if !bytes.Equal(data, file(t, path)) {
+			t.Fatalf("retry changed unmatched pending file %s", path)
+		}
+	}
+	for path, data := range finals {
+		if !bytes.Equal(data, file(t, path)) {
+			t.Fatalf("cleanup changed final object %s", path)
+		}
 	}
 }
 
@@ -435,7 +504,7 @@ func TestPublicationProcessDeathRecovery(t *testing.T) {
 		}
 		return
 	}
-	for _, phase := range []string{"release:durable", "public:timestamp.json:visible"} {
+	for _, phase := range []string{"1.release.json:linked", "release:durable", "public:1.snapshot.json:visible", "public:timestamp.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
 			f := newPublishFixture(t)
 			cmd := exec.Command(os.Args[0], "-test.run=^TestPublicationProcessDeathRecovery$")
@@ -467,6 +536,8 @@ func TestPublicationProcessDeathRecovery(t *testing.T) {
 			if !bytes.Equal(original, file(t, filepath.Join(f.statePath(), "1.release.json"))) {
 				t.Fatal("process recovery regenerated release")
 			}
+			assertAbsent(t, filepath.Join(f.statePath(), "1.release.json.pending"))
+			assertAbsent(t, filepath.Join(f.opts.Directory, "1.snapshot.json.pending"))
 		})
 	}
 }
