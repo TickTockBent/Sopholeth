@@ -42,6 +42,13 @@
 - Link the domain sites and document their independent deployment roots.
   Devlog automation remains future work.
 
+### Build and deployment
+
+- Deploy each Vercel site only when its own folder changes. Limit Go checks
+  and node image builds to their source and build inputs, while retaining
+  Docker release/manual builds. Cancel superseded PR runs and test the
+  deployment filters in a separate fast workflow.
+
 ### Documentation and identity
 
 - Record the omega signing audit and first public-network plan: implement
