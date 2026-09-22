@@ -32,7 +32,7 @@ checkout or deployment. The `soph` client talks to any node over HTTP.
 
 ## Run locally
 
-From this checkout, with Go 1.22 or later:
+From this checkout, with Go 1.27.1 or later:
 
 ```bash
 go build -o bin/server ./cmd/server

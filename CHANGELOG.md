@@ -4,6 +4,11 @@
 
 ### Public discovery
 
+- Add the TUF bootstrap client with validated public bundles/manifests,
+  bounded HTTPS, durable rollback state, process locks, and expiring cached
+  authority. Move disposable lifecycle tests into the application suite and
+  retire the isolated spike. Node/CLI discovery and `soph omega` integration
+  remain pending. Upgrade builds, Docker builders, and CI to Go 1.27.1.
 - Reject unset and all-zero omega trust anchors before DNS lookup or cached
   root authorization (#192). Ordinary builds have public discovery disabled;
   private networks, explicit dashboard seeds, and disposable test keys remain

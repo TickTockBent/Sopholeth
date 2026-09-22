@@ -49,8 +49,11 @@ spike covering a reviewed library release, Go toolchain compatibility,
 persisted client state, and operator complexity. The completed
 [spike and design recommendation](omega-trust-design.md) establish go-tuf
 v2.4.2 as the proposed integration baseline, with separate offline approval
-and online renewal roles. Production dependency, toolchain, and protocol
-changes remain pending.
+and online renewal roles. The application now uses Go 1.27.1 and includes the
+[durable TUF client](../internal/trust/bootstrap/README.md), with bundle/manifest
+validation, bounded HTTPS, locked state checkpoints, and expiring accepted
+views. Operator commands, the compiled bundle/release gate, and discovery
+consumer/transport integration remain pending.
 
 The proposed command surface is:
 

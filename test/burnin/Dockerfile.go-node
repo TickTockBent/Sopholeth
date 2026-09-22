@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.27.1-alpine AS builder
 RUN apk add --no-cache git ca-certificates
 
 # TEST_OMEGA_PUBKEY is the base64-encoded Ed25519 pubkey for the burn-in run.

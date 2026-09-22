@@ -200,10 +200,9 @@ class WorkflowFilterTests(unittest.TestCase):
             ".github/workflows/test.yml": (True, False),
             ".github/workflows/docker-build.yml": (False, True),
             "test/burnin/Dockerfile.go-node": (False, False),
-            "test/omega-tuf/lifecycle_test.go": (False, False),
-            "test/omega-tuf/testdata/fixture.json": (False, False),
-            "test/omega-tuf/go.mod": (False, False),
-            "test/omega-tuf/go.sum": (False, False),
+            "internal/trust/bootstrap/client.go": (True, True),
+            "internal/trust/bootstrap/client_test.go": (True, False),
+            "test/omega-tuf/README.md": (False, False),
         }
         for event in ("push", "pull_request"):
             go_paths = event_paths("test.yml", event)
@@ -212,23 +211,6 @@ class WorkflowFilterTests(unittest.TestCase):
                 with self.subTest(event=event, path=path):
                     self.assertEqual((matches(go_paths, path), matches(docker_paths, path)), expected)
 
-    def test_isolated_spike_workflow(self):
-        cases = {
-            "test/omega-tuf/lifecycle_test.go": True,
-            "test/omega-tuf/testdata/fixture.json": True,
-            "test/omega-tuf/go.mod": True,
-            "test/omega-tuf/go.sum": True,
-            "test/omega-tuf/README.md": False,
-            ".github/workflows/omega-tuf-spike.yml": True,
-            "internal/trust/omega.go": False,
-            "go.mod": False,
-            "docs/omega-trust-design.md": False,
-        }
-        for event in ("push", "pull_request"):
-            paths = event_paths("omega-tuf-spike.yml", event)
-            for path, expected in cases.items():
-                with self.subTest(event=event, path=path):
-                    self.assertEqual(matches(paths, path), expected)
 
 
 if __name__ == "__main__":

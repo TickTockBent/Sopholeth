@@ -1,10 +1,12 @@
 # Omega trust lifecycle: integration spike and proposed design
 
-Status: design recommendation, 2026-09-22. The isolated
-[executable spike](../test/omega-tuf/README.md) evaluates the first design step
-of [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
-[public-network plan](public-network-plan.md). It does not implement
-`soph omega`, change node discovery, or establish a production authority.
+Status: trust client implemented, operator/consumer integration pending.
+The completed [spike](../test/omega-tuf/README.md) established the design for
+[#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
+[public-network plan](public-network-plan.md). Its scenarios now exercise the
+[durable client](../internal/trust/bootstrap/README.md) in the main Go suite.
+This does not yet implement `soph omega`, switch node discovery, or establish
+a production authority.
 The [audit](omega-signing-audit.md) remains the record of the interim protocol.
 
 ## Decision
@@ -15,12 +17,12 @@ the integration baseline. Keep Sopholeth's manifest validation, runtime
 authorization, durable state, and operator workflows outside the library.
 Do not develop another custom rotation protocol or introduce another CLI.
 
-The spike pins a reviewed stable release, rather than upstream master. Its
-module requires Go 1.25.0; this repository's Go 1.22.2 cannot compile it.
-The isolated module and its CI use Go 1.27.1. Before production integration,
-upgrade the application, Docker builders, development requirements, and CI
-together, then run the full existing build/race suite. The root module and
-shipping binaries have no new dependencies in this change.
+The spike selected a reviewed stable release, rather than upstream master.
+That release requires Go 1.25.0; the previous Go 1.22.2 toolchain could not
+compile it. The application, Docker builders, development requirements, and
+CI now use Go 1.27.1, and the root module includes go-tuf v2.4.2. The separate
+spike module/workflow has been retired. Existing discovery consumers have not
+yet switched to the new package.
 [Release](https://github.com/theupdateframework/go-tuf/releases/tag/v2.4.2),
 [release go.mod](https://github.com/theupdateframework/go-tuf/blob/v2.4.2/go.mod),
 [Go releases](https://go.dev/dl/).
@@ -32,11 +34,11 @@ notes, published upstream advisories, and integration paths; it is not an
 independent cryptographic audit or a blanket assurance about dependencies.
 [Threshold advisory](https://github.com/theupdateframework/go-tuf/security/advisories/GHSA-3633-5h82-39pq).
 
-The tidied spike module has two direct requirements (go-tuf and its Sigstore
+The original spike module had two direct requirements (go-tuf and its Sigstore
 signer API) and ten indirect requirements. That includes crypto, protobuf,
 and container-related utilities pulled in by the signing library. The actual
-versions used by the test build are recorded in
-[go.mod](../test/omega-tuf/go.mod) and [go.sum](../test/omega-tuf/go.sum).
+versions used by the integrated client and tests are recorded in
+[go.mod](../go.mod) and [go.sum](../go.sum).
 This is a real dependency/toolchain cost,
 but preferable to maintaining the update security protocol ourselves.
 
@@ -62,9 +64,11 @@ controlled clock. They demonstrate:
 - A retained updater still returning target information after the deadline
   represented by its metadata: runtime revocation is our responsibility.
 
-The small restart wrapper also rejects a missing/corrupt root in an existing
-state directory. It does **not** implement the production journal or detect
-all forms of state corruption. See the test README for commands and limits.
+The original small restart wrapper rejected a missing/corrupt established
+root but lacked durable storage and locking. It is now replaced by the
+[client implementation](../internal/trust/bootstrap/README.md), with durable
+checkpoints, state validation, and process locks. Its regression tests also
+cover interrupted writes, bounded HTTPS, concurrent access, and runtime leases.
 
 ## Authority and custody
 
@@ -248,6 +252,12 @@ unsigned replacement from the same compromised delivery channel.
 5. Continue the root correctness work and remote three-root rehearsal in the
    public-network plan. Production custody, bundle fingerprints, addresses,
    DNS, and activation come from that runbook, not this spike.
+
+The toolchain upgrade, explicit bundle/manifest types, and durable client from
+steps 1–2 are implemented. The compiled public bundle/release-gate migration,
+node/CLI/dashboard adoption, runtime callbacks, transport checks, and operator
+commands remain pending. The [client reference](../internal/trust/bootstrap/README.md)
+records its supported storage platforms and exact validation boundaries.
 
 The spike does not close #195 or the related audit issues. It establishes a
 feasible library and trust lifecycle and identifies the integration work
