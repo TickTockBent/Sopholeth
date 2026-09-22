@@ -70,7 +70,13 @@ func openRepository(ctx context.Context, path, home string) (*repositoryStore, e
 			break
 		}
 	}
-	if err := os.Mkdir(canonical, 0755); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := os.Mkdir(canonical, 0755); err == nil {
+		// Public directories must remain traversable by the HTTPS account even
+		// under the private custody umask. Preserve existing operator modes.
+		if err := os.Chmod(canonical, 0755); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, os.ErrExist) {
 		return nil, err
 	}
 	info, err := os.Lstat(canonical)
@@ -159,7 +165,11 @@ func (r *repositoryStore) empty() (bool, error) {
 	return true, nil
 }
 func (r *repositoryStore) targetsDir() error {
-	if err := r.root.Mkdir("targets", 0755); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := r.root.Mkdir("targets", 0755); err == nil {
+		if err := r.root.Chmod("targets", 0755); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrExist) {
 		return err
 	}
 	info, err := r.root.Lstat("targets")

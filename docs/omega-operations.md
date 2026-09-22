@@ -208,8 +208,10 @@ Public files are installed in this order:
    current one.
 
 Immutable filenames are never overwritten with different bytes. Public data
-files use mode `0644`; directory access for the HTTPS serving account must be
-configured by the operator. The destination also contains a private, empty
+files use mode `0644`. Newly created repository and `targets/` directories use
+mode `0755`, including under `umask 077`. Existing directory modes are preserved;
+the operator must configure access through those directories and their parents
+for the HTTPS serving account. The destination also contains a private, empty
 `.omega-publish.lock`; temporary `.pending` public files may survive a killed
 process. Publishing again sweeps the journal and public repository, including
 `targets/` and older releases, removing `.pending` twins only when the final
@@ -391,8 +393,10 @@ and JSON reports; these examples do not send notifications themselves. Monitor:
 
 A failed invocation exits nonzero. Fix hosting, connectivity, permissions, or
 clock errors and rerun `publish --renew`; status retains the recorded failure
-and prior successful verification time. Expired membership requires bringing
-the offline authority back for a new approval at the next available release
+and prior successful verification time. With `--json`, missing or unprovisioned
+operational homes also produce a report with `problem` and `action`, identifying
+when to provision custody or restore existing state. Expired membership requires
+bringing the offline authority back for a new approval at the next available release
 version. Root expiry requires the planned rotation/recovery workflow, which
 is not implemented yet. Do not claim healthy discovery from expired metadata.
 

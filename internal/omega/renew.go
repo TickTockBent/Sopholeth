@@ -17,6 +17,8 @@ type RenewOptions struct {
 	HTTPClient    *http.Client
 }
 
+const renewalProvisionAction = "Check --home. For first-time setup, run soph omega provision-renewal from the existing offline authority home; restore the operational home and journal if it was already provisioned."
+
 // Renew is a scheduler-friendly single invocation. It completes an interrupted
 // release first, renews after six hours, or verifies the existing release when
 // not due. No code path opens an offline authority or signs targets/root.
@@ -28,8 +30,16 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	if !opts.Disposable || !networkID.MatchString(opts.Network) {
 		return report, errors.New("omega: renewal requires a network and --disposable")
 	}
+	report = Report{Schema: 1, State: "invalid", Network: opts.Network, OperationalHome: opts.Home, Publication: "failed",
+		Action: "Check --home, ownership, and private-directory permissions; retry when the operational home is accessible."}
 	home, err := openHome(ctx, opts.Home, opts.Network, false)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			report.State = "absent"
+			report.Action = renewalProvisionAction
+		}
+		err = fmt.Errorf("omega: cannot open operational home: %w", err)
+		report.Problem = err.Error()
 		return report, err
 	}
 	defer home.close()
@@ -39,7 +49,14 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	home.hook = hook
 	custody, err := readRenewal(home, opts.Network)
 	if err != nil {
-		return failedReport(err), err
+		report.Action = "Preserve the operational home and restore verified renewal custody and its publication journal; never initialize a replacement authority."
+		if errors.Is(err, os.ErrNotExist) && rejectOrphanedOperationalState(home, opts.Network) == nil {
+			report.State = "unprovisioned"
+			report.Action = renewalProvisionAction
+		}
+		err = fmt.Errorf("omega: renewal custody is unavailable: %w", err)
+		report.Problem = err.Error()
+		return report, err
 	}
 	bundle := custody.Bundle
 	report, err = inspectBundle(bundle, now)

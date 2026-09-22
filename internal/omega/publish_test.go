@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -649,4 +650,51 @@ func TestPublicationTornWritesAndConflictingPendingRelease(t *testing.T) {
 			must(t, err)
 		})
 	}
+}
+
+func TestPublishWithRestrictiveUmask(t *testing.T) {
+	if os.Getenv("SOPH_PUBLISH_UMASK_TEST_CHILD") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestPublishWithRestrictiveUmask$")
+		cmd.Env = append(os.Environ(), "SOPH_PUBLISH_UMASK_TEST_CHILD=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("umask subprocess: %v\n%s", err, output)
+		}
+		return
+	}
+	// Umask is process-wide: isolate this check from other tests and goroutines.
+	previous := syscall.Umask(0077)
+	defer syscall.Umask(previous)
+	f, _, opts := renewalFixture(t, 7*time.Hour)
+	mode := func(path string, want os.FileMode) {
+		t.Helper()
+		info, err := os.Stat(path)
+		must(t, err)
+		if got := info.Mode().Perm(); got != want {
+			t.Fatalf("%s: mode %04o, want %04o", path, got, want)
+		}
+	}
+	targets := filepath.Join(f.opts.Directory, "targets")
+	mode(f.opts.Directory, 0755)
+	mode(targets, 0755)
+	mode(filepath.Join(f.opts.Directory, "timestamp.json"), 0644)
+	mode(filepath.Join(f.opts.Directory, ".omega-publish.lock"), 0600)
+	mode(f.opts.Home, 0700)
+	mode(filepath.Join(f.opts.Home, f.opts.Network, "authority.json"), 0600)
+	mode(opts.Home, 0700)
+	mode(filepath.Join(opts.Home, opts.Network+".renewal.json"), 0600)
+
+	// An existing directory belongs to the operator; retries must not widen it.
+	must(t, os.Chmod(f.opts.Directory, 0750))
+	must(t, os.Chmod(targets, 0700))
+	_, err := Renew(context.Background(), opts)
+	must(t, err)
+	mode(f.opts.Directory, 0750)
+	mode(targets, 0700)
+
+	// Renewal can recreate a missing targets directory while repairing objects.
+	must(t, os.RemoveAll(targets))
+	_, err = Renew(context.Background(), opts)
+	must(t, err)
+	mode(f.opts.Directory, 0750)
+	mode(targets, 0755)
 }
