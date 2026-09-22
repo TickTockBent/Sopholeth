@@ -69,9 +69,10 @@ meet its applicable safety and lifecycle requirements.
   recovery seeds must not remain authorized solely by an expired list.
 - Bound public ingress so one client cannot exhaust a root: count keys and
   per-entry overhead against capacity, limit key and value size on every
-  ingress path, set server deadlines and connection limits, make listing cost
-  proportional to the page, aggregate IPv6 clients for rate limiting, and keep
-  the stream available as data grows (#217–#221).
+  ingress path, set read/write/idle deadlines and connection limits, make
+  listing cost proportional to the page, bound background expiry work per
+  lock hold, aggregate IPv6 clients for rate limiting, and keep the stream
+  available as data grows (#217–#221).
 - Make standalone listener binding and public exposure explicit. Embedded
   MCP listener and ephemeral-port work is deferred.
 - Test startup, cancellation, repeated shutdown, and exposed connection
@@ -99,8 +100,10 @@ tree, a public deployment, or untested failure modes.
 ### Prepare operations
 
 - Gate publishing on review and tests: protect `main` and release tags, and
-  publish only from tested release tags (#223). Pin and sign release
-  artifacts as the supported install path requires (#224).
+  require a CI gate that reports on every PR while running Go tests only for
+  relevant changes. Release pipelines must test the exact tagged commit before
+  publishing (#223). Pin and sign release artifacts as the supported install
+  path requires (#224).
 - Publish the renamed artifacts and site after validating this code rebrand.
 - Reconcile the legacy proprietary appendix in `LICENSE` with the intended
   distribution terms before public release.

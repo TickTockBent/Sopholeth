@@ -223,12 +223,14 @@ parallel with it.
   128 KB) on client ingress and on gossip and WebSocket ingress (#177). Size
   the gossip body limit from the value cap instead of the global request
   limit. Public roots run with an explicit storage cap (#217).
-- The node server sets header, body, and idle deadlines, limits header size,
-  and bounds connections per client and in total. `/v1/stream` stays usable
-  under these limits (#219).
+- The node server sets header-read, body-read, response-write, and idle
+  deadlines, limits header size, and bounds connections per client and in
+  total. Preserve `/v1/stream`'s existing per-write deadlines so slow readers
+  are bounded without imposing a fixed lifetime on healthy streams (#219).
 - Listing costs about the page size, with a default and maximum `limit`.
-  Neither listing nor expiry sweeps hold the store lock for O(n) work on
-  request paths (#220).
+  Request paths do not hold the store lock for O(n) work. Make background
+  expiry sweeping incremental, with bounded work per lock hold, so cleanup
+  cannot stall reads and writes as the keyspace grows (#220).
 - Rate limiting aggregates IPv6 clients by prefix, keeps its bucket table
   bounded, adds a global ceiling, and does not serialize every request on
   one lock (#221).
@@ -236,10 +238,12 @@ parallel with it.
   snapshot degrades as the store grows instead of failing, and one client
   cannot hold every subscription slot (#218). soph.stream depends on this.
 
-Test key-only and maximum-length entries against a small cap, slow headers and
-bodies, idle connection floods, listing at 10^5 to 10^6 keys alongside writes,
-address rotation within one IPv6 /64, a long key during active streams, and a
-store past the snapshot limits.
+Test key-only and maximum-length entries against a small cap, slow headers,
+bodies, and response readers, idle connection floods, listing at 10^5 to 10^6
+keys alongside writes, address rotation within one IPv6 /64, a long key during
+active streams, and a store past the snapshot limits. Measure read and write
+latency while background expiry sweeping runs; verify healthy streams remain
+usable beyond the ordinary response deadline.
 
 Decide which operator data public roots expose. `/v1/topology` lists mesh
 members' addresses, and `/v1/status` and `/v1/metrics` expose runtime state
@@ -308,10 +312,15 @@ Releases compile in the omega trust anchor, so the build pipeline is part of
 the trust chain. Before building any release candidate
 ([#223](https://github.com/TickTockBent/Sopholeth/issues/223)):
 
-- Protect `main` (pull requests, required Test workflow, no force-push) and
-  restrict `v*` tag creation.
-- Publish only after tests pass, from a tagged commit reachable from `main`.
-  Main pushes do not publish `:latest`.
+- Protect `main` (pull requests, a required CI gate, no force-push) and restrict
+  `v*` tag creation. The gate must report on every PR, including docs/site-only
+  changes. Keep Go tests conditional on relevant changes inside the workflow,
+  rather than path-filtering the entire required workflow. The gate must fail
+  if tests that should run fail, are canceled, or never report a result.
+- Publish only from a tagged commit reachable from `main`, after the release
+  pipeline runs and passes tests against that exact commit, even when the PR
+  gate skipped tests for a docs/site-only change. Main pushes do not publish
+  `:latest`.
 - Keep the expected release fingerprint in a protected environment, so
   changing a repository variable cannot redirect the gate.
 
@@ -405,8 +414,10 @@ thresholds before running the workload. Required evidence includes:
   both below and above the fanout threshold. Use a disposable larger topology
   for the latter; three roots alone do not exercise epidemic forwarding.
 - A single client cannot exhaust a root through key-only or long-key writes,
-  slow or idle connections, repeated listing, or IPv6 address rotation, and
-  cannot disable the stream for other viewers (#217–#221).
+  slow headers/bodies or response readers, idle connections, repeated listing,
+  or IPv6 address rotation, and cannot disable the stream for other viewers.
+  Read and write latency stays within the declared budget while background
+  expiry sweeping runs at the target key counts (#217–#221).
 - Renewal and planned rotation while clients run, including a client that
   returns after an extended absence. Observe actual local TTLs and avoid
   claiming that connectivity recovery restores missed data.
