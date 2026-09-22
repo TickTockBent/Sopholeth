@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Public discovery
+
+- Reject unset and all-zero omega trust anchors before DNS lookup or cached
+  root authorization (#192). Ordinary builds have public discovery disabled;
+  private networks, explicit dashboard seeds, and disposable test keys remain
+  supported. Require an independently recorded authority fingerprint before
+  publishing version-tagged node images.
+
 ### Live stream
 
 - Add `/v1/stream`: atomic local snapshots followed by accepted writes and
@@ -96,7 +104,7 @@ The implementation work recorded before this documentation pass includes:
   signed public discovery.
 
 The restored Go tree still needs sustained multi-substrate validation, and
-the public trust anchor remains a placeholder. See the
+the public trust anchor remains unset. See the
 [roadmap](docs/roadmap.md) for launch gates.
 
 ## Earlier history

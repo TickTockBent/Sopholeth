@@ -43,11 +43,38 @@ mode `0600`, but the audit found a concurrent overwrite race and partial-pair
 failure. These must be resolved in `soph omega init` before production use.
 For disposable development keys, retain the private key and a recoverable backup.
 Copy only the public key into the release's
-[trust anchor](../internal/trust/omega.go), replacing the placeholder.
+[trust anchor](../internal/trust/omega.go), replacing its empty value.
 Record the public key, release revision, and operator custody procedure.
 
 No production key generation or trust-anchor change is part of the rebrand.
 Disposable lab keys must never become the public network's trust anchor.
+
+## Public release validation
+
+Ordinary builds leave the authority unset and reject public discovery before
+consulting DNS or cached roots. The retired all-zero placeholder is rejected
+even when supplied explicitly. Private-network development does not require
+an authority.
+
+After the planned authority ceremony, a public release must match an
+independently recorded fingerprint: SHA-256 of the decoded 32-byte public
+key, represented as 64 hexadecimal digits. Validate the release checkout:
+
+```bash
+OMEGA_EXPECTED_SHA256='paste-the-reviewed-64-hex-digit-fingerprint' make check-public-release
+```
+
+The check rejects a missing or malformed expected fingerprint, an
+unconfigured/malformed anchor, or a fingerprint mismatch. Normal development
+tests skip this release-only check unless the variable is present. The Docker
+workflow requires it before publishing any `v*` tag, using the repository
+variable `OMEGA_EXPECTED_SHA256`. Main and manual branch builds continue to
+support private development. The expected value must come from the authority
+record, not be calculated from the checkout being verified merely to make the
+check pass.
+
+This validates the current anchor, not public-network readiness. The trust
+design and `soph omega` lifecycle still precede any production key ceremony.
 
 ## Sign and publish
 
@@ -76,8 +103,8 @@ omega=_omega.sopholeth.io
 ```
 
 **Prerequisite:** domain ownership and a release containing the real public
-key. Current source queries `_bootstrap.sopholeth.io`; it still contains the
-placeholder trust anchor.
+key. Current source queries `_bootstrap.sopholeth.io`; its trust anchor is
+unset and public discovery is disabled.
 
 After publication, inspect both records:
 

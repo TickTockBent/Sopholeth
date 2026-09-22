@@ -2,8 +2,9 @@
 
 Signed discovery is implemented in the Go node. Public activation still
 requires a real omega trust anchor, deployed roots, and DNS publication.
-The current compiled key is a placeholder. Use private mode for ordinary
-development until the launch work is complete.
+The current compiled key is deliberately unset. Empty and all-zero anchors
+are rejected before DNS lookup or cached-root authorization. Use private mode
+for ordinary development until the launch work is complete.
 
 This document replaces the former 2.1 proposal with the current contract and
 its known implementation limits.
@@ -70,8 +71,9 @@ The `sig` field is excluded. The signer appends
 `;sig=<base64-signature>` for transport.
 
 The parser rejects missing, duplicate, unknown, and malformed fields.
-Verification additionally checks version, expiration, signature length, and
-signature validity. Unknown fields require a new signed format version;
+Verification additionally rejects unset/all-zero or wrong-length anchors,
+then checks version, expiration, signature length, and signature validity.
+Unknown fields require a new signed format version;
 they cannot be treated as authenticated extensions to `omega-v1`.
 
 The implementation is in [signedlist.go](../internal/trust/signedlist.go),
@@ -81,15 +83,20 @@ with [format tests](../internal/trust/signedlist_test.go).
 
 With public mode and no manual peers, the node:
 
-1. Resolves the bootstrap pointer and signed list.
-2. Parses and verifies the list against the compiled key and current time.
-3. Caches the verified list and uses its addresses as seeds.
-4. Marks itself as a root if its exact advertised `address:httpPort` appears
+1. Validates the compiled trust anchor. Unconfigured builds stop here.
+2. Resolves the bootstrap pointer and signed list.
+3. Parses and verifies the list against the compiled key and current time.
+4. Caches the verified list and uses its addresses as seeds.
+5. Marks itself as a root if its exact advertised `address:httpPort` appears
    in the list.
 
 If DNS lookup or verification fails, startup attempts the on-disk cache and
 verifies it again. Without a valid unexpired list from either source,
 startup fails. There is no unsigned DNS fallback.
+
+The CLI reports an unconfigured authority without saving a public profile.
+The dashboard also refuses public discovery with an unset anchor; explicit
+`--seeds` remain available as an unverified override for private development.
 
 The cache is `root-list.json` in the configured
 [cache directory](configuration.md#operations). It contains public signed

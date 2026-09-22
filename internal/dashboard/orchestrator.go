@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"crypto/ed25519"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -167,7 +168,12 @@ func (o *Orchestrator) Boot(ctx context.Context) error {
 	if pubkey == nil {
 		baked, err := trust.DecodedOmegaPubkey()
 		if err != nil {
-			return err
+			if len(o.cfg.SeedAddresses) > 0 {
+				o.cfg.Logger.Printf("dashboard: omega trust unavailable: %v", err)
+				o.bootFromSeeds()
+				return nil
+			}
+			return fmt.Errorf("dashboard public discovery unavailable (use --seeds for an explicit private network): %w", err)
 		}
 		pubkey = baked
 	}
@@ -207,20 +213,22 @@ func (o *Orchestrator) Boot(ctx context.Context) error {
 	//    bypassed and the snapshot will carry seed_override:true so the
 	//    UI banner makes that visible.
 	if len(o.cfg.SeedAddresses) > 0 {
-		o.applyRoots(normalizeAddrs(o.cfg.SeedAddresses), RootSourceSeeds, nil, time.Time{})
-		// Clear omega_refresh_failed: in seeds mode the refresher
-		// never runs, so this flag would otherwise stay true forever
-		// and double up with the SeedOverride banner. The
-		// seed_override flag is the single meaningful signal here.
-		o.markRefreshFailed(false)
-		o.cfg.Logger.Printf("dashboard: cache and DNS unavailable; booting from %d operator-supplied seeds, trust chain bypassed",
-			len(o.cfg.SeedAddresses))
+		o.bootFromSeeds()
 		return nil
 	}
 
 	// 4. Exit-worthy: no cache, no DNS, no seeds. Operator must provide
 	//    one of the three.
 	return dnsErr
+}
+
+func (o *Orchestrator) bootFromSeeds() {
+	o.applyRoots(normalizeAddrs(o.cfg.SeedAddresses), RootSourceSeeds, nil, time.Time{})
+	// Seeds never run the refresher. SeedOverride is the meaningful signal,
+	// not a permanently failed omega-refresh banner.
+	o.markRefreshFailed(false)
+	o.cfg.Logger.Printf("dashboard: booting from %d operator-supplied seeds, trust chain bypassed",
+		len(o.cfg.SeedAddresses))
 }
 
 // cacheFileMtime reads the modification time of the omega cache file so

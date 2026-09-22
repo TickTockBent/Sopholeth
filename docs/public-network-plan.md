@@ -1,7 +1,8 @@
 # First public network: omega, then three roots
 
-Status: agreed delivery path, 2026-09-22. Implementation and deployment remain
-pending. The [omega audit](omega-signing-audit.md) records the current defects;
+Status: agreed delivery path, 2026-09-22. Placeholder rejection and the public
+release fingerprint gate are implemented; the omega suite and deployment
+remain pending. The [omega audit](omega-signing-audit.md) records the initial defects;
 [issue #80](https://github.com/TickTockBent/Sopholeth/issues/80) tracks launch
 readiness and the live issue queue.
 
@@ -35,10 +36,12 @@ bootstrap root set, not a maximum of three members in the public mesh.
 
 ## 1. Build the omega suite
 
-Start with placeholder rejection
-([#192](https://github.com/TickTockBent/Sopholeth/issues/192)) and the production
-trust design ([#195](https://github.com/TickTockBent/Sopholeth/issues/195)). Use
-disposable authorities throughout development and rehearsal.
+Placeholder rejection ([#192](https://github.com/TickTockBent/Sopholeth/issues/192))
+now disables public discovery in ordinary builds and rejects the old all-zero
+anchor in DNS and cache verification. Version-tagged node images require the
+expected authority fingerprint. Next is the production trust design
+([#195](https://github.com/TickTockBent/Sopholeth/issues/195)). Use disposable
+authorities throughout development and rehearsal.
 
 Choose the authority, membership-signing, and freshness-renewal roles before
 implementing changes to the wire format. Evaluate TUF with a small integration

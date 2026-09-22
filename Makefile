@@ -7,7 +7,7 @@ IMAGE_NAME ?= sopholeth/node:local
 # Burn-in cluster seeds — useful for `make dashboard-run-burnin` smoke tests.
 BURNIN_SEEDS ?= localhost:8091,localhost:8092,localhost:8093
 
-.PHONY: build build-omega build-dashboard build-soph run dashboard-run-burnin test clean docker-build docker-run docker-compose-up docker-compose-down
+.PHONY: build build-omega build-dashboard build-soph run dashboard-run-burnin test check-public-release clean docker-build docker-run docker-compose-up docker-compose-down
 
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/server
@@ -37,6 +37,12 @@ run: build
 
 test:
 	go test ./...
+
+# The expected fingerprint comes from the authority's independent release
+# record, not from the same checkout being verified. Empty is an error.
+check-public-release: export OMEGA_EXPECTED_SHA256 := $(OMEGA_EXPECTED_SHA256)
+check-public-release:
+	go test ./internal/trust -run '^TestPublicReleaseAnchor$$' -count=1
 
 clean:
 	go clean

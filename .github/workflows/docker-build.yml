@@ -60,6 +60,18 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Set up Go for public release validation
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Verify public release authority
+      if: startsWith(github.ref, 'refs/tags/v')
+      env:
+        OMEGA_EXPECTED_SHA256: ${{ vars.OMEGA_EXPECTED_SHA256 }}
+      run: make check-public-release
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 

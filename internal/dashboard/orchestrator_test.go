@@ -172,6 +172,42 @@ func TestBootExitsWhenNothingAvailable(t *testing.T) {
 	}
 }
 
+func TestBootWithoutConfiguredAuthority(t *testing.T) {
+	if trust.OmegaPubkey != "" {
+		t.Skip("requires an unconfigured build")
+	}
+	for _, withSeeds := range []bool{false, true} {
+		t.Run(fmt.Sprintf("seeds=%v", withSeeds), func(t *testing.T) {
+			dir := t.TempDir()
+			signature := make([]byte, ed25519.SignatureSize)
+			signature[0] = 1
+			forged := &trust.SignedList{
+				Version: trust.OmegaVersion, Expires: 2_000_000_007,
+				Nodes: []string{"untrusted.invalid:8080"}, Signature: signature,
+			}
+			if err := trust.SaveCache(dir, forged); err != nil {
+				t.Fatal(err)
+			}
+			cfg := Config{StateDir: dir, OmegaDNS: trust.DNSConfig{Resolver: &stubTXTResolver{}}}
+			if withSeeds {
+				cfg.SeedAddresses = []string{"localhost:8080"}
+			}
+			o := NewOrchestrator(cfg)
+			err := o.Boot(context.Background())
+			if !withSeeds {
+				if !errors.Is(err, trust.ErrUnconfiguredAnchor()) || !strings.Contains(err.Error(), "--seeds") {
+					t.Fatalf("want unconfigured authority and private-network guidance, got %v", err)
+				}
+			} else if err != nil || o.source != RootSourceSeeds || !o.roots["localhost:8080"] || o.refreshFailed() {
+				t.Fatalf("explicit seeds unavailable: err=%v, source=%v, roots=%v", err, o.source, o.roots)
+			}
+			if o.currentList != nil || o.roots["untrusted.invalid:8080"] {
+				t.Fatal("unconfigured authority must not authorize the cached roots")
+			}
+		})
+	}
+}
+
 // TestConcurrentCyclesAreSerialized verifies that a slow cycle does not
 // race with the next tick. We start two cycles in quick succession; the
 // second must skip because the first holds cycleMu.

@@ -25,16 +25,15 @@ const (
 )
 
 var (
-	errInvalidPubkeyLength = errors.New("trust: baked-in omega pubkey has wrong length")
-	errMissingField        = errors.New("trust: signed list missing required field")
-	errDuplicateField      = errors.New("trust: signed list has duplicate field")
-	errMalformedField      = errors.New("trust: signed list has malformed field")
-	errMalformedSignature  = errors.New("trust: signed list signature is not valid base64")
-	errExpiredList         = errors.New("trust: signed list has expired")
-	errVersionMismatch     = errors.New("trust: signed list version does not match binary")
-	errBadSignature        = errors.New("trust: signed list signature verification failed")
-	errEmptyNodes          = errors.New("trust: signed list contains no nodes")
-	errUnknownField        = errors.New("trust: signed list has unknown field")
+	errMissingField       = errors.New("trust: signed list missing required field")
+	errDuplicateField     = errors.New("trust: signed list has duplicate field")
+	errMalformedField     = errors.New("trust: signed list has malformed field")
+	errMalformedSignature = errors.New("trust: signed list signature is not valid base64")
+	errExpiredList        = errors.New("trust: signed list has expired")
+	errVersionMismatch    = errors.New("trust: signed list version does not match binary")
+	errBadSignature       = errors.New("trust: signed list signature verification failed")
+	errEmptyNodes         = errors.New("trust: signed list contains no nodes")
+	errUnknownField       = errors.New("trust: signed list has unknown field")
 )
 
 // SignedList is a verified-or-unverified parsed root list. Construct one via
@@ -187,6 +186,9 @@ func (s *SignedList) Sign(priv ed25519.PrivateKey) []byte {
 // now is the reference time for expiration checks (usually time.Now()).
 // Separate argument so tests can inject deterministic clocks.
 func (s *SignedList) Verify(pubkey ed25519.PublicKey, now time.Time) error {
+	if err := validateOmegaPubkey(pubkey); err != nil {
+		return err
+	}
 	if s.Version != OmegaVersion {
 		return fmt.Errorf("%w: got %q want %q", errVersionMismatch, s.Version, OmegaVersion)
 	}
@@ -195,9 +197,6 @@ func (s *SignedList) Verify(pubkey ed25519.PublicKey, now time.Time) error {
 	}
 	if len(s.Nodes) == 0 {
 		return errEmptyNodes
-	}
-	if len(pubkey) != ed25519.PublicKeySize {
-		return errInvalidPubkeyLength
 	}
 	// Explicit length guard on top of ed25519.Verify (which also returns
 	// false for wrong-size signatures). Distinguishing a malformed record

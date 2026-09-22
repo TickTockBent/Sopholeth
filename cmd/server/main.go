@@ -485,7 +485,7 @@ func envInt(key string, defaultVal int) int {
 func resolveOmegaBootstrap(ctx context.Context) (*trust.SignedList, error) {
 	pubkey, err := trust.DecodedOmegaPubkey()
 	if err != nil {
-		return nil, fmt.Errorf("baked-in omega pubkey is invalid: %w", err)
+		return nil, fmt.Errorf("public bootstrap unavailable (use NODE_NETWORK=private for local development): %w", err)
 	}
 
 	cacheDir, usedLastResort := trust.ResolveCacheDir()

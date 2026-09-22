@@ -16,8 +16,8 @@ quorum reporting, signed discovery and caching, WebSocket substrate/transient
 attachments, and an embedded MCP interface. A separate dashboard observes
 topology.
 
-Public launch remains pending. The compiled omega public key is a placeholder,
-discovery publication is pending, and the restored Go
+Public launch remains pending. The compiled omega public key is unset and
+public discovery fails closed. Discovery publication is pending, and the restored Go
 WebSocket tree needs sustained validation. The [rebrand checklist](rebrand.md)
 tracks the naming transition.
 

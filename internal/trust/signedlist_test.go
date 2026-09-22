@@ -314,11 +314,16 @@ func TestVerifyRejectsWrongPubkeyLength(t *testing.T) {
 	}
 }
 
-// TestDecodedOmegaPubkeyShape — the placeholder parses to the correct length.
-// When the real key is baked in, this test continues to pass as long as the
-// constant remains a valid Ed25519 pubkey.
+// An ordinary build may have no public authority. A configured release must
+// pass validation, and its identity is checked by TestPublicReleaseAnchor.
 func TestDecodedOmegaPubkeyShape(t *testing.T) {
 	pub, err := DecodedOmegaPubkey()
+	if OmegaPubkey == "" {
+		if pub != nil || !errors.Is(err, ErrUnconfiguredAnchor()) {
+			t.Fatalf("unset anchor should disable public discovery: %x, %v", pub, err)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatalf("decode baked-in pubkey: %v", err)
 	}
@@ -348,4 +353,3 @@ func TestEncodeRoundTrip(t *testing.T) {
 		t.Errorf("roundtrip fields differ: got %+v want %+v", parsed, list)
 	}
 }
-

@@ -675,6 +675,22 @@ func TestPublicJoinWithTestAnchor(t *testing.T) {
 	}
 }
 
+func TestPublicJoinWithoutConfiguredAuthority(t *testing.T) {
+	if trust.OmegaPubkey != "" {
+		t.Skip("requires an unconfigured build")
+	}
+	ta := newTestApp(t)
+	ta.app.publicDiscovery = newPublicDiscovery(nil, trust.DNSConfig{Resolver: mapResolver{}})
+	code, _, errOut := ta.run("", "join")
+	if code != exitError || !strings.Contains(errOut, "omega trust anchor is not configured") ||
+		!strings.Contains(errOut, "soph join <node>") {
+		t.Fatalf("unconfigured public join: exit %d, %q", code, errOut)
+	}
+	if _, err := os.Stat(ta.configPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed public discovery must not create a profile: %v", err)
+	}
+}
+
 func loadOrEmpty(path string) *Config {
 	cfg, err := loadConfig(path)
 	if err != nil {

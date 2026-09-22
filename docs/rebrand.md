@@ -50,8 +50,8 @@ The old product/version response header has been removed.
 
 The sites and dashboard display Sopholeth. Each domain has its own deployment
 root under [sites/](../sites/README.md). Domain assignment happens in Vercel;
-there is no GitHub Pages `CNAME` file. The public trust anchor remains a
-placeholder, and no public network is claimed to be live. The discovery TXT
+there is no GitHub Pages `CNAME` file. The public trust anchor remains unset,
+and no public network is claimed to be live. The discovery TXT
 records under `sopholeth.io` are independent of the documentation website.
 
 ## Remaining launch work
@@ -60,7 +60,7 @@ records under `sopholeth.io` are independent of the documentation website.
 - Publish and verify renamed binaries and container images before linking them.
 - Reconcile the historical component exclusions in [LICENSE](../LICENSE).
 - Retire or replace unused legacy visual assets before adding social previews.
-- Replace the placeholder public trust anchor through the operator key ceremony.
+- Establish the public trust anchor through the planned operator key ceremony.
 - Deploy roots and publish signed discovery records for the new network.
 - Complete the [public-alpha validation gates](roadmap.md#before-public-alpha).
 

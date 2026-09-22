@@ -66,6 +66,9 @@ var (
 // so each element of the []string LookupTXT returns is already a complete
 // record.
 func FetchSigned(ctx context.Context, cfg DNSConfig, pubkey ed25519.PublicKey, now time.Time) (*SignedList, error) {
+	if err := validateOmegaPubkey(pubkey); err != nil {
+		return nil, err
+	}
 	r := cfg.resolver()
 	bootstrapName := cfg.bootstrapName()
 

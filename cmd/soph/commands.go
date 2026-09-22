@@ -238,7 +238,7 @@ func newPublicDiscovery(pubkey ed25519.PublicKey, dns trust.DNSConfig) func(ctx 
 			var err error
 			key, err = trust.DecodedOmegaPubkey()
 			if err != nil {
-				return nil, fmt.Errorf("compiled omega public key is invalid: %w", err)
+				return nil, fmt.Errorf("cannot use signed discovery (use 'soph join <node>' for a private network): %w", err)
 			}
 		}
 		return trust.FetchSigned(ctx, dns, key, time.Now())

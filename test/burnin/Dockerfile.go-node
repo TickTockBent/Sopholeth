@@ -3,7 +3,7 @@ RUN apk add --no-cache git ca-certificates
 
 # TEST_OMEGA_PUBKEY is the base64-encoded Ed25519 pubkey for the burn-in run.
 # It is baked into internal/trust/omega.go at build time, replacing the
-# all-zeros placeholder. Burn-in images MUST NOT be published to a public
+# unset anchor. Burn-in images MUST NOT be published to a public
 # registry — the corresponding private key should never leave the observer.
 ARG TEST_OMEGA_PUBKEY
 RUN test -n "$TEST_OMEGA_PUBKEY" || (echo "TEST_OMEGA_PUBKEY build-arg is required" >&2 && exit 2)
@@ -13,12 +13,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-# Replace the placeholder pubkey. The literal AAAA...= is unique to omega.go
-# and cmd/omega tests don't bake it into binaries, so the sed match is
-# safe. Use | as delimiter because base64 contains / characters.
-RUN sed -i "s|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=|${TEST_OMEGA_PUBKEY}|" internal/trust/omega.go && \
+# Replace only the unset anchor. Use | because base64 can contain /.
+RUN sed -i "s|OmegaPubkey = \"\"|OmegaPubkey = \"${TEST_OMEGA_PUBKEY}\"|" internal/trust/omega.go && \
     grep -q "OmegaPubkey = \"${TEST_OMEGA_PUBKEY}\"" internal/trust/omega.go || \
-    (echo "pubkey bake failed — placeholder not found or replacement mismatched" >&2 && exit 3)
+    (echo "pubkey bake failed — unset anchor not found or replacement mismatched" >&2 && exit 3)
 
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
 

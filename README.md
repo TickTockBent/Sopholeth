@@ -22,8 +22,8 @@ replication, WebSocket attachments, signed public discovery, and a topology
 dashboard. The next milestones are the **first public network**, a **demo web
 application**, and a **probe simulation**.
 
-Public launch is pending: the discovery trust anchor is still a placeholder.
-Use a private network for development.
+Public launch is pending: the discovery trust anchor is deliberately unset,
+so public discovery fails closed. Use a private network for development.
 
 The service executables are `server`, `omega`, and `dashboard`. Internal names
 follow their roles: `NODE_*` configuration, plain MCP tool names, and component
