@@ -17,7 +17,7 @@ Import `TickTockBent/Sopholeth` once for each project. Select the matching
 **Root Directory** from the table and use **Other** as the framework preset.
 Each folder's `vercel.json` skips installation and builds, serves `.` as the
 output directory, and sends missing paths to its own `404.html` with status
-404. No environment variables are required.
+404. No custom environment variables are required.
 
 Set the production branch to `main` and attach the matching domain in each
 project's domain settings. For an existing marketing project, change its
@@ -47,6 +47,11 @@ Directory. The check compares only the current site's folder:
   so a final docs-only commit cannot hide earlier site edits.
 - First production deployments and unavailable history build conservatively.
   The check fetches missing history when possible; Git failures allow a build.
+
+Keep `.git` out of each site's `.vercelignore`: Vercel removes matching files
+before running `ignoreCommand`, so excluding Git metadata prevents the check
+from comparing commits. The repository's `.git` directory is outside each
+site's Root Directory and static output.
 
 Keep Vercel system environment variables exposed. The command returns zero to
 skip an unchanged site and one to deploy. Repository docs, Go changes, and
