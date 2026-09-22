@@ -29,6 +29,8 @@ type rotationIntent struct {
 	PreviousRoot string            `json:"previous_root_sha256"`
 	Created      time.Time         `json:"created"`
 	Keys         map[string]string `json:"private_keys"`
+	// Schema 2 is a public targets-key handoff. Its private key stays offline.
+	TargetsKey *metadata.Key `json:"targets_key,omitempty"`
 }
 
 type rotationRecord struct {
@@ -86,10 +88,18 @@ func prepareRotation(state *store, bundle bootstrap.Bundle, previous []byte, ver
 	if err := intent.validate(bundle, previous, version); err != nil {
 		return r, err
 	}
+	if intent.Schema != 1 {
+		return r, errors.New("omega: root version is reserved for targets rotation; retry --role targets")
+	}
+	return finishRotation(state, bundle, previous, version, a, now, intent)
+}
+
+func finishRotation(state *store, bundle bootstrap.Bundle, previous []byte, version int64, a authority, now time.Time, intent rotationIntent) (rotationRecord, error) {
+	var r rotationRecord
 	if now.Before(intent.Created) {
 		return r, errors.New("omega: clock predates rotation preparation")
 	}
-	if err := state.install(name, record(intent)); err != nil {
+	if err := state.install(rotationIntentName(version), record(intent)); err != nil {
 		return r, err
 	}
 	if err := state.syncDir(); err != nil {
@@ -131,12 +141,11 @@ func prepareRotation(state *store, bundle bootstrap.Bundle, previous []byte, ver
 	}
 	root.Signed.Version = version
 	root.Signatures = nil
-	for _, role := range []string{"snapshot", "timestamp"} {
+	for _, role := range intent.roles() {
 		if err := root.Signed.RevokeKey(root.Signed.Roles[role].KeyIDs[0], role); err != nil {
 			return r, err
 		}
-		private, _ := decodeKey(intent.Keys[role])
-		key, err := metadata.KeyFromPublicKey(private.Public())
+		key, err := intent.publicKey(role)
 		if err != nil {
 			return r, err
 		}
@@ -203,7 +212,7 @@ func reserveRotationApply(state *store, bundle bootstrap.Bundle, latest release,
 	if committed {
 		return errors.New("omega: corrupt committed rotation apply intent; restore it")
 	}
-	for _, reserved := range []string{releaseName(version) + ".pending", renewalIntentName(version), renewalIntentName(version) + ".pending"} {
+	for _, reserved := range []string{releaseName(version) + ".pending", renewalIntentName(version), renewalIntentName(version) + ".pending", rotationTargetsName(version), rotationTargetsName(version) + ".pending"} {
 		if _, err := state.root.Lstat(reserved); !errors.Is(err, os.ErrNotExist) {
 			return errors.New("omega: next release already reserved; finish its original publish command before applying rotation")
 		}
@@ -240,7 +249,7 @@ func reserveRotationApply(state *store, bundle bootstrap.Bundle, latest release,
 // The scheduler can finish an authorized apply without the offline authority.
 // Even an expired reserved release is completed privately before a higher
 // repair; it is never served with an expired timestamp.
-func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bundle, history []release, now time.Time) ([]release, bool, error) {
+func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bundle, history []release, now time.Time, initialKeys map[string]string) ([]release, bool, error) {
 	latest := history[len(history)-1]
 	name := rotationApplyName(latest.Version + 1)
 	data, err := state.read(name)
@@ -283,7 +292,20 @@ func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bun
 		return history, false, err
 	}
 	roots := append(append([][]byte(nil), latest.Roots...), r.Root)
-	next, err := prepareRenewalWithRoots(keys.Keys, bundle, latest, intent.Created, roots)
+	var next release
+	if keys.Schema == 2 {
+		onlineKeys, keyErr := activeOnlineKeys(state, bundle, latest, initialKeys)
+		if keyErr != nil {
+			return history, false, keyErr
+		}
+		targets, targetErr := readRotationTargets(state, latest, r, intent.Version)
+		if targetErr != nil {
+			return history, false, fmt.Errorf("%w: %w", errMembershipHandoff, targetErr)
+		}
+		next, err = prepareMembershipRelease(onlineKeys, bundle, latest, intent.Created, roots, targets)
+	} else {
+		next, err = prepareRenewalWithRoots(keys.Keys, bundle, latest, intent.Created, roots)
+	}
 	if err != nil {
 		return history, false, err
 	}

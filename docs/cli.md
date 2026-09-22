@@ -31,12 +31,16 @@ command and works without access to the offline authority.
 `soph omega rotate --root-version N` prepares replacement snapshot/timestamp
 keys. Review its digest and key IDs, then repeat with `--apply <root_sha256>`
 to publish that exact transition and verify it over HTTPS.
+Add `--role targets` to both commands to rotate the offline membership key
+instead. Its private generation stays offline; application preserves the latest
+approved root list and its expiry, and hands only signed public metadata to the
+scheduler for recovery. `--role online` is the default.
 `soph omega status` inspects local material; `--verify` checks the served release.
 These commands use a separate private custody home and do not select or modify
 a saved client network.
 See [omega operations](omega-operations.md) for the commands, all-or-nothing
 commit/retry contract, publication journal, custody limits, and JSON status.
-Membership/root-key rotation, production hosting, and production authority
+Root-key rotation, production hosting, and production authority
 creation remain pending.
 
 ## Join a network

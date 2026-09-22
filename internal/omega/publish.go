@@ -133,11 +133,11 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	var r release
 	if opts.Version == latest {
 		r = history[len(history)-1]
-		if r.isRenewal() || !bytes.Equal(r.Manifest, manifest) {
+		if r.isRenewal() || r.Schema == 5 || !bytes.Equal(r.Manifest, manifest) {
 			return report, errors.New("omega: version already has a different approved manifest; choose the next version")
 		}
 	} else {
-		for _, name := range []string{renewalIntentName(opts.Version), renewalIntentName(opts.Version) + ".pending", rotationApplyName(opts.Version), rotationApplyName(opts.Version) + ".pending"} {
+		for _, name := range []string{renewalIntentName(opts.Version), renewalIntentName(opts.Version) + ".pending", rotationApplyName(opts.Version), rotationApplyName(opts.Version) + ".pending", rotationTargetsName(opts.Version), rotationTargetsName(opts.Version) + ".pending"} {
 			if _, err := state.root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
 				return report, errors.New("omega: next version is reserved for renewal or rotation; complete publish --renew or the original rotate --apply first")
 			}
@@ -155,7 +155,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 			if err := decodeRecord(pending, &r); err != nil {
 				return report, errors.New("omega: invalid pending release; preserve the journal for recovery")
 			}
-			if r.isRenewal() || r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
+			if r.isRenewal() || r.Schema == 5 || r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
 				return report, errors.New("omega: pending version has different approval; retry its original manifest")
 			}
 			if _, _, err := r.validate(bundle); err != nil {
@@ -178,6 +178,10 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 					return report, err
 				}
 				a.Keys["snapshot"], a.Keys["timestamp"] = keys["snapshot"], keys["timestamp"]
+				a.Keys["targets"], err = activeMembershipKey(home, state, bundle, latest, a.Keys["targets"])
+				if err != nil {
+					return report, err
+				}
 				roots = latest.Roots
 			}
 			r, err = prepareRelease(a, bundle, opts.Version, previous, manifest, now, roots...)

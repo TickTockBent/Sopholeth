@@ -342,7 +342,7 @@ func copyPublication(ctx context.Context, source, dest *store, bundle bootstrap.
 // was lost. Status must ask for recovery, and init must not create replacement
 // authority keys alongside existing publication state.
 func rejectOrphanedOperationalState(home *store, network string) error {
-	for _, suffix := range []string{".renewal.json", ".renewal.json.pending", ".publisher.json", ".publisher.json.pending", ".publication"} {
+	for _, suffix := range []string{".renewal.json", ".renewal.json.pending", ".publisher.json", ".publisher.json.pending", ".publication", ".rotations"} {
 		if _, err := home.root.Lstat(network + suffix); err == nil {
 			return errors.New("omega: existing operational state requires recovery, not authority initialization; restore the missing custody material")
 		} else if !errors.Is(err, os.ErrNotExist) {

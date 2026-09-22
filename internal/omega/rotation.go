@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -16,6 +17,7 @@ const maxRootVersion = 64
 type RotateOptions struct {
 	Home, Network string
 	RootVersion   int64
+	Role          string // online (default) or targets; fixed for a prepared version.
 	Apply         string // Exact root SHA-256 from a prior preparation report.
 	Disposable    bool
 	HTTPClient    *http.Client
@@ -23,6 +25,7 @@ type RotateOptions struct {
 
 type RotationReport struct {
 	State       string              `json:"state"`
+	Role        string              `json:"role,omitempty"`
 	RootVersion int64               `json:"root_version"`
 	RootSHA256  string              `json:"root_sha256"`
 	Replaces    map[string][]string `json:"replaces"`
@@ -37,6 +40,12 @@ func Rotate(ctx context.Context, opts RotateOptions) (Report, error) {
 }
 
 func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(string) error) (report Report, resultErr error) {
+	if opts.Role == "" {
+		opts.Role = "online"
+	}
+	if opts.Role != "online" && opts.Role != "targets" {
+		return report, errors.New("omega: rotate --role must be online or targets")
+	}
 	if !opts.Disposable || !networkID.MatchString(opts.Network) || opts.RootVersion < 2 || opts.RootVersion > maxRootVersion {
 		return report, errors.New("omega: rotate requires --disposable, a network, and --root-version between 2 and 64")
 	}
@@ -78,7 +87,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	}
 	defer cleanup()
 	if online == home {
-		return report, errors.New("omega: provision a separate operational home before rotating online keys")
+		return report, errors.New("omega: provision a separate operational home before rotating keys")
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -94,7 +103,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		return report, err
 	}
 	if len(history) == 0 {
-		return report, errors.New("omega: publish membership before rotating online keys")
+		return report, errors.New("omega: publish membership before rotating keys")
 	}
 	latest := history[len(history)-1]
 	if err := applyReleaseRoot(&report, bundle, latest); err != nil {
@@ -120,7 +129,16 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		if err := decodeRecord(data, &a); err != nil {
 			return report, err
 		}
-		rotation, err = prepareRotation(state, bundle, previous, opts.RootVersion, a, now)
+		if opts.Role == "targets" {
+			rotation, err = prepareMembershipRotation(home, state, bundle, previous, opts.RootVersion, a, now)
+		} else {
+			for _, name := range []string{membershipKeyName(opts.RootVersion), membershipKeyName(opts.RootVersion) + ".pending"} {
+				if _, err := home.root.Lstat(opts.Network + ".rotations/" + name); !errors.Is(err, os.ErrNotExist) {
+					return report, errors.New("omega: offline custody already reserves this root version; retry --role targets or restore its records")
+				}
+			}
+			rotation, err = prepareRotation(state, bundle, previous, opts.RootVersion, a, now)
+		}
 		if err != nil {
 			return report, err
 		}
@@ -131,6 +149,9 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		}
 	}
 	report.Rotation = rotationReport(rotation, previous, "prepared")
+	if report.Rotation.Role != opts.Role {
+		return report, errors.New("omega: root version was prepared for a different role; retry its original --role")
+	}
 	if opts.Apply != "" && opts.Apply != digest(rotation.Root) {
 		return report, errors.New("omega: --apply must match the prepared root_sha256 exactly")
 	}
@@ -144,7 +165,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		}
 	}
 	if opts.Apply == "" {
-		report.Action = "Review rotation.root_sha256 and replacement key IDs. Apply with the same --root-version and --apply <root_sha256>; retain both custody homes."
+		report.Action = "Review rotation.root_sha256 and replacement key IDs. Apply with --role " + opts.Role + " and the same --root-version and --apply <root_sha256>; retain both custody homes."
 		if report.Rotation.State == "applied" {
 			report.Action = "This rotation was applied and verified. Check live publication with status --verify and confirm client adoption before retiring old key copies."
 		}
@@ -163,8 +184,17 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		if err := reserveRotationApply(state, bundle, latest, rotation, now); err != nil {
 			return report, err
 		}
+		if opts.Role == "targets" {
+			if err := prepareRotationTargets(home, state, bundle, latest, rotation, now); err != nil {
+				return report, err
+			}
+		}
+		custody, err := readRenewal(online, opts.Network)
+		if err != nil {
+			return report, err
+		}
 		var resumed bool
-		history, resumed, err = resumeRotationApply(ctx, state, bundle, history, now)
+		history, resumed, err = resumeRotationApply(ctx, state, bundle, history, now, custody.Keys)
 		if err != nil {
 			return report, err
 		}

@@ -496,10 +496,10 @@ func TestOnlineRotationClockAndConcurrentRetries(t *testing.T) {
 	}
 }
 
-func TestOnlineRotationProcessDeathRecovery(t *testing.T) {
+func TestRotationProcessDeathRecovery(t *testing.T) {
 	if os.Getenv("SOPH_ROTATION_TEST_CHILD") == "1" {
 		home := os.Getenv("SOPH_ROTATION_TEST_HOME")
-		opts := RotateOptions{Home: home, Network: "rehearsal", RootVersion: 2, Apply: os.Getenv("SOPH_ROTATION_TEST_DIGEST"), Disposable: true}
+		opts := RotateOptions{Home: home, Network: "rehearsal", Role: os.Getenv("SOPH_ROTATION_TEST_ROLE"), RootVersion: 2, Apply: os.Getenv("SOPH_ROTATION_TEST_DIGEST"), Disposable: true}
 		_, err := rotate(context.Background(), opts, time.Time{}, func(at string) error {
 			if at == os.Getenv("SOPH_ROTATION_TEST_PHASE") {
 				if err := os.WriteFile(filepath.Join(home, "ready"), []byte("ready"), 0600); err != nil {
@@ -514,14 +514,17 @@ func TestOnlineRotationProcessDeathRecovery(t *testing.T) {
 		must(t, err)
 		return
 	}
-	for _, phase := range []string{"rotation:apply-durable", "public:2.root.json:visible"} {
+	for _, phase := range []string{"rotation:apply-durable", "rotation:targets-durable", "public:2.root.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
+			if phase == "rotation:targets-durable" {
+				opts.Role = "targets"
+			}
 			prepared, err := Rotate(context.Background(), opts)
 			must(t, err)
-			cmd := exec.Command(os.Args[0], "-test.run=^TestOnlineRotationProcessDeathRecovery$")
+			cmd := exec.Command(os.Args[0], "-test.run=^TestRotationProcessDeathRecovery$")
 			cmd.Env = append(os.Environ(), "SOPH_ROTATION_TEST_CHILD=1", "SOPH_ROTATION_TEST_HOME="+opts.Home,
-				"SOPH_ROTATION_TEST_DIGEST="+prepared.Rotation.RootSHA256, "SOPH_ROTATION_TEST_PHASE="+phase)
+				"SOPH_ROTATION_TEST_DIGEST="+prepared.Rotation.RootSHA256, "SOPH_ROTATION_TEST_PHASE="+phase, "SOPH_ROTATION_TEST_ROLE="+opts.Role)
 			var output bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &output, &output
 			must(t, cmd.Start())

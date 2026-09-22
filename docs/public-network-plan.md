@@ -3,8 +3,8 @@
 Status: agreed delivery path, 2026-09-22. Placeholder rejection and the public
 release fingerprint gate, durable trust client, and atomic disposable
 `soph omega init`, local-directory `publish`, unattended online renewal, and
-HTTPS verification in `status`, and online-key `rotate` are implemented for
-disposable authorities. Membership/root-key rotation, consumer integration,
+HTTPS verification in `status`, and online/membership-key `rotate` are implemented for
+disposable authorities. Root-key rotation, consumer integration,
 production custody/hosting, and deployment remain pending. The peer-plane
 audit adds three launch blockers: unauthenticated peer mutations (#211),
 serial write broadcast (#212), and identity-blind liveness (#213). These must
@@ -62,7 +62,7 @@ and online renewal roles. The application now uses Go 1.27.1 and includes the
 [durable TUF client](../internal/trust/bootstrap/README.md), with bundle/manifest
 validation, bounded HTTPS, locked state checkpoints, and expiring accepted
 views. Atomic disposable authority initialization, journaled local-directory
-publication, unattended renewal with separate online custody, online-key rotation,
+publication, unattended renewal with separate online custody, online/membership-key rotation,
 and HTTPS verification now run through `soph omega`. The remaining
 operator work, compiled bundle/release gate, and discovery consumer/transport
 integration remain pending.
@@ -77,7 +77,7 @@ The proposed command surface is:
 | `soph omega status` | Report accepted versions, authority fingerprints, roots, expiration, renewal/publication health, and actionable failures, with script-friendly output. |
 | `soph omega rotate` | Prepare and carry out an authenticated successor-key transition with defined overlap, retained transition metadata, adoption checks, and retirement criteria. |
 
-`init`, `provision-renewal`, `publish` (including `--renew`), online-key `rotate`,
+`init`, `provision-renewal`, `publish` (including `--renew`), online/membership-key `rotate`,
 and `status --verify` are implemented for disposable Linux authorities; see
 [omega operations](omega-operations.md). Publication currently
 uses a local directory served by separately configured HTTPS, with immutable
@@ -85,8 +85,9 @@ release history, timestamp-last writes, and verification of the exact served
 release through the real client. Renewal preserves the exact approved membership,
 uses only online keys, and caps freshness at the offline approval deadlines.
 The operator guide includes scheduler examples, monitoring fields, and the
-prepare/review/apply procedure for snapshot/timestamp key rotation. The next
-operator slice is membership/root-key rotation and recovery, followed by
+prepare/review/apply procedures for online and membership-key rotation, including
+offline custody and recoverable signed handoff. The next operator slice is
+root-quorum rotation, root-expiry recovery, and independent key-loss recovery, followed by
 production custody; hosted publication also remains pending. Fold the existing
 standalone `omega` tool into `soph` and retire that binary, updating builds, releases, and
 documentation. Node hosts receive public trust material, not the ultimate

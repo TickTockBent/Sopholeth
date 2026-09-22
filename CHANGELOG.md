@@ -4,6 +4,14 @@
 
 ### Public discovery
 
+- Add `soph omega rotate --role targets` for disposable Linux membership-key
+  rotation. Keep replacement private keys offline, preserve the approved root
+  list and expiry, recover publication from a signed public handoff, and select
+  the active membership key for later approvals. Test interrupted/killed
+  processes, retired keys, alternating role generations, expiry repair, and
+  recovery from a lost rotated key while approval remains valid. Root-quorum
+  rotation, root-expiry recovery, and production custody remain pending.
+
 - Add `soph omega rotate` for disposable Linux online-key rotation. Prepare and
   review replacement snapshot/timestamp keys, apply the exact successor-root
   digest, preserve the original trust bundle and approved membership, and verify

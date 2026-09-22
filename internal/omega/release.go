@@ -114,7 +114,7 @@ func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previou
 func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[string]time.Time, error) {
 	var empty bootstrap.Manifest
 	fail := func(err error) (bootstrap.Manifest, map[string]time.Time, error) { return empty, nil, err }
-	if r.Schema < 1 || r.Schema > 4 || (r.Schema > 2) != (len(r.Roots) > 0) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
+	if r.Schema < 1 || r.Schema > 5 || (r.Schema > 2) != (len(r.Roots) > 0) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
 		return fail(errors.New("omega: invalid release identity or schema"))
 	}
 	canonical, err := approvedManifest(r.Manifest, bundle.Network)
@@ -127,6 +127,19 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 	tm, err := trustedRoots(bundle, r.Roots)
 	if err != nil {
 		return fail(err)
+	}
+	if r.Schema == 5 {
+		previous := bundle.Root
+		if len(r.Roots) > 1 {
+			previous = r.Roots[len(r.Roots)-2]
+		}
+		root, err := metadata.Root().FromBytes(previous)
+		if err != nil {
+			return fail(err)
+		}
+		if err := roleSuccessor(root, tm.Root, []string{"targets"}); err != nil {
+			return fail(err)
+		}
 	}
 	tm.RefTime = r.Created
 	if _, err := tm.UpdateTimestamp(r.Timestamp); err != nil {
@@ -153,14 +166,17 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 	}
 	expires := map[string]time.Time{"root": tm.Root.Signed.Expires, "targets": targets.Signed.Expires, "snapshot": tm.Snapshot.Signed.Expires, "timestamp": tm.Timestamp.Signed.Expires}
 	approvedAt := r.approvalTime()
-	if !r.isRenewal() && (r.TargetsVersion != 0 || !r.ApprovedAt.IsZero()) {
+	if !r.isRenewal() && r.Schema != 5 && (r.TargetsVersion != 0 || !r.ApprovedAt.IsZero()) {
 		return fail(errors.New("omega: approval contains renewal-only fields"))
 	}
 	if r.isRenewal() && (r.TargetsVersion < 1 || r.TargetsVersion >= r.Version || approvedAt.IsZero() || r.Created.Before(approvedAt)) {
 		return fail(errors.New("omega: invalid renewal approval identity"))
 	}
+	if r.Schema == 5 && (r.TargetsVersion != 0 || approvedAt.IsZero() || r.Created.Before(approvedAt)) {
+		return fail(errors.New("omega: invalid membership-key transition approval"))
+	}
 	deadline := expires["root"]
-	if r.isRenewal() {
+	if r.isRenewal() || r.Schema == 5 {
 		deadline = minTime(deadline, expires["targets"])
 	}
 	if !expires["targets"].Equal(minTime(approvedAt.Add(90*24*time.Hour), expires["root"])) ||
@@ -168,7 +184,7 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 		!expires["timestamp"].Equal(minTime(r.Created.Add(24*time.Hour), deadline)) {
 		return fail(errors.New("omega: release expiration policy mismatch"))
 	}
-	if !r.isRenewal() && expires["root"].Sub(r.Created) < 24*time.Hour {
+	if !r.isRenewal() && r.Schema != 5 && expires["root"].Sub(r.Created) < 24*time.Hour {
 		return fail(errors.New("omega: release approved too close to root expiration"))
 	}
 	m, err := bootstrap.ParseManifest(r.Manifest, bundle.Network)
@@ -208,7 +224,7 @@ func (r release) versions() bootstrap.Versions {
 }
 
 func (r release) approvalTime() time.Time {
-	if r.isRenewal() {
+	if r.isRenewal() || r.Schema == 5 {
 		return r.ApprovedAt
 	}
 	return r.Created
@@ -221,11 +237,25 @@ func prepareRenewal(keys map[string]string, bundle bootstrap.Bundle, previous re
 }
 
 func prepareRenewalWithRoots(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte) (release, error) {
+	return prepareContinuedRelease(keys, bundle, previous, now, roots, nil)
+}
+
+func prepareMembershipRelease(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte, targets []byte) (release, error) {
+	if err := sameTargetsApproval(previous.Targets, targets, previous.Version+1); err != nil {
+		return release{}, err
+	}
+	return prepareContinuedRelease(keys, bundle, previous, now, roots, targets)
+}
+
+func prepareContinuedRelease(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte, rotatedTargets []byte) (release, error) {
 	r := release{Schema: 2, Version: previous.Version + 1, Previous: digest(record(previous)), Fingerprint: bundle.Fingerprint(),
 		Created: now.Truncate(time.Second), Manifest: previous.Manifest, Targets: previous.Targets,
 		TargetsVersion: previous.versions().Targets, ApprovedAt: previous.approvalTime(), Roots: roots}
 	if len(roots) > 0 {
 		r.Schema = 4
+	}
+	if rotatedTargets != nil {
+		r.Schema, r.TargetsVersion, r.Targets = 5, 0, rotatedTargets
 	}
 	_, expires, err := previous.validate(bundle)
 	if err != nil {
@@ -237,7 +267,7 @@ func prepareRenewalWithRoots(keys map[string]string, bundle bootstrap.Bundle, pr
 	}
 	snapshot := metadata.Snapshot(minTime(r.Created.Add(7*24*time.Hour), deadline))
 	snapshot.Signed.Version = r.Version
-	snapshot.Signed.Meta["targets.json"] = metadataFile(r.TargetsVersion, r.Targets)
+	snapshot.Signed.Meta["targets.json"] = metadataFile(r.versions().Targets, r.Targets)
 	r.Snapshot, err = signMetadata(snapshot, keys["snapshot"])
 	if err != nil {
 		return r, err
@@ -258,7 +288,7 @@ func (r release) follows(previous release) error {
 		return errors.New("omega: release clock moved backward")
 	}
 	if len(r.Roots) < len(previous.Roots) || len(r.Roots) > len(previous.Roots)+1 ||
-		(len(r.Roots) > len(previous.Roots) && !r.isRenewal()) {
+		(len(r.Roots) > len(previous.Roots) && !r.isRenewal() && r.Schema != 5) {
 		return errors.New("omega: release root chain rolled back or skipped a transition")
 	}
 	for i := range previous.Roots {
@@ -269,6 +299,12 @@ func (r release) follows(previous release) error {
 	if r.isRenewal() && (r.TargetsVersion != previous.versions().Targets || !r.ApprovedAt.Equal(previous.approvalTime()) ||
 		!bytes.Equal(r.Targets, previous.Targets) || !bytes.Equal(r.Manifest, previous.Manifest)) {
 		return errors.New("omega: renewal changed offline-approved membership")
+	}
+	if r.Schema == 5 {
+		if len(r.Roots) != len(previous.Roots)+1 || !r.ApprovedAt.Equal(previous.approvalTime()) || !bytes.Equal(r.Manifest, previous.Manifest) {
+			return errors.New("omega: membership-key transition changed approval or did not advance the root")
+		}
+		return sameTargetsApproval(previous.Targets, r.Targets, r.Version)
 	}
 	return nil
 }

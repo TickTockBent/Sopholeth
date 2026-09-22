@@ -295,65 +295,69 @@ func TestOmegaRenewalUnavailableReports(t *testing.T) {
 }
 
 func TestOmegaRotationCLI(t *testing.T) {
-	ta := newTestApp(t)
-	base := t.TempDir()
-	home, online, repository := filepath.Join(base, "offline"), filepath.Join(base, "online"), filepath.Join(base, "repository")
-	server := httptest.NewTLSServer(http.FileServer(http.Dir(repository)))
-	defer server.Close()
-	ta.app.newHTTPClient = server.Client
-	ta.mustRun(t, "", "omega", "init", "--home", home, "--network", "rehearsal", "--repository", server.URL, "--disposable")
-	ta.mustRun(t, "", "omega", "provision-renewal", "--home", home, "--network", "rehearsal", "--renewal-home", online, "--disposable")
-	manifest := filepath.Join(base, "manifest.json")
-	if err := os.WriteFile(manifest, []byte(`{"schema":1,"network":"rehearsal","enclave":"default","roots":[{"id":"a","origin":"https://a.example.invalid"},{"id":"b","origin":"https://b.example.invalid"},{"id":"c","origin":"https://c.example.invalid"}]}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	ta.mustRun(t, "", "omega", "publish", "--home", home, "--network", "rehearsal", "--manifest", manifest, "--repository-dir", repository, "--version", "1", "--disposable")
-	args := []string{"omega", "rotate", "--home", home, "--network", "rehearsal", "--root-version", "2", "--disposable"}
-	out, _ := ta.mustRun(t, "", append([]string{"--json"}, args...)...)
-	prepared := decodeJSON(t, out)
-	rotation := prepared["rotation"].(map[string]any)
-	if rotation["state"] != "prepared" || prepared["root_version"] != float64(1) || rotation["root_version"] != float64(2) {
-		t.Fatalf("bad preparation report: %s", out)
-	}
-	digest := rotation["root_sha256"].(string)
-	out, _ = ta.mustRun(t, "", args...)
-	if !strings.Contains(out, "Rotation: prepared") || !strings.Contains(out, digest) || !strings.Contains(out, "snapshot key IDs:") {
-		t.Fatalf("text report omitted review details: %s", out)
-	}
-	out, _ = ta.mustRun(t, "", "--json", "omega", "status", "--home", online, "--network", "rehearsal")
-	if decodeJSON(t, out)["rotation"].(map[string]any)["state"] != "prepared" {
-		t.Fatalf("status lost prepared rotation: %s", out)
-	}
-	bad := append(append([]string{"--json"}, args...), "--apply", strings.Repeat("0", 64))
-	code, out, errOut := ta.run("", bad...)
-	if code != exitError || decodeJSON(t, out)["problem"] == nil || !strings.Contains(errOut, "--apply") {
-		t.Fatalf("bad digest did not fail clearly: %d %s %s", code, out, errOut)
-	}
-	apply := append(append([]string{"--json"}, args...), "--apply", digest)
-	for i := 0; i < 2; i++ {
-		out, _ = ta.mustRun(t, "", apply...)
-		result := decodeJSON(t, out)
-		if result["root_version"] != float64(2) || result["publication"] != "verified" || result["rotation"].(map[string]any)["state"] != "applied" {
-			t.Fatalf("apply/retry failed: %s", out)
-		}
-		if result["fingerprint"] != prepared["fingerprint"] {
-			t.Fatal("rotation changed initial anchor identity")
-		}
-	}
-	if err := os.Rename(home, home+"-unmounted"); err != nil {
-		t.Fatal(err)
-	}
-	ta.mustRun(t, "", "omega", "publish", "--home", online, "--network", "rehearsal", "--renew", "--disposable")
-	out, _ = ta.mustRun(t, "", "--json", "omega", "status", "--home", online, "--network", "rehearsal", "--verify")
-	if decodeJSON(t, out)["rotation"].(map[string]any)["state"] != "applied" {
-		t.Fatalf("status lost applied rotation: %s", out)
-	}
-	for _, extra := range [][]string{{"--manifest", manifest}, {"--version", "3"}, {"--verify"}, {"--renew"}} {
-		if code, _, _ := ta.run("", append(append([]string{}, args...), extra...)...); code != exitUsage {
-			t.Fatal("rotation accepted unrelated flags")
-		}
-	}
-	if _, err := os.Stat(ta.configPath); !os.IsNotExist(err) {
-		t.Fatal("rotation accessed client profiles")
+	for _, role := range []string{"online", "targets"} {
+		t.Run(role, func(t *testing.T) {
+			ta := newTestApp(t)
+			base := t.TempDir()
+			home, online, repository := filepath.Join(base, "offline"), filepath.Join(base, "online"), filepath.Join(base, "repository")
+			server := httptest.NewTLSServer(http.FileServer(http.Dir(repository)))
+			defer server.Close()
+			ta.app.newHTTPClient = server.Client
+			ta.mustRun(t, "", "omega", "init", "--home", home, "--network", "rehearsal", "--repository", server.URL, "--disposable")
+			ta.mustRun(t, "", "omega", "provision-renewal", "--home", home, "--network", "rehearsal", "--renewal-home", online, "--disposable")
+			manifest := filepath.Join(base, "manifest.json")
+			if err := os.WriteFile(manifest, []byte(`{"schema":1,"network":"rehearsal","enclave":"default","roots":[{"id":"a","origin":"https://a.example.invalid"},{"id":"b","origin":"https://b.example.invalid"},{"id":"c","origin":"https://c.example.invalid"}]}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			ta.mustRun(t, "", "omega", "publish", "--home", home, "--network", "rehearsal", "--manifest", manifest, "--repository-dir", repository, "--version", "1", "--disposable")
+			args := []string{"omega", "rotate", "--home", home, "--network", "rehearsal", "--root-version", "2", "--role", role, "--disposable"}
+			out, _ := ta.mustRun(t, "", append([]string{"--json"}, args...)...)
+			prepared := decodeJSON(t, out)
+			rotation := prepared["rotation"].(map[string]any)
+			if rotation["state"] != "prepared" || prepared["root_version"] != float64(1) || rotation["root_version"] != float64(2) {
+				t.Fatalf("bad preparation report: %s", out)
+			}
+			digest := rotation["root_sha256"].(string)
+			out, _ = ta.mustRun(t, "", args...)
+			if !strings.Contains(out, "Rotation: prepared") || !strings.Contains(out, digest) || !strings.Contains(out, map[string]string{"online": "snapshot key IDs:", "targets": "targets key IDs:"}[role]) {
+				t.Fatalf("text report omitted review details: %s", out)
+			}
+			out, _ = ta.mustRun(t, "", "--json", "omega", "status", "--home", online, "--network", "rehearsal")
+			if decodeJSON(t, out)["rotation"].(map[string]any)["state"] != "prepared" {
+				t.Fatalf("status lost prepared rotation: %s", out)
+			}
+			bad := append(append([]string{"--json"}, args...), "--apply", strings.Repeat("0", 64))
+			code, out, errOut := ta.run("", bad...)
+			if code != exitError || decodeJSON(t, out)["problem"] == nil || !strings.Contains(errOut, "--apply") {
+				t.Fatalf("bad digest did not fail clearly: %d %s %s", code, out, errOut)
+			}
+			apply := append(append([]string{"--json"}, args...), "--apply", digest)
+			for i := 0; i < 2; i++ {
+				out, _ = ta.mustRun(t, "", apply...)
+				result := decodeJSON(t, out)
+				if result["root_version"] != float64(2) || result["publication"] != "verified" || result["rotation"].(map[string]any)["state"] != "applied" {
+					t.Fatalf("apply/retry failed: %s", out)
+				}
+				if result["fingerprint"] != prepared["fingerprint"] {
+					t.Fatal("rotation changed initial anchor identity")
+				}
+			}
+			if err := os.Rename(home, home+"-unmounted"); err != nil {
+				t.Fatal(err)
+			}
+			ta.mustRun(t, "", "omega", "publish", "--home", online, "--network", "rehearsal", "--renew", "--disposable")
+			out, _ = ta.mustRun(t, "", "--json", "omega", "status", "--home", online, "--network", "rehearsal", "--verify")
+			if decodeJSON(t, out)["rotation"].(map[string]any)["state"] != "applied" {
+				t.Fatalf("status lost applied rotation: %s", out)
+			}
+			for _, extra := range [][]string{{"--manifest", manifest}, {"--version", "3"}, {"--verify"}, {"--renew"}, {"--role", "root"}} {
+				if code, _, _ := ta.run("", append(append([]string{}, args...), extra...)...); code != exitUsage {
+					t.Fatal("rotation accepted unrelated flags")
+				}
+			}
+			if _, err := os.Stat(ta.configPath); !os.IsNotExist(err) {
+				t.Fatal("rotation accessed client profiles")
+			}
+		})
 	}
 }

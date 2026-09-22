@@ -70,6 +70,9 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 			report.Publication = "failed"
 			report.Problem = resultErr.Error()
 			report.Action = "Preserve the operational journal and retry publish --renew. Expired root or membership approval requires the offline authority; never reset versions."
+			if errors.Is(resultErr, errMembershipHandoff) {
+				report.Action = "Mount the offline home and rerun the original soph omega rotate --role targets with the same --root-version and --apply digest. Preserve the journal; restore corrupt committed handoff records instead of replacing them."
+			}
 		}
 	}()
 	state, binding, err := openPublication(home, bundle, nil, false)
@@ -113,13 +116,18 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	if err := checkRecordedDestination(repo, history); err != nil {
 		return report, err
 	}
-	history, resumed, err := resumeRotationApply(ctx, state, bundle, history, now)
+	history, resumed, err := resumeRotationApply(ctx, state, bundle, history, now, custody.Keys)
 	if err != nil {
 		return report, err
 	}
 	if resumed {
 		latest = history[len(history)-1]
 		return publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient)
+	}
+	for _, name := range []string{rotationTargetsName(latest.Version + 1), rotationTargetsName(latest.Version+1) + ".pending"} {
+		if _, err := state.root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
+			return report, errors.New("omega: targets handoff has no apply reservation; restore its journal before renewal")
+		}
 	}
 	keys, err := activeOnlineKeys(state, bundle, latest, custody.Keys)
 	if err != nil {
