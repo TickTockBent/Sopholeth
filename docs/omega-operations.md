@@ -4,8 +4,9 @@
 encrypted TUF authorities, unattended renewal, online/membership/root-key
 rotation, root-expiry recovery, and verified publication to a local HTTPS-served
 repository on Linux. Production initialization uses encrypted custody by default.
-No live authority is created by this implementation. Vercel publication is
-implemented; hosted rehearsal, the compiled trust bundle/release gate, and
+No production authority is created by this implementation. Vercel publication and
+its hosted disposable rehearsal are complete; remote scheduling, the compiled
+trust bundle/release gate, and
 discovery consumers remain in the [public-network plan](public-network-plan.md).
 
 The launch profile uses one secured connected operator workstation and a tested
@@ -249,8 +250,8 @@ refuses redirects. A private
 rehearsal CA can be supplied through the platform's trusted CA configuration
 (for example `SSL_CERT_FILE` on Linux); there is no insecure TLS flag. Hosting
 at `sopholeth.io/omega/` has base-path support and committed Vercel routing/cache
-rules and a deployment adapter. Project-level routing and a hosted rehearsal must
-precede public activation. See [Vercel publication](omega-vercel.md).
+rules and a deployment adapter. Project-level routing and the hosted disposable
+rehearsal are complete; remote service setup remains. See [Vercel publication](omega-vercel.md).
 
 Create the approved manifest, for example `bootstrap.json`:
 

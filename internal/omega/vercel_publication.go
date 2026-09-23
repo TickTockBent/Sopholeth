@@ -137,6 +137,22 @@ func (o *VercelOptions) settle(ctx context.Context, id string) error {
 	}
 }
 
+func (o *VercelOptions) waitHostedObjects(ctx context.Context, hc *http.Client, repository string, objects []publicObject) error {
+	// Promotion acknowledgement can precede the production alias reaching
+	// the serving edge. Keep the same deployment and bounded command budget.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	for {
+		err := verifyHostedObjects(ctx, hc, repository, objects)
+		if err == nil {
+			return nil
+		}
+		if waitErr := o.pause(ctx); waitErr != nil {
+			return fmt.Errorf("omega: canonical deployment did not become visible: %w", errors.Join(err, waitErr))
+		}
+	}
+}
+
 func deployVercel(ctx context.Context, state *store, bundle bootstrap.Bundle, history []release, opts *VercelOptions, hc *http.Client) error {
 	if opts == nil {
 		return nil
@@ -177,7 +193,7 @@ func deployVercel(ctx context.Context, state *store, bundle bootstrap.Bundle, hi
 	}
 	// An hourly retry verifies the live release without creating a deployment.
 	if receipt.Version == r.Version && receipt.Phase == "settled" {
-		return verifyHostedObjects(ctx, hc, bundle.Repository, objects)
+		return opts.waitHostedObjects(ctx, hc, bundle.Repository, objects)
 	}
 	if err := checkHostedTimestamp(ctx, hc, bundle.Repository, history); err != nil {
 		return err
@@ -249,5 +265,5 @@ func deployVercel(ctx context.Context, state *store, bundle bootstrap.Bundle, hi
 	if err := state.replaceRecord(vercelDeploymentName, record(receipt)); err != nil {
 		return err
 	}
-	return verifyHostedObjects(ctx, hc, bundle.Repository, objects)
+	return opts.waitHostedObjects(ctx, hc, bundle.Repository, objects)
 }

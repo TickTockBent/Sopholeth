@@ -19,21 +19,20 @@ Other framework preset, has no install/build commands, and serves output `.`
 from the project root. Login protection is disabled for this public-data project.
 The publisher does not upload custody files or credentials.
 
-An empty deployment is now promoted at that hostname. Its timestamp, root, and
-blocked private-file paths return anonymous JSON 404s with `Cache-Control:
-no-store`. The live create/promote API and immutable cache headers were also
-checked using isolated throwaway deployments; no authority has been created.
+Disposable signed metadata is hosted under a unique rehearsal subpath. The final
+`/omega/` timestamp and root locations remain empty and return anonymous JSON 404s
+with `Cache-Control: no-store`. No production authority has been created.
 
 The apex domain now serves the docs directly, with www redirecting to it.
-The metadata rewrite is a separate setup step; it is not installed by a docs
-commit or by `soph omega publish`.
+The metadata rewrite is installed as a project-level rule, separate from docs
+commits and `soph omega publish`. The following steps describe that setup.
 
 1. Establish an empty metadata deployment with the serving config and error pages.
    Promote that empty scaffold before routing traffic
    to it. Do not promote unsigned test fixtures containing timestamp/root files.
 2. In the existing **sopholeth.io** project's **CDN → Routing Rules**, add a rule
-   matching path `/omega/:path*`. Set its action to **Rewrite** with destination
-   `https://sopholeth-omega-chi.vercel.app/omega/:path*`. Preserve the `/omega/`
+   matching regex `^/omega/(.*)$`. Set its action to **Rewrite** with destination
+   `https://sopholeth-omega-chi.vercel.app/omega/$1`. Preserve the `/omega/`
    prefix, and place this rule before any broader matching project rule.
 3. Stage and test the rule, then publish it. This must be a project-level rule,
    separate from the deployment configuration in `vercel.json`. Do not use a
@@ -42,6 +41,12 @@ commit or by `soph omega publish`.
    redirects. An empty repository must return a direct JSON 404 with
    `Cache-Control: no-store`, without login or a challenge. Check that a docs
    preview/deployment and rollback leave the metadata route intact during rehearsal.
+
+Use the explicit regex and `$1` capture above. In the live rehearsal, the CLI's
+path-pattern rule `/omega/:path*` with `:path*` in the destination returned 404
+for objects present at the origin. The regex rule forwarded their full paths.
+An empty-repository 404 alone cannot prove that forwarding works; verify actual
+signed objects before activation.
 
 To stage the empty scaffold from this checkout using the authenticated Vercel CLI:
 
@@ -74,6 +79,8 @@ the operator and readable by the renewal service. For another project, substitut
 its IDs and name before the first publication. The first use binds that config
 to the journal; subsequent publishing commands must supply the same config.
 It is copied with the journal during `provision-renewal`.
+The config accepts ordinary JSON whitespace and field ordering, while rejecting
+missing, unknown, or duplicate fields. Journal bindings remain canonical.
 
 Create a Vercel deployment token with access to the metadata project's team.
 Supply it as `VERCEL_TOKEN` in the operator or renewal-service environment.
@@ -120,8 +127,10 @@ Each changed release is staged with automatic production alias assignment
 disabled. The publisher records the returned deployment ID, waits for READY,
 checks every retained object's exact bytes and browser cache policy at the isolated
 deployment, and confirms the next root returns an uncached JSON 404. Only then does
-it request promotion. It waits for Vercel's promotion result and verifies the same
-objects plus TUF signatures/ordering at the canonical public URL.
+it request promotion. It waits for Vercel's promotion result, allows up to 30
+seconds for the serving edge to expose the expected objects, and verifies the
+same objects plus TUF signatures/ordering at the canonical public URL. This wait
+stays within the command's overall timeout and does not allocate another deployment.
 
 `vercel-binding.json` and `vercel-deployment.json` are private journal records,
 not public repository objects. The deployment receipt records the release/config
@@ -152,6 +161,11 @@ rollback is safe once the independent rewrite is established; changing or removi
 that project-level rule can still interrupt availability.
 
 ## Validation and remaining activation
+
+The [hosted rehearsal report](omega-hosted-rehearsal.md) records the live run and
+the config, routing, and propagation findings it exposed. Permanent renewal will
+run on an operator-selected remote host; service credentials and scheduling are
+still deployment work.
 
 Local tests cover interrupted promotion, failed staged cache checks, idempotent
 retry, renewal, history retention, custody handoff, conflicting remote history,

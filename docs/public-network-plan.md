@@ -72,8 +72,9 @@ and online renewal roles. The application now uses Go 1.27.1 and includes the
 validation, bounded HTTPS, locked state checkpoints, and expiring accepted
 views. Atomic encrypted authority initialization, journaled local-directory
 publication, unattended renewal with separate online custody, all three rotation
-roles, and HTTPS verification run through `soph omega`. Hosted publication, the
-compiled bundle/release gate, and discovery consumer/transport integration remain.
+roles, and HTTPS verification run through `soph omega`. Hosted publication and its
+disposable rehearsal are implemented. Remote scheduling, the compiled bundle/release
+gate, and discovery consumer/transport integration remain.
 
 The command surface is:
 
@@ -87,10 +88,9 @@ The command surface is:
 
 `init`, `provision-renewal`, `publish` (including `--renew`), online/membership/root-key `rotate`,
 and `status --verify` are implemented for encrypted and disposable Linux authorities; see
-[omega operations](omega-operations.md). Publication currently
-uses a local directory served by separately configured HTTPS, with immutable
-release history, timestamp-last writes, and verification of the exact served
-release through the real client. Renewal preserves the exact approved membership,
+[omega operations](omega-operations.md). Publication uses either a local HTTPS-served
+directory or the Vercel adapter, retaining immutable history and verifying the
+exact served release through the real client. Renewal preserves the exact approved membership,
 uses only online keys, and caps freshness at the offline approval deadlines.
 Refresh daily with seven-day snapshot/timestamp validity; check and retry hourly.
 The operator guide includes scheduler examples, monitoring fields, and the
@@ -123,23 +123,26 @@ internal/pending names cannot be served. The existing encrypted lifecycle runs
 against a path-prefixed HTTPS fixture; a Vercel local-router smoke test checks
 headers, misses, and docs routing.
 
-**Vercel adapter — implemented; hosted rehearsal next:** `publish`, renewal,
+**Vercel adapter and hosted rehearsal — complete:** `publish`, renewal,
 and rotation application accept a metadata-project config and upload only public
 objects reconstructed from the retained journal. Staging cannot assign production
 domains. Exact bytes/cache checks precede promotion, promotion state is journaled
 for retry, and success requires canonical HTTPS/TUF verification. Hourly checks
 do not deploy unchanged metadata; daily refresh and seven-day expiry remain.
 
-The separate `sopholeth-omega` project is created and configured. The apex now
-serves directly and www redirects to it; production missing-metadata responses
-were verified as uncached JSON 404s on 2026-09-23. Complete the
-[Vercel setup and rehearsal](omega-vercel.md): configure the publisher credential,
-use the verified empty metadata deployment, and install a project-level `/omega/`
-rewrite independent of docs deployments. Rehearse signed disposable metadata
-under a unique `/omega/rehearsal-.../` prefix, including docs rollback isolation.
-Reserve `/omega/` itself for the final authority to avoid immutable-cache collisions.
-No live authority has been created. Deployment credentials remain separate from
-authority keys. Recheck the [domain preflight](../sites/README.md#omega-metadata-hosting)
+The separate `sopholeth-omega` project and project-level regex rewrite are configured.
+The apex serves directly and www redirects to it. The
+[2026-09-23 hosted rehearsal](omega-hosted-rehearsal.md) verified signed publication,
+CLI renewal without offline custody, online-key rotation, fresh/returning clients,
+and survival of docs deployment/rollback under a unique rehearsal prefix.
+
+**Next operator step:** the operator will configure Kraid, install its service
+credential, and run the [manual encrypted rehearsal](omega-kraid-rehearsal.md),
+including an actual scheduled renewal from that host. No agent SSH access or
+remote setup is planned. Reserve `/omega/` itself for the final authority to avoid
+immutable-cache collisions. No production authority has been created. Deployment
+credentials remain separate from authority keys. Recheck the
+[domain preflight](../sites/README.md#omega-metadata-hosting)
 before public `soph omega init`; keep the client's redirect rejection.
 Consumer integration must still follow the peer-identity decision below;
 compiled trust bundles and #223 remain release gates. Node hosts receive public

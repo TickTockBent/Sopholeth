@@ -27,6 +27,7 @@ func TestVercelPublicationRecoveryAndRenewal(t *testing.T) {
 	creates, promotes := 0, 0
 	lastPromotion := ""
 	badCache := false
+	laggedResponses := 0
 	public := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -38,6 +39,11 @@ func TestVercelPublicationRecoveryAndRenewal(t *testing.T) {
 			files, name = staged, strings.TrimPrefix(name, "stage/")
 		}
 		data, ok := files[name]
+		if promotes == 2 && laggedResponses == 0 && r.URL.Path == "/omega/2.snapshot.json" {
+			// The promotion API acknowledged before this edge saw the alias.
+			laggedResponses++
+			ok = false
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		if !ok {
@@ -117,7 +123,7 @@ func TestVercelPublicationRecoveryAndRenewal(t *testing.T) {
 	defer api.Close()
 	base := t.TempDir()
 	opts := PublishOptions{Home: filepath.Join(base, "custody"), Network: "rehearsal", Directory: filepath.Join(base, "repository"), Manifest: publicationManifest, Version: 1, Disposable: true, HTTPClient: public.Client(),
-		Vercel: &VercelOptions{Config: config, Token: "fixture-token", apiURL: api.URL, apiClient: api.Client(), previewURL: func(string) string { return public.URL + "/stage" }}}
+		Vercel: &VercelOptions{Config: config, Token: "fixture-token", apiURL: api.URL, apiClient: api.Client(), pollInterval: time.Millisecond, previewURL: func(string) string { return public.URL + "/stage" }}}
 	created := time.Now().UTC().Truncate(time.Second).Add(-25 * time.Hour)
 	_, err := initializeWithCodec(ctx, InitOptions{Home: opts.Home, Network: opts.Network, Repository: public.URL + "/omega", Disposable: true}, created, nil, fastKeyCodec)
 	must(t, err)
@@ -163,7 +169,7 @@ func TestVercelPublicationRecoveryAndRenewal(t *testing.T) {
 	mu.Unlock()
 	report, err = Renew(ctx, online)
 	must(t, err)
-	if report.Release.Version != 2 || creates != 2 || promotes != 2 {
+	if report.Release.Version != 2 || creates != 2 || promotes != 2 || laggedResponses != 1 {
 		t.Fatalf("renewal retry did not reuse staged release: %+v", report)
 	}
 	_, err = Renew(ctx, online)
@@ -218,7 +224,15 @@ func TestVercelConfigAndAPIConfinement(t *testing.T) {
 	config := VercelConfig{Schema: 1, ProjectID: "prj_test", TeamID: "team_test", ProjectName: "metadata-test"}
 	_, err := ParseVercelConfig(record(config))
 	must(t, err)
-	for _, data := range [][]byte{[]byte(`{}`), []byte(`{"schema":1,"project_id":"prj_test","team_id":"team_test","project_name":"test","token":"secret"}`), bytes.Repeat([]byte(" "), 4097)} {
+	_, err = ParseVercelConfig(file(t, "../../docs/examples/omega/vercel.json"))
+	must(t, err)
+	parsed, err := ParseVercelConfig([]byte(`{ "project_name": "metadata-test", "team_id": "team_test", "project_id": "prj_test", "schema": 1 }`))
+	must(t, err)
+	if parsed != config {
+		t.Fatal("formatting changed the project binding")
+	}
+	for _, data := range [][]byte{[]byte(`{}`), []byte(`{"schema":1,"project_id":"prj_test","team_id":"team_test","project_name":"test","token":"secret"}`),
+		[]byte(`{"schema":1,"schema":1,"project_id":"prj_test","team_id":"team_test","project_name":"test"}`), append(record(config), []byte(`{}`)...), bytes.Repeat([]byte(" "), 4097)} {
 		if _, err := ParseVercelConfig(data); err == nil {
 			t.Fatal("accepted unsafe config")
 		}

@@ -43,8 +43,33 @@ var vercelName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,99}$`)
 
 func ParseVercelConfig(data []byte) (VercelConfig, error) {
 	var c VercelConfig
-	if len(data) > 4096 || decodeRecord(data, &c) != nil {
-		return c, errors.New("omega: invalid Vercel config (expected schema, project_id, team_id, project_name)")
+	invalid := errors.New("omega: invalid Vercel config (expected schema, project_id, team_id, project_name)")
+	if len(data) > 4096 {
+		return c, invalid
+	}
+	// Operator input allows whitespace and field ordering. Journal records
+	// remain canonical; do not apply their byte-for-byte check to this file.
+	d := json.NewDecoder(bytes.NewReader(data))
+	if token, err := d.Token(); err != nil || token != json.Delim('{') {
+		return c, invalid
+	}
+	fields := map[string]any{"schema": &c.Schema, "project_id": &c.ProjectID, "team_id": &c.TeamID, "project_name": &c.ProjectName}
+	for d.More() {
+		token, err := d.Token()
+		name, ok := token.(string)
+		if err != nil || !ok || fields[name] == nil {
+			return c, invalid
+		}
+		if err := d.Decode(fields[name]); err != nil {
+			return c, invalid
+		}
+		delete(fields, name) // Reject duplicate fields as well as unknown ones.
+	}
+	if token, err := d.Token(); err != nil || token != json.Delim('}') || len(fields) != 0 {
+		return c, invalid
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return c, invalid
 	}
 	return c, c.validate()
 }

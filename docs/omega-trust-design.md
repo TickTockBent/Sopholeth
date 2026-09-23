@@ -3,7 +3,8 @@
 Status: trust client, atomic encrypted authority initialization, local-directory
 and Vercel publication, unattended online renewal, online/membership/root-key
 rotation, served-release verification, and root-expiry recovery are implemented.
-Hosted rehearsal, release integration, and discovery consumers remain pending.
+The hosted disposable rehearsal passed; remote scheduling, release integration,
+and discovery consumers remain pending.
 The completed [spike](../test/omega-tuf/README.md) established the design for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md). Its scenarios now exercise the
@@ -165,8 +166,8 @@ The Vercel adapter stages retained public objects in a separate metadata-only
 project, checks their exact bytes and cache policy, promotes the deployment, and
 verifies the canonical public URL. Promotion state is journaled across retries.
 A project-level rewrite keeps `/omega/` independent of docs deployments and
-rollbacks. That route and the signed hosted rehearsal remain activation work;
-do not put metadata into the Git-deployed docs site. Rehearsal authorities use a
+rollbacks; the [hosted rehearsal](omega-hosted-rehearsal.md) verified this with signed
+metadata. Do not put metadata into the Git-deployed docs site. Rehearsal authorities use a
 unique subpath so their immutable objects cannot collide with the final authority.
 See [Vercel publication](omega-vercel.md). No public authority has been created.
 

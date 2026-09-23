@@ -130,11 +130,12 @@ overrides browser `Cache-Control` to `max-age=0`; the check exercises the CDN
 header and verifies the matching browser directive in the config. Confirm both
 on a deployed preview and again at the public endpoint during publication rehearsal.
 
-**Deployment adapter implemented; hosted rehearsal remains.** The
+**Deployment adapter and hosted rehearsal complete.** The
 `sopholeth-omega` project owns metadata deployments without a Git connection.
 `soph omega` stages and verifies retained public history before promotion, then
-checks the canonical public URL. Install a project-level `/omega/:path*` rewrite
-to its production hostname independently of docs deployments. The exact project
+checks the canonical public URL. A project-level regex rewrite, `^/omega/(.*)$`
+to `https://sopholeth-omega-chi.vercel.app/omega/$1`, is installed independently of
+docs deployments. The exact project
 IDs, route, credential setup, and rehearsal steps are in
 [Vercel publication](../docs/omega-vercel.md). Keep metadata out of this site's
 Git output. A docs rollback must not change the project-level metadata route.

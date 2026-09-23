@@ -4,6 +4,10 @@
 
 ### Public discovery
 
+- Accept formatted operator JSON in the Vercel config and wait briefly for
+  production-edge propagation after promotion. The hosted rehearsal exercises
+  signed publication, CLI renewal and rotation, and docs deployment isolation.
+
 - Add Vercel publication to `soph omega publish`, renewal, and rotation application.
   Retain public history in a metadata-only project, verify staged bytes/cache rules
   before promotion, reconcile interrupted promotions, and verify canonical HTTPS
