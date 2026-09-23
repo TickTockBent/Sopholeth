@@ -3,7 +3,8 @@
 `soph omega init`, `provision-renewal`, `publish`, `rotate`, and `status` support
 disposable TUF authorities, unattended renewal, online/membership/root-key
 rotation, root-expiry recovery, and verified publication to a local HTTPS-served
-repository on Linux. Production custody/hosting and discovery consumer integration remain
+repository on Linux. Encrypted initialization, public inspection, and restored-key
+verification are also available for disposable rehearsals. Production custody/hosting and discovery consumer integration remain
 the next steps in the
 [public-network plan](public-network-plan.md). No production authority exists.
 
@@ -44,7 +45,8 @@ The reported SHA-256 identifies the normalized signed initial root; it is
 Each network has one immutable authority slot under the custody home. A
 process lock serializes creation, recovery, and inspection for that slot.
 Everything is prepared in a private `.<network>.pending` directory. All six
-keys and the fixed intent are committed together in `authority.json` before
+keys and the fixed intent are committed together in `authority.json` (or the
+encrypted staging allocation described below) before
 any metadata is signed. After that boundary, retries use exactly those keys,
 repository, and expiration; there is no replace/reset/force option.
 
@@ -83,7 +85,7 @@ one connected operator workstation.
 
 ### Files, custody, and status
 
-A committed network directory contains exactly these files, all mode `0600`:
+A default plaintext network directory contains these files, all mode `0600`:
 
 | File | Purpose |
 | --- | --- |
@@ -98,15 +100,11 @@ never copy the whole home to a site, repository, node host, or logs. The receipt
 checks consistency; it is not protection against someone who controls the
 operator account and can replace all custody material.
 
-This first implementation deliberately requires `--disposable`: all six keys
-are stored in plaintext together for development. It does not provide the planned
-encrypted storage or verified recovery workflow. Production initialization must
-wait for the custody/recovery workflow and rehearsal. `authority.json` schema 1
-is permanently reserved for disposable authorities: production custody requires
-a new schema, not an extension that enables production use of schema 1.
-The [production custody proposal](omega-production-custody.md) describes the
-encrypted-file backend on one connected workstation and the creation/recovery
-workflow; that production behavior is not implemented yet.
+Without `--encrypted`, all six keys are stored in plaintext together for
+development. `authority.json` schema 1 remains permanently disposable-only.
+The encrypted backend below uses schema 2, but production initialization still
+waits for encrypted publication/rotation and the complete recovery rehearsal in
+the [custody plan](omega-production-custody.md).
 Windows public-client support remains a
 [separate required gate](public-network-plan.md#windows-public-client-gate).
 
@@ -115,6 +113,95 @@ Text and `--json` output include state, network, repository, initial-root
 fingerprint, current root version/expiration, and role thresholds/key IDs. Missing, pending,
 corrupt, or expired authority returns a nonzero exit with a corrective action.
 Unknown expiration dates are omitted. No output contains private keys.
+
+## Rehearse encrypted custody and backup restoration
+
+Use a separate throwaway network/home for this first encrypted slice. It supports
+`init`, ordinary public `status`, and `status --check-keys` on Linux. It still
+requires `--disposable`; publication, renewal provisioning, rotation, and
+`status --verify` reject encrypted authorities before creating lifecycle state.
+The later sections describe the existing plaintext disposable lifecycle.
+
+```bash
+./bin/soph omega init \
+  --home /path/to/private/encrypted-home \
+  --network encrypted-rehearsal \
+  --repository https://metadata.example.invalid \
+  --encrypted --disposable
+./bin/soph --json omega status \
+  --home /path/to/private/encrypted-home --network encrypted-rehearsal
+```
+
+New initialization prompts for one strong passphrase and confirmation on the
+controlling terminal, with echo disabled. A retry unlocks the existing allocation;
+an already complete authority does not prompt. Passwords are not accepted through
+arguments, environment variables, or stdin. JSON stays on stdout and prompts stay
+on the terminal. Ctrl-C, cancellation, and normal errors restore terminal settings.
+Encrypted init and key checks default to two minutes, including password entry;
+an explicit global `--timeout`, before `omega`, overrides this. These operations
+contact no server.
+
+### Encrypted files and interruption recovery
+
+The network directory contains the four files listed above and six separate
+`root-1.key.age`, `root-2.key.age`, `root-3.key.age`, `targets.key.age`,
+`snapshot.key.age`, and `timestamp.key.age` files. All remain private mode `0600`.
+Here `authority.json` is **public-only schema 2**: network/repository, creation
+transaction, initial fingerprint, public keys, custody profile, and encrypted-file
+digests. `complete.json` binds the public authority, root, and bundle. Neither
+record embeds a private key. There is no conversion from a schema-1 authority.
+
+The pinned [age Go library](https://pkg.go.dev/filippo.io/age@v1.3.2) provides
+authenticated passphrase encryption. Each payload binds the private/public pair
+to its authority transaction, network, repository, role, and generation. The
+backend uses scrypt work factor 18 (roughly 256 MiB per operation), processes keys
+sequentially, and rejects higher work factors, ciphertext over 16 KiB, and
+plaintext over 4 KiB. It authenticates the complete decrypted stream before use.
+No plaintext key file is written. Clearing mutable buffers is best effort;
+Go/library copies, swap, and process dumps prevent a perfect memory-erasure claim.
+
+Before any public output, staging durably fixes all six **encrypted** allocations
+in `init-keys.json`. Retries install the same ciphertext bytes into their separate
+files and reproduce the same signed root. The aggregate is removed and the
+directory synchronized before atomic promotion. A torn first allocation write
+may be retried only before any derived output exists; a complete allocation with
+a wrong passphrase or a damaged committed allocation is preserved. Missing keys
+never cause replacement authority creation. Rerun the same encrypted init after
+interruption, preserving the original home, network, and repository.
+
+### Verify a restored copy
+
+Stop operator commands and copy the **whole private custody home** consistently
+to separate protected storage. Preserve permissions. Keep passphrase recovery
+information separately, accessible if the workstation is lost. Do not upload
+this home or its backup to the public metadata site.
+
+Restore that copy to a temporary private directory while the working copy is
+unavailable, then run:
+
+```bash
+./bin/soph --json omega status \
+  --home /path/to/private/restored-home --network encrypted-rehearsal
+./bin/soph --json omega status --check-keys \
+  --home /path/to/private/restored-home --network encrypted-rehearsal
+```
+
+Compare the fingerprint with the one recorded independently at initialization.
+Ordinary `status` checks the signed public authority and receipt without unlocking.
+Its `key_files` entries report `locked` (matching ciphertext), `missing`, or
+`damaged`; public state can remain `initialized` with unavailable keys. This is
+public inspection, not proof that a backup can unlock. `--check-keys` prompts once,
+requires all six files, verifies decrypted identities against the public record,
+and reports `verified` for each key. Wrong passwords, missing/corrupt files, or
+identity mismatches return nonzero with a problem and corrective action; no
+metadata is signed or published. An expired authority can have matching recovered
+keys but still returns an expiry error.
+
+Record the verified fingerprint, restore date, backup location, and unlock
+recovery location in private operator notes. Retain the original authority and
+its verified backup. Publication, rotation, and recovery from a missing root key
+using the remaining quorum are the next encrypted-backend slice; this check does
+not enable public activation yet.
 
 ## Publish a disposable three-root manifest
 
@@ -298,7 +385,7 @@ account, `soph-omega`, and the HTTPS server can read `/srv/omega-public`.
 Prepare the parent directories and serving permissions before publishing.
 The renewal service must not have access to the offline home: keep its storage
 unmounted between approvals and retain the service's filesystem restriction.
-This disposable setup does not implement the proposed encrypted-file backend.
+This plaintext lifecycle does not yet support the encrypted initialization backend.
 Production service access restrictions must also cover permissions while the
 operator's keys are mounted; an air gap is not required.
 

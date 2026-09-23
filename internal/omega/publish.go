@@ -78,6 +78,9 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
+	if report.Custody == encryptedCustody {
+		return encryptedLifecyclePending(report)
+	}
 	if report.Network != opts.Network {
 		return failedReport(errors.New("omega: authority network mismatch")), errors.New("omega: authority network mismatch")
 	}

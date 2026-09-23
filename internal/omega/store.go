@@ -259,8 +259,8 @@ func (s *store) install(name string, data []byte) error {
 
 // cleanPending runs only after every committed file verifies. Pending outputs
 // are never authoritative; their bytes may be torn by a process/power failure.
-func (s *store) cleanPending() error {
-	for _, name := range authorityFiles {
+func (s *store) cleanPending(names []string) error {
+	for _, name := range names {
 		if _, err := s.read(name + ".pending"); err == nil {
 			if err := s.root.Remove(name + ".pending"); err != nil {
 				return err

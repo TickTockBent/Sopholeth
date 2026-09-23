@@ -2,7 +2,8 @@
 
 Status: trust client, atomic disposable authority initialization, local-directory
 publication, unattended online renewal, online/membership/root-key rotation, and served-release
-verification and root-expiry recovery implemented. Production custody/hosting,
+verification and root-expiry recovery implemented. Encrypted disposable init,
+public inspection, and restored-key verification are implemented. Production custody/hosting,
 and consumer integration remain pending.
 The completed [spike](../test/omega-tuf/README.md) established the design for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
@@ -95,7 +96,10 @@ into a workflow with encrypted files, a tested backup, and schema-2 public
 authority records. Authenticated discovery and operator recovery are the launch
 criteria. An explicit network reset is acceptable after authority compromise or
 unrecoverable state; clients must deliberately adopt the replacement trust bundle.
-The backend remains implementation work; schema 1 stays disposable-only.
+The first backend slice supports encrypted disposable initialization, public
+`status`, and restored-key verification through `status --check-keys`. Production
+creation and encrypted publication/rotation remain gated; schema 1 stays
+disposable-only. See the [rehearsal procedure](omega-operations.md#rehearse-encrypted-custody-and-backup-restoration).
 
 Compromise confined to the renewal service account must not permit new membership
 approval or replacement of the root authority. Keep operator keys and passwords

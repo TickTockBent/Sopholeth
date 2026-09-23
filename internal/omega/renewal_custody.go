@@ -149,6 +149,9 @@ func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook fu
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
+	if report.Custody == encryptedCustody {
+		return encryptedLifecyclePending(report)
+	}
 	defer func() {
 		if resultErr != nil {
 			report.Problem = resultErr.Error()

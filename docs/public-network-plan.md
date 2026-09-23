@@ -1,11 +1,12 @@
 # First public network: omega, then three roots
 
-Status: agreed delivery path, 2026-09-22. Placeholder rejection and the public
+Status: agreed delivery path, 2026-09-23. Placeholder rejection and the public
 release fingerprint gate, durable trust client, and atomic disposable
 `soph omega init`, local-directory `publish`, unattended online renewal, and
 HTTPS verification in `status`, and online/membership/root-key `rotate` are implemented for
 disposable authorities, including root-expiry recovery and replacement with one
-rotated root signer unavailable. Consumer integration, production custody/hosting,
+rotated root signer unavailable. Encrypted disposable initialization, public
+inspection, and restored-key verification are also implemented. Consumer integration, production custody/hosting,
 and deployment remain pending. The peer-plane
 audit adds three launch blockers: unauthenticated peer mutations (#211),
 serial write broadcast (#212), and identity-blind liveness (#213). These must
@@ -94,28 +95,29 @@ Refresh daily with seven-day snapshot/timestamp validity; check and retry hourly
 The operator guide includes scheduler examples, monitoring fields, and the
 prepare/review/apply procedures for all three rotation roles, including offline
 custody, root-expiry recovery, and recoverable signed handoff. Root application
-requires explicit renewal of the unchanged membership approval. The next operator
-slice is encrypted custody and practical recovery. The
+requires explicit renewal of the unchanged membership approval. Encrypted custody
+now has an initialization and public-inspection foundation. The
 [custody proposal](omega-production-custody.md) targets one operator's connected
 workstation, encrypted key files, a tested backup, and a new authority schema.
 Its launch criteria are authenticated discovery and a usable operator recovery
 path. Air gaps and independent signing machines are not requirements. Authority
 compromise or unrecoverable state may lead to an explicit experimental-network
 reset, with a new trust bundle that clients must deliberately adopt.
-The first implementation slice separates public inspection from encrypted key
-access and reuses atomic initialization; the next carries that backend through
-the existing lifecycle and rehearses recovery. Hosted publication also remains
+The first slice implements `init --encrypted --disposable` with schema-2 public
+authority records, separate encrypted key files, and atomic recovery. Ordinary
+`status` needs no password; `status --check-keys` verifies a restored backup against
+the public identity. Encrypted publication/rotation and production creation remain
+gated. The next slice carries this backend through the existing lifecycle and
+rehearses signing, backup recovery, and deliberate reset. Hosted publication also remains
 pending. Fold the standalone `omega` tool into `soph` and retire that binary,
 updating builds, releases, and documentation. Node hosts receive public trust material, not the ultimate
 private authority key. Routine freshness renewal must run unattended without
 requiring repeated use of that ultimate key.
 
 Reserve `authority.json` schema 1 permanently for disposable authorities.
-Production custody must introduce a new schema; it must never store production
-authority material in schema 1 or extend that schema to enable production use.
-The new schema must separate public identity from encrypted key storage and
-support recovery, rather than carrying forward the disposable six-key plaintext
-record.
+Schema 2 now separates public identity from encrypted key storage. Production
+custody must never store authority material in schema 1, extend that schema to
+enable production use, or relabel existing disposable keys as production keys.
 
 Implement the related findings in the selected design:
 

@@ -56,7 +56,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	}
 	report = Report{Schema: 1, State: "invalid", Network: opts.Network, Publication: "not_checked"}
 	defer func() {
-		if resultErr != nil {
+		if resultErr != nil && report.Custody != encryptedCustody {
 			report.Problem = resultErr.Error()
 			report.Action = "Preserve both custody homes and the journal. Resolve the failure and retry the same root version and apply digest; never roll back a transition."
 			if opts.Apply != "" {
@@ -78,6 +78,9 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	report, err = current.inspect(time.Now().UTC())
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
+	}
+	if report.Custody == encryptedCustody {
+		return encryptedLifecyclePending(report)
 	}
 	_, bundle, err := current.verify()
 	if err != nil {

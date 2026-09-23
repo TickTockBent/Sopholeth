@@ -1,11 +1,13 @@
 # Omega production custody and recovery
 
-Status: proposal for the first experimental public network, revised 2026-09-23.
-This scopes the next slice of
+Status: first encrypted initialization/inspection slice implemented for disposable
+rehearsals; production lifecycle remains planned. Revised 2026-09-23.
+This scopes the custody work in
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md#1-build-the-omega-suite). The
 [implemented commands](omega-operations.md) still require disposable custody.
-The production behavior described here is not implemented yet.
+See the [encrypted rehearsal](omega-operations.md#rehearse-encrypted-custody-and-backup-restoration)
+for the available commands. Production creation remains gated.
 
 ## Launch criteria and accepted limits
 
@@ -91,7 +93,11 @@ encrypted key allocations, stage and verify the complete authority, then promote
 it atomically without replacing an existing authority. Preserve the existing
 locking and durability guarantees. Durable allocations and signed root bytes
 must survive retries unchanged; corruption must not trigger silent regeneration.
-Resolve incomplete first-write recovery in the encrypted backend implementation.
+The implemented backend fixes individually encrypted keys in a stage-only
+allocation before producing public output. It replaces a torn first write only
+before derived output exists, preserves complete allocations even when unlocking
+fails, and retires the aggregate before promotion. A complete retry uses the same
+ciphertext and authority. See the operator guide for the files and restore check.
 
 A failure before promotion leaves inactive pending work; after promotion, report
 the committed identity and any unconfirmed durability. Never expose a partial
@@ -163,10 +169,13 @@ for out-of-band root replacement after root-quorum compromise.
 
 ## Implementation scope
 
-1. **Encrypted custody and public inspection.** Add schema 2 and encrypted key
-   access, separate public verification from unlocking, and reuse the existing
-   atomic initialization transaction. Keep schema 1 disposable-only.
-2. **Existing lifecycle and launch rehearsal.** Carry the backend through
+1. **Encrypted custody and public inspection — implemented for rehearsal.**
+   `init --encrypted --disposable` creates schema 2 and separate age-encrypted key
+   files through the atomic initialization transaction. Ordinary `status` verifies
+   public identity without passwords; `status --check-keys` verifies all recovered
+   files. Schema 1 stays disposable-only. Focused tests cover allocation recovery,
+   unlock/binding failures, and restoring a backup with working keys unavailable.
+2. **Existing lifecycle and launch rehearsal — next.** Carry the backend through
    approval, rotation, renewal provisioning, and status. Document and test backup
    restore and deliberate reset with throwaway keys. Retire the standalone
    `omega` binary and update its consumers when the replacement is complete.

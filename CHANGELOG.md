@@ -4,6 +4,13 @@
 
 ### Public discovery
 
+- Add `soph omega init --encrypted --disposable` with a public-only schema-2
+  authority and six separate age-encrypted key files. Recover interrupted
+  initialization without replacing allocations, inspect public identity without
+  passwords, and verify a restored backup with `status --check-keys`. Document
+  terminal unlock, missing/damaged key reports, and backup recovery. Encrypted
+  publication/rotation and production creation remain gated for the next slice.
+
 - Renew omega snapshot/timestamp metadata daily with seven-day validity, retaining
   hourly scheduler checks/retries and root/membership expiry caps. Preserve older
   one-day releases and interrupted signing reservations byte-for-byte; their

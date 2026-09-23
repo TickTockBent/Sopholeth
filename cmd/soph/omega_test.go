@@ -3,12 +3,15 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOmegaCLI(t *testing.T) {
@@ -368,5 +371,46 @@ func TestOmegaRotationCLI(t *testing.T) {
 				t.Fatal("rotation accessed client profiles")
 			}
 		})
+	}
+}
+
+func TestOmegaEncryptedPromptAndProductionGate(t *testing.T) {
+	ta := newTestApp(t)
+	home := filepath.Join(t.TempDir(), "encrypted")
+	calls := 0
+	wantTimeout := 2 * time.Minute
+	ta.app.omegaPassphrase = func(ctx context.Context, confirm bool) ([]byte, error) {
+		calls++
+		deadline, ok := ctx.Deadline()
+		if remaining := time.Until(deadline); !ok || remaining <= 0 || remaining > wantTimeout || (wantTimeout == 2*time.Minute && remaining < time.Minute) {
+			t.Fatalf("prompt deadline = %v, want approximately %v", remaining, wantTimeout)
+		}
+		if !confirm {
+			t.Fatal("new encrypted allocation did not request confirmation")
+		}
+		return nil, errors.New("test terminal cancelled")
+	}
+	args := []string{"--json", "omega", "init", "--encrypted", "--home", home, "--network", "rehearsal", "--repository", "https://metadata.example.invalid"}
+	code, _, _ := ta.run("", args...)
+	if code != exitUsage || calls != 0 {
+		t.Fatal("production gate requested a password or initialized authority")
+	}
+	code, out, _ := ta.run("", append(args, "--disposable")...)
+	r := decodeJSON(t, out)
+	if code != exitError || calls != 1 || r["state"] != "pending" || r["custody"] != "age-scrypt" || r["problem"] == nil {
+		t.Fatalf("cancelled prompt did not report recoverable staging: %d %s", code, out)
+	}
+	ta.run("", "omega", "status", "--home", home, "--network", "rehearsal")
+	if calls != 1 {
+		t.Fatal("public status requested a passphrase")
+	}
+	code, _, _ = ta.run("", "omega", "status", "--home", home, "--network", "rehearsal", "--verify", "--check-keys")
+	if code != exitUsage || calls != 1 {
+		t.Fatal("conflicting status operations were accepted")
+	}
+	wantTimeout = 5 * time.Second
+	code, _, _ = ta.run("", append([]string{"--timeout", "5s"}, append(args, "--disposable")...)...)
+	if code != exitError || calls != 2 {
+		t.Fatal("explicit prompt timeout was not exercised")
 	}
 }

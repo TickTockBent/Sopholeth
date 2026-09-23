@@ -50,11 +50,15 @@ type app struct {
 	// httptest client.
 	newHTTPClient func() *http.Client
 
+	// Tests may substitute terminal input without exposing a password flag.
+	omegaPassphrase func(context.Context, bool) ([]byte, error)
+
 	// Populated from global flags.
 	configPath  string
 	networkFlag string
 	jsonOut     bool
 	timeout     time.Duration
+	timeoutSet  bool
 }
 
 func main() {
@@ -108,6 +112,12 @@ func (a *app) run(ctx context.Context, args []string) int {
 	if err := global.Parse(args); err != nil {
 		return a.fail(usagef("%v", err))
 	}
+	a.timeoutSet = false
+	global.Visit(func(f *flag.Flag) {
+		if f.Name == "timeout" {
+			a.timeoutSet = true
+		}
+	})
 	rest := global.Args()
 	if *showHelp || len(rest) == 0 {
 		if err := a.printUsage(a.stdout); err != nil {
@@ -271,7 +281,7 @@ Authority operations:
 Global flags:
   --network <name>   use a saved network for this command (also SOPH_NETWORK)
   --json             machine-readable output
-  --timeout <dur>    per-request timeout (default 15s)
+  --timeout <dur>    timeout (default 15s; encrypted omega init/check-keys 2m)
   --config <path>    config file (default $SOPH_CONFIG_DIR/soph.json)
 
 Use 'soph <command> --help' for command-specific flags and arguments.

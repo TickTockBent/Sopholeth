@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"sopholeth/internal/omega"
 )
@@ -27,7 +28,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	var disposable bool
 	var manifestPath, directory string
 	var version int64
-	var verify, renew bool
+	var verify, renew, encrypted, checkKeys bool
 	var renewalHome string
 	var rootVersion int64
 	var apply string
@@ -37,6 +38,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 		fs.BoolVar(&disposable, "disposable", false, "use development/rehearsal keys; production custody is not implemented")
 	}
 	if cmd == "init" {
+		fs.BoolVar(&encrypted, "encrypted", false, "rehearse encrypted key files and public-only authority records (requires --disposable; init/status only)")
 		fs.StringVar(&repository, "repository", "", "HTTPS metadata repository origin (required; base paths are planned)")
 	} else if cmd == "provision-renewal" {
 		fs.StringVar(&renewalHome, "renewal-home", "", "separate private operational home for online keys and publication state (required)")
@@ -52,6 +54,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 		fs.Int64Var(&version, "version", 0, "release number: latest for retry, next for new approval (required; starts at 1)")
 	} else {
 		fs.BoolVar(&verify, "verify", false, "verify the latest prepared release through HTTPS, recording the result")
+		fs.BoolVar(&checkKeys, "check-keys", false, "unlock encrypted key files and verify a restored copy against its public authority")
 	}
 	pos, err := parseInterspersed(fs, args[1:])
 	if err != nil {
@@ -63,14 +66,25 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	if a.networkFlag != "" {
 		return usagef("omega uses its own --network after the subcommand, not the global client-profile flag")
 	}
-	opCtx, cancel := a.requestContext(ctx)
+	if verify && checkKeys {
+		return usagef("omega status accepts either --verify or --check-keys, not both")
+	}
+	passphrase := a.omegaPassphrase
+	if passphrase == nil {
+		passphrase = readOmegaPassphrase
+	}
+	timeout := a.timeout
+	if (encrypted || checkKeys) && !a.timeoutSet {
+		timeout = 2 * time.Minute
+	}
+	opCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var report omega.Report
 	if cmd == "init" {
 		if repository == "" || !disposable {
 			return usagef("omega init requires --repository and --disposable")
 		}
-		report, err = omega.Init(opCtx, omega.InitOptions{Home: *home, Network: *network, Repository: repository, Disposable: disposable})
+		report, err = omega.Init(opCtx, omega.InitOptions{Home: *home, Network: *network, Repository: repository, Disposable: disposable, Encrypted: encrypted, Passphrase: passphrase})
 	} else if cmd == "provision-renewal" {
 		if !disposable || renewalHome == "" {
 			return usagef("omega provision-renewal requires --renewal-home and --disposable")
@@ -109,6 +123,8 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 			return closeErr
 		}
 		report, err = omega.Publish(opCtx, omega.PublishOptions{Home: *home, Network: *network, Directory: directory, Manifest: manifest, Version: version, Disposable: disposable, HTTPClient: a.newHTTPClient()})
+	} else if checkKeys {
+		report, err = omega.CheckKeys(opCtx, *home, *network, passphrase)
 	} else if verify {
 		report, err = omega.VerifyPublication(opCtx, *home, *network, a.newHTTPClient())
 	} else {
@@ -139,6 +155,14 @@ func (a *app) printOmegaReport(r omega.Report) error {
 		for _, role := range []string{"root", "targets", "snapshot", "timestamp"} {
 			keys := r.Roles[role]
 			fmt.Fprintf(&out, "%s: %d-of-%d; key IDs %s\n", role, keys.Threshold, len(keys.KeyIDs), strings.Join(keys.KeyIDs, ", "))
+		}
+	}
+	if r.Custody != "" {
+		fmt.Fprintf(&out, "Custody: %s\n", r.Custody)
+		for _, name := range []string{"root-1", "root-2", "root-3", "targets", "snapshot", "timestamp"} {
+			if state := r.KeyFiles[name]; state != "" {
+				fmt.Fprintf(&out, "%s key file: %s\n", name, state)
+			}
 		}
 	}
 	if r.OperationalHome != "" {

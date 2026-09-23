@@ -34,6 +34,10 @@ type InitOptions struct {
 	Network    string
 	Repository string
 	Disposable bool
+	Encrypted  bool
+	// Passphrase is called only when private material is needed. Confirm is
+	// true for a new allocation; retries and key checks only unlock existing keys.
+	Passphrase func(ctx context.Context, confirm bool) ([]byte, error)
 }
 
 // This private transaction record is durable before signing. All recovery
@@ -66,6 +70,8 @@ type Report struct {
 	Schema          int                   `json:"schema"`
 	State           string                `json:"state"`
 	Mode            string                `json:"mode,omitempty"`
+	Custody         string                `json:"custody,omitempty"`
+	KeyFiles        map[string]string     `json:"key_files,omitempty"`
 	Network         string                `json:"network,omitempty"`
 	Repository      string                `json:"repository,omitempty"`
 	Fingerprint     string                `json:"fingerprint,omitempty"`
@@ -85,6 +91,10 @@ func Init(ctx context.Context, opts InitOptions) (Report, error) {
 }
 
 func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(string) error) (Report, error) {
+	return initializeWithCodec(ctx, opts, now, hook, defaultKeyCodec())
+}
+
+func initializeWithCodec(ctx context.Context, opts InitOptions, now time.Time, hook func(string) error, codec keyCodec) (Report, error) {
 	if !opts.Disposable {
 		return Report{}, errors.New("omega: --disposable is required until production custody and recovery are implemented")
 	}
@@ -110,15 +120,21 @@ func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(
 		if err != nil {
 			return report, err
 		}
-		if report.Network != opts.Network || report.Repository != repository {
+		if report.Network != opts.Network || report.Repository != repository || opts.Encrypted != (report.Custody == encryptedCustody) {
 			err := errors.New("omega: network already has an authority with different configuration")
 			report.Problem = err.Error()
-			report.Action = "Check --network and --repository against the existing authority; do not replace its material."
+			report.Action = "Check --network, --repository, and --encrypted against the existing authority; do not replace its material."
 			return report, err
+		}
+		if opts.Encrypted {
+			if err := requireKeyFiles(report); err != nil {
+				report.Problem, report.Action = err.Error(), "Restore the unavailable encrypted key files; do not initialize a replacement authority."
+				return report, err
+			}
 		}
 		// A prior caller may have died after rename but before the parent fsync.
 		if err := home.syncDir(); err != nil {
-			return Report{}, err
+			return committedInitFailure(report, err)
 		}
 		return report, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -139,26 +155,33 @@ func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(
 		return Report{}, err
 	}
 	defer stage.close()
-	if err := stage.checkEntries(true); err != nil {
+	if err := stage.checkEntries(true, opts.Encrypted); err != nil {
 		return Report{}, err
 	}
-	planned, err := stage.prepareAuthority(opts, now)
-	if err != nil {
-		return Report{}, err
-	}
-	if !now.Before(planned.Expires) {
-		return Report{}, errors.New("omega: staged authority has expired; preserve its keys for explicit recovery, never initialize a replacement")
-	}
-	outputs, err := buildOutputs(planned)
-	if err != nil {
-		return Report{}, err
-	}
-	for _, name := range []string{"1.root.json", "bundle.json"} {
-		if err := ctx.Err(); err != nil {
+	if opts.Encrypted {
+		if err := stage.prepareEncrypted(ctx, opts, now, codec); err != nil {
+			return Report{Schema: 1, State: "pending", Mode: "disposable", Custody: encryptedCustody, Network: opts.Network, Repository: opts.Repository,
+				Publication: "not_checked", Problem: err.Error(), Action: "Preserve staging; check the passphrase and rerun the same encrypted init, or restore damaged allocations from backup."}, err
+		}
+	} else {
+		planned, err := stage.prepareAuthority(opts, now)
+		if err != nil {
 			return Report{}, err
 		}
-		if err := stage.install(name, outputs[name]); err != nil {
+		if !now.Before(planned.Expires) {
+			return Report{}, errors.New("omega: staged authority has expired; preserve its keys for explicit recovery, never initialize a replacement")
+		}
+		outputs, err := buildOutputs(planned)
+		if err != nil {
 			return Report{}, err
+		}
+		for _, name := range []string{"1.root.json", "bundle.json"} {
+			if err := ctx.Err(); err != nil {
+				return Report{}, err
+			}
+			if err := stage.install(name, outputs[name]); err != nil {
+				return Report{}, err
+			}
 		}
 	}
 	receipt, _, err := stage.verify()
@@ -168,12 +191,41 @@ func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(
 	if err := stage.install("complete.json", record(receipt)); err != nil {
 		return Report{}, err
 	}
-	if err := stage.cleanPending(); err != nil {
+	files := authorityFiles
+	if opts.Encrypted {
+		files = encryptedAuthorityFiles()
+		// Read back every separate encrypted file before retiring the only
+		// aggregate recovery copy. The public receipt alone does not check keys.
+		p, err := stage.readPublicAuthority()
+		if err != nil {
+			return Report{}, err
+		}
+		if err := requireKeyFiles(Report{KeyFiles: stage.encryptedKeyStatus(p)}); err != nil {
+			return Report{}, err
+		}
+	}
+	if err := stage.cleanPending(files); err != nil {
 		return Report{}, err
+	}
+	if opts.Encrypted {
+		if err := stage.root.Remove(allocationName); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return Report{}, err
+		}
+		if err := stage.syncDir(); err != nil {
+			return Report{}, err
+		}
+		if err := stage.phase("encrypted:allocation-retired"); err != nil {
+			return Report{}, err
+		}
 	}
 	report, err := stage.inspect(now)
 	if err != nil {
 		return Report{}, err
+	}
+	if opts.Encrypted {
+		if err := requireKeyFiles(report); err != nil {
+			return Report{}, err
+		}
 	}
 	if err := stage.phase("verified"); err != nil {
 		return Report{}, err
@@ -187,15 +239,22 @@ func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(
 		return Report{}, err
 	}
 	if err := home.phase("promoted"); err != nil {
-		return Report{}, err
+		return committedInitFailure(report, err)
 	}
 	if err := home.syncDir(); err != nil {
-		return Report{}, fmt.Errorf("omega: authority is complete but commit durability is unconfirmed; rerun the same init command: %w", err)
+		return committedInitFailure(report, err)
 	}
 	if err := home.phase("committed"); err != nil {
-		return Report{}, err
+		return committedInitFailure(report, err)
 	}
 	return report, nil
+}
+
+func committedInitFailure(report Report, err error) (Report, error) {
+	err = fmt.Errorf("omega: authority is complete but commit durability is unconfirmed: %w", err)
+	report.Problem = err.Error()
+	report.Action = "Rerun the same init command to confirm the existing commit; never initialize a replacement."
+	return report, err
 }
 
 func (s *store) prepareAuthority(opts InitOptions, now time.Time) (authority, error) {
@@ -315,6 +374,15 @@ func status(ctx context.Context, homePath, network string, verify bool, httpClie
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
+	if report.Custody == encryptedCustody {
+		if verify {
+			return encryptedLifecyclePending(report)
+		}
+		if report.State == "expired" {
+			return report, errRootExpired
+		}
+		return report, nil
+	}
 	_, bundle, err := current.verify()
 	if err != nil {
 		return report, err
@@ -338,7 +406,12 @@ func failedReport(err error) Report {
 }
 
 func (s *store) inspect(now time.Time) (Report, error) {
-	if err := s.checkEntries(false); err != nil {
+	data, err := s.read("authority.json")
+	if err != nil {
+		return failedReport(err), err
+	}
+	encrypted := authoritySchema(data) == 2
+	if err := s.checkEntries(false, encrypted); err != nil {
 		return failedReport(err), err
 	}
 	expected, bundle, err := s.verify()
@@ -354,7 +427,22 @@ func (s *store) inspect(now time.Time) (Report, error) {
 		err := errors.New("omega: completion receipt does not match authority material")
 		return failedReport(err), err
 	}
-	return inspectBundle(bundle, now)
+	report, err := inspectBundle(bundle, now)
+	if encrypted {
+		p, readErr := s.readPublicAuthority()
+		if readErr != nil {
+			return failedReport(readErr), readErr
+		}
+		report.Custody, report.KeyFiles = encryptedCustody, s.encryptedKeyStatus(p)
+		report.Action = "Back up this disposable encrypted home and verify a restored copy with soph omega status --check-keys. Publishing and rotation are not implemented for encrypted custody yet."
+		if keyErr := requireKeyFiles(report); keyErr != nil {
+			report.Action = "Public authority is intact. Restore unavailable encrypted keys before signing; status --check-keys verifies the recovered copies."
+		}
+		if err != nil {
+			report.Action = "Preserve this expired encrypted authority and its keys for explicit recovery; never reinitialize it."
+		}
+	}
+	return report, err
 }
 
 func inspectBundle(bundle bootstrap.Bundle, now time.Time) (Report, error) {
@@ -417,12 +505,30 @@ func buildOutputs(planned authority) (map[string][]byte, error) {
 	if err := planned.validate(); err != nil {
 		return nil, err
 	}
-	root := metadata.Root(planned.Expires)
+	public := map[string]string{}
+	for _, name := range keyNames {
+		private, _ := decodeKey(planned.Keys[name])
+		public[name] = base64.StdEncoding.EncodeToString(private.Public().(ed25519.PublicKey))
+	}
+	return buildPublicOutputs(planned.Network, planned.Repository, planned.Expires, public, func(name string) (signature.Signer, error) {
+		private, err := decodeKey(planned.Keys[name])
+		if err != nil {
+			return nil, err
+		}
+		return signature.LoadSigner(private, crypto.Hash(0))
+	})
+}
+
+func buildPublicOutputs(network, repository string, expires time.Time, public map[string]string, signerFor func(string) (signature.Signer, error)) (map[string][]byte, error) {
+	root := metadata.Root(expires)
 	root.Signed.ConsistentSnapshot = true
 	root.Signed.Roles[metadata.ROOT].Threshold = 2
 	for _, name := range keyNames {
-		private, _ := decodeKey(planned.Keys[name])
-		key, err := metadata.KeyFromPublicKey(private.Public())
+		publicKey, err := decodePublicKey(public[name])
+		if err != nil {
+			return nil, err
+		}
+		key, err := metadata.KeyFromPublicKey(publicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -435,8 +541,7 @@ func buildOutputs(planned authority) (map[string][]byte, error) {
 		}
 	}
 	for _, name := range keyNames[:2] {
-		private, _ := decodeKey(planned.Keys[name])
-		signer, err := signature.LoadSigner(private, crypto.Hash(0))
+		signer, err := signerFor(name)
 		if err != nil {
 			return nil, err
 		}
@@ -448,7 +553,7 @@ func buildOutputs(planned authority) (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	bundle := bootstrap.Bundle{Schema: 1, Network: planned.Network, Repository: planned.Repository, Root: raw}
+	bundle := bootstrap.Bundle{Schema: 1, Network: network, Repository: repository, Root: raw}
 	encoded := record(bundle)
 	if _, err := bootstrap.ParseBundle(encoded); err != nil {
 		return nil, fmt.Errorf("omega: verify emitted bundle: %w", err)
@@ -460,6 +565,9 @@ func (s *store) verify() (completion, bootstrap.Bundle, error) {
 	data, err := s.read("authority.json")
 	if err != nil {
 		return completion{}, bootstrap.Bundle{}, err
+	}
+	if authoritySchema(data) == 2 {
+		return s.verifyPublicAuthority(data)
 	}
 	var planned authority
 	if err := decodeRecord(data, &planned); err != nil {
@@ -493,14 +601,26 @@ func (s *store) verify() (completion, bootstrap.Bundle, error) {
 // Inspect existing signatures and role assignments. Status never signs new
 // metadata or compares against a root regenerated with library defaults.
 func verifyAuthorityRoot(planned authority, bundle bootstrap.Bundle, raw []byte) error {
-	if bundle.Network != planned.Network || bundle.Repository != planned.Repository || !bytes.Equal(raw, bundle.Root) {
+	public := map[string]string{}
+	for _, name := range keyNames {
+		private, err := decodeKey(planned.Keys[name])
+		if err != nil {
+			return err
+		}
+		public[name] = base64.StdEncoding.EncodeToString(private.Public().(ed25519.PublicKey))
+	}
+	return verifyPublicRoot(planned.Network, planned.Repository, planned.Expires, public, bundle, raw)
+}
+
+func verifyPublicRoot(network, repository string, expires time.Time, publicKeys map[string]string, bundle bootstrap.Bundle, raw []byte) error {
+	if bundle.Network != network || bundle.Repository != repository || !bytes.Equal(raw, bundle.Root) {
 		return errors.New("omega: public bundle does not match the authority or initial root")
 	}
 	root, err := metadata.Root().FromBytes(raw)
 	if err != nil {
 		return err
 	}
-	if root.Signed.Version != 1 || !root.Signed.Expires.Equal(planned.Expires) || len(root.Signed.Keys) != 6 || len(root.Signed.Roles) != 4 {
+	if root.Signed.Version != 1 || !root.Signed.Expires.Equal(expires) || len(root.Signed.Keys) != 6 || len(root.Signed.Roles) != 4 {
 		return errors.New("omega: initial root policy does not match the authority")
 	}
 	for _, roleName := range metadata.TOP_LEVEL_ROLE_NAMES {
@@ -514,8 +634,11 @@ func verifyAuthorityRoot(planned authority, bundle bootstrap.Bundle, raw []byte)
 		}
 		expected := map[string]bool{}
 		for _, name := range names {
-			private, _ := decodeKey(planned.Keys[name])
-			expected[string(private[ed25519.SeedSize:])] = true
+			public, err := decodePublicKey(publicKeys[name])
+			if err != nil {
+				return err
+			}
+			expected[string(public)] = true
 		}
 		for _, id := range role.KeyIDs {
 			key := root.Signed.Keys[id]
@@ -528,7 +651,7 @@ func verifyAuthorityRoot(planned authority, bundle bootstrap.Bundle, raw []byte)
 			}
 			edKey, ok := public.(ed25519.PublicKey)
 			if !ok || !expected[string(edKey)] {
-				return errors.New("omega: root role key does not match private authority material")
+				return errors.New("omega: root role key does not match authority material")
 			}
 			delete(expected, string(edKey))
 		}
@@ -536,7 +659,7 @@ func verifyAuthorityRoot(planned authority, bundle bootstrap.Bundle, raw []byte)
 	return nil
 }
 
-func (s *store) checkEntries(pending bool) error {
+func (s *store) checkEntries(pending, encrypted bool) error {
 	dir, err := s.root.Open(".")
 	if err != nil {
 		return err
@@ -547,7 +670,18 @@ func (s *store) checkEntries(pending bool) error {
 		return err
 	}
 	allowed := map[string]bool{}
-	for _, name := range authorityFiles {
+	files := authorityFiles
+	private := map[string]bool{}
+	if encrypted {
+		files = encryptedAuthorityFiles()
+		for _, name := range keyNames {
+			private[encryptedKeyName(name)] = true
+		}
+	}
+	for _, name := range files {
+		if name == allocationName && !pending {
+			continue
+		}
 		allowed[name] = true
 		if pending {
 			allowed[name+".pending"] = true
@@ -556,6 +690,11 @@ func (s *store) checkEntries(pending bool) error {
 	for _, entry := range entries {
 		if !allowed[entry.Name()] {
 			return fmt.Errorf("omega: unexpected authority entry %q", entry.Name())
+		}
+		// Public inspection reports absent/unsafe encrypted files separately.
+		// Initialization still checks every file before committing the stage.
+		if encrypted && !pending && private[entry.Name()] {
+			continue
 		}
 		info, err := entry.Info()
 		if err != nil {

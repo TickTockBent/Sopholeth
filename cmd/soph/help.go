@@ -14,10 +14,10 @@ func (*commandHelp) Error() string { return "help requested" }
 
 func (a *app) printCommandHelp(fs *flag.FlagSet) error {
 	commands := map[string]struct{ args, description string }{
-		"omega init":              {"--home path --network id --repository https://host --disposable", "Create a complete authority atomically. Repeating the command recovers or verifies the same authority; existing keys are never replaced."},
+		"omega init":              {"--home path --network id --repository https://host --disposable [--encrypted]", "Create a complete authority atomically. Repeating the command recovers or verifies the same authority; existing keys are never replaced. --encrypted rehearses encrypted custody (init/status only)."},
 		"omega provision-renewal": {"--home offline-path --network id --renewal-home online-path --disposable", "Provision only the online keys and hand off publication state to a separate home. Repeating the same command recovers the handoff."},
 		"omega publish":           {"--home path --network id --disposable [--renew | --manifest path --repository-dir path --version n]", "Publish an approved manifest through the offline authority, or use --renew from the operational home to refresh due metadata using online keys. Verify the exact release over HTTPS."},
-		"omega status":            {"--home path --network id [--verify]", "Inspect authority and release state. With --verify, fetch and verify the latest prepared release over HTTPS."},
+		"omega status":            {"--home path --network id [--verify | --check-keys]", "Inspect authority and release state. --verify checks the latest prepared release over HTTPS; --check-keys unlocks a restored encrypted copy and checks its keys against the public authority."},
 		"omega rotate":            {"--home offline-path --network id --root-version n --disposable [--role online|targets] [--apply root-sha256]", "Prepare replacement online keys (default) or the offline membership key (--role targets) and a root-signed transition. Review the digest and key IDs, then apply that exact digest. Repeating the same version resumes the same transition."},
 		"join":                    {"[endpoint] [--name name] [--public]", "Validate and save a node, making its network current. Without an endpoint, use signed public discovery."},
 		"use":                     {"<name>", "Make a saved network current."},
