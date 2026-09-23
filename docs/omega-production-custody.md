@@ -177,7 +177,11 @@ for out-of-band root replacement after root-quorum compromise.
    unlock/binding failures, and restoring a backup with working keys unavailable.
 2. **Existing lifecycle and launch rehearsal — next.** Carry the backend through
    approval, rotation, renewal provisioning, and status. Document and test backup
-   restore and deliberate reset with throwaway keys. Retire the standalone
+   restore and deliberate reset with throwaway keys. Require at least 12
+   characters when choosing a new passphrase, enforced by both the prompt and
+   key-creation backend before allocating encrypted keys. Count characters, not
+   bytes. Continue accepting existing passphrases for unlock and recovery so this
+   creation policy cannot lock operators out of older files. Retire the standalone
    `omega` binary and update its consumers when the replacement is complete.
 
 These slices must demonstrate the two launch criteria above. Air gaps, independent
