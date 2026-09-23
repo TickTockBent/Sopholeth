@@ -28,6 +28,9 @@ func applyRoot(t *testing.T, opts RotateOptions) Report {
 }
 
 func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
+	// One end-to-end chain covers retries, active-key selection across repeated
+	// generations of every role, and fresh/returning clients. Role-specific tests
+	// below and in the other rotation files cover their distinct approval rules.
 	f, online, opts := rotationFixture(t)
 	ctx := context.Background()
 	bundle := fixtureBundle(t, f)
@@ -63,6 +66,7 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 		}
 		_, err = Rotate(ctx, opts)
 		must(t, err)
+		assertAbsent(t, filepath.Join(onlineState(online), releaseName(opts.RootVersion+1)))
 		if role == "root" {
 			r := recordedRelease(t, online, opts.RootVersion)
 			if r.Schema != 6 || !bytes.Equal(r.Manifest, first.Manifest) || !r.approvalTime().Equal(r.Created) {
@@ -71,10 +75,11 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 		}
 		opts.RootVersion++
 	}
+	last := recordedRelease(t, online, 7)
 	for _, client := range []*bootstrap.Client{returning, fixtureClient(t, bundle, opts.HTTPClient)} {
 		view, err := client.Refresh(ctx)
 		must(t, err)
-		if view.Versions.Root != 7 {
+		if view.Versions != last.versions() || view.MetadataSHA256["root"] != opts.Apply {
 			t.Fatal("client failed to cross retained authority and role transitions")
 		}
 	}
@@ -136,34 +141,36 @@ func TestRootRotationExpiredAuthorityRecovery(t *testing.T) {
 }
 
 func TestRootRotationSingleSignerLoss(t *testing.T) {
+	f, online, opts := rotationFixture(t)
+	applyRoot(t, opts)
+	// Lose each signer position in successive generations: every surviving pair
+	// must authorize its replacement without recreating a missing private key.
 	for _, missing := range keyNames[:3] {
-		t.Run(missing, func(t *testing.T) {
-			f, online, opts := rotationFixture(t)
-			applyRoot(t, opts)
-			path := filepath.Join(f.opts.Home, opts.Network+".rotations", rootKeyName(2, missing))
-			must(t, os.Remove(path))
-			opts.RootVersion = 3
-			applyRoot(t, opts)
-			assertAbsent(t, path)
-			view, err := fixtureClient(t, fixtureBundle(t, f), opts.HTTPClient).Refresh(context.Background())
-			must(t, err)
-			if view.Versions.Root != 3 {
-				t.Fatal("surviving quorum did not authorize replacement")
-			}
-			for _, name := range keyNames[:2] {
-				must(t, os.Remove(filepath.Join(f.opts.Home, opts.Network+".rotations", rootKeyName(3, name))))
-			}
-			opts.RootVersion, opts.Role = 4, "root"
-			if _, err := Rotate(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "quorum") {
-				t.Fatalf("lost quorum accepted: %v", err)
-			}
-			assertAbsent(t, filepath.Join(onlineState(online), rotationIntentName(4)))
-		})
+		path := filepath.Join(f.opts.Home, opts.Network+".rotations", rootKeyName(opts.RootVersion, missing))
+		must(t, os.Remove(path))
+		opts.RootVersion++
+		applyRoot(t, opts)
+		assertAbsent(t, path)
 	}
+	view, err := fixtureClient(t, fixtureBundle(t, f), opts.HTTPClient).Refresh(context.Background())
+	must(t, err)
+	if view.Versions.Root != opts.RootVersion {
+		t.Fatal("surviving quorums did not authorize replacements")
+	}
+	for _, name := range keyNames[:2] {
+		must(t, os.Remove(filepath.Join(f.opts.Home, opts.Network+".rotations", rootKeyName(opts.RootVersion, name))))
+	}
+	opts.RootVersion++
+	opts.Role = "root"
+	if _, err := Rotate(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "quorum") {
+		t.Fatalf("lost quorum accepted: %v", err)
+	}
+	assertAbsent(t, filepath.Join(onlineState(online), rotationIntentName(opts.RootVersion)))
 }
 
 func TestRootRotationPreparationRecovery(t *testing.T) {
-	for _, phase := range []string{"2.root-plan.json:written", "2.root-plan.json:linked", "rotation:root-plan-durable", "2.root-1-key.json:written", "2.root-2-key.json:linked", "rotation:root-keys-durable", "2.rotation-intent.json:written", "rotation:keys-durable", "2.rotation.json:written", "2.rotation.json:linked"} {
+	// The root-specific transaction spans a public plan and three private keys.
+	for _, phase := range []string{"2.root-plan.json:written", "2.root-plan.json:linked", "2.root-1-key.json:written", "2.root-2-key.json:linked", "rotation:root-keys-durable"} {
 		t.Run(phase, func(t *testing.T) {
 			f, online, opts := rotationFixture(t)
 			opts.Role = "root"
@@ -215,7 +222,8 @@ func TestRootRotationPreparationRecovery(t *testing.T) {
 }
 
 func TestRootRotationApplyRecovery(t *testing.T) {
-	for _, phase := range []string{"2.rotation-apply.json:written", "rotation:apply-durable", "2.rotation-targets.json:written", "rotation:targets-durable", "2.release.json:written", "2.release.json:linked", "public:2.targets.json:visible", "public:2.root.json:visible", "public:timestamp.json:visible", "publication:verified"} {
+	// Root approval has its own offline-signing handoff and activation boundary.
+	for _, phase := range []string{"rotation:apply-durable", "2.rotation-targets.json:written", "public:2.root.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
 			f, online, opts := rotationFixture(t)
 			opts.Role = "root"
@@ -232,7 +240,7 @@ func TestRootRotationApplyRecovery(t *testing.T) {
 			if !errors.Is(err, stop) {
 				t.Fatalf("missed boundary: %v", err)
 			}
-			if phase == "2.rotation-apply.json:written" || phase == "rotation:apply-durable" {
+			if phase == "rotation:apply-durable" {
 				if _, err := Renew(context.Background(), online); !errors.Is(err, errOfflineHandoff) {
 					t.Fatalf("scheduler bypassed missing approval: %v", err)
 				}
@@ -249,7 +257,8 @@ func TestRootRotationApplyRecovery(t *testing.T) {
 	}
 }
 
-func TestRootRotationThresholdsAndCustodyIsolation(t *testing.T) {
+func TestRootRotationPolicyAndCustodyIsolation(t *testing.T) {
+	// Prepare once; threshold and signed-policy checks only mutate memory.
 	f, online, opts := rotationFixture(t)
 	opts.Role = "root"
 	_, err := Rotate(context.Background(), opts)
@@ -278,11 +287,43 @@ func TestRootRotationThresholdsAndCustodyIsolation(t *testing.T) {
 			t.Fatalf("accepted insufficient quorum %v", keep)
 		}
 	}
+	var a authority
+	must(t, decodeRecord(file(t, filepath.Join(f.opts.Home, opts.Network, "authority.json")), &a))
 	var privateKeys []string
 	for _, name := range keyNames[:3] {
 		var c membershipCustody
 		must(t, decodeRecord(file(t, filepath.Join(f.opts.Home, opts.Network+".rotations", rootKeyName(2, name))), &c))
 		privateKeys = append(privateKeys, c.Key)
+	}
+	must(t, r.validate(bundle, bundle.Root, intent))
+	for _, kind := range []string{"expiry", "threshold", "targets", "consistent-snapshot"} {
+		t.Run(kind, func(t *testing.T) {
+			copyRoot, err := metadata.Root().FromBytes(r.Root)
+			must(t, err)
+			switch kind {
+			case "expiry":
+				copyRoot.Signed.Expires = copyRoot.Signed.Expires.Add(time.Hour)
+			case "threshold":
+				copyRoot.Signed.Roles[metadata.ROOT].Threshold = 1
+			case "targets":
+				copyRoot.Signed.Roles[metadata.TARGETS].Threshold = 2
+			case "consistent-snapshot":
+				copyRoot.Signed.ConsistentSnapshot = false
+			}
+			copyRoot.Signatures = nil
+			for i, name := range keyNames[:2] {
+				_, err = signMetadata(copyRoot, a.Keys[name])
+				must(t, err)
+				_, err = signMetadata(copyRoot, privateKeys[i])
+				must(t, err)
+			}
+			bad := r
+			bad.Root, err = copyRoot.ToBytes(false)
+			must(t, err)
+			if err := bad.validate(bundle, bundle.Root, intent); err == nil {
+				t.Fatal("both quorums bypassed local policy or reviewed expiry")
+			}
+		})
 	}
 	for _, dir := range []string{online.Home, f.opts.Directory} {
 		must(t, filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
@@ -334,64 +375,28 @@ func TestRootRotationExpiredApplyAndOfflineRepair(t *testing.T) {
 	}
 }
 
-func TestRootRotationRejectsDamagedCustodyAndSignedPolicyChanges(t *testing.T) {
-	for _, kind := range []string{"missing-plan", "changed-signer", "missing-quorum", "expiry", "threshold", "targets", "consistent-snapshot"} {
+func TestRootRotationRejectsDamagedCustody(t *testing.T) {
+	for _, kind := range []string{"missing-plan", "changed-signer", "missing-quorum"} {
 		t.Run(kind, func(t *testing.T) {
-			f, online, opts := rotationFixture(t)
+			f, _, opts := rotationFixture(t)
 			opts.Role = "root"
 			_, err := Rotate(context.Background(), opts)
 			must(t, err)
 			keyDir := filepath.Join(f.opts.Home, opts.Network+".rotations")
-			if kind == "missing-plan" || kind == "changed-signer" || kind == "missing-quorum" {
-				switch kind {
-				case "missing-plan":
-					must(t, os.Remove(filepath.Join(keyDir, rootPlanName(2))))
-				case "changed-signer":
-					must(t, os.WriteFile(filepath.Join(keyDir, rootKeyName(2, "root-1")), file(t, filepath.Join(keyDir, rootKeyName(2, "root-2"))), 0600))
-				case "missing-quorum":
-					for _, name := range keyNames[:2] {
-						must(t, os.Remove(filepath.Join(keyDir, rootKeyName(2, name))))
-					}
-				}
-				if _, err := Rotate(context.Background(), opts); err == nil {
-					t.Fatal("damaged custody accepted")
-				}
-				assertAbsent(t, filepath.Join(f.opts.Directory, "2.root.json"))
-				return
-			}
-			var r rotationRecord
-			must(t, decodeRecord(file(t, filepath.Join(onlineState(online), rotationName(2))), &r))
-			var intent rotationIntent
-			must(t, decodeRecord(file(t, filepath.Join(onlineState(online), rotationIntentName(2))), &intent))
-			root, err := metadata.Root().FromBytes(r.Root)
-			must(t, err)
 			switch kind {
-			case "expiry":
-				root.Signed.Expires = root.Signed.Expires.Add(time.Hour)
-			case "threshold":
-				root.Signed.Roles[metadata.ROOT].Threshold = 1
-			case "targets":
-				root.Signed.Roles[metadata.TARGETS].Threshold = 2
-			case "consistent-snapshot":
-				root.Signed.ConsistentSnapshot = false
+			case "missing-plan":
+				must(t, os.Remove(filepath.Join(keyDir, rootPlanName(2))))
+			case "changed-signer":
+				must(t, os.WriteFile(filepath.Join(keyDir, rootKeyName(2, "root-1")), file(t, filepath.Join(keyDir, rootKeyName(2, "root-2"))), 0600))
+			case "missing-quorum":
+				for _, name := range keyNames[:2] {
+					must(t, os.Remove(filepath.Join(keyDir, rootKeyName(2, name))))
+				}
 			}
-			root.Signatures = nil
-			var a authority
-			must(t, decodeRecord(file(t, filepath.Join(f.opts.Home, opts.Network, "authority.json")), &a))
-			for _, name := range keyNames[:2] {
-				_, err := signMetadata(root, a.Keys[name])
-				must(t, err)
-				var c membershipCustody
-				must(t, decodeRecord(file(t, filepath.Join(keyDir, rootKeyName(2, name))), &c))
-				_, err = signMetadata(root, c.Key)
-				must(t, err)
+			if _, err := Rotate(context.Background(), opts); err == nil {
+				t.Fatal("damaged custody accepted")
 			}
-			r.Root, err = root.ToBytes(false)
-			must(t, err)
-			bundle := fixtureBundle(t, f)
-			if err := r.validate(bundle, bundle.Root, intent); err == nil {
-				t.Fatal("both quorums bypassed local policy or reviewed expiry")
-			}
+			assertAbsent(t, filepath.Join(f.opts.Directory, "2.root.json"))
 		})
 	}
 }

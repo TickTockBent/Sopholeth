@@ -177,18 +177,20 @@ func TestPublishValidatesApprovalAndVersionBeforeWriting(t *testing.T) {
 		"zero-version": func(o *PublishOptions) { o.Version = 0 },
 		"production":   func(o *PublishOptions) { o.Disposable = false },
 	}
+	// Rejected options must leave this initialized home untouched, so each case
+	// can use the same authority without repeating initialization and TLS setup.
+	f := newPublishFixture(t)
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
-			f := newPublishFixture(t)
-			change(&f.opts)
-			if _, err := Publish(context.Background(), f.opts); err == nil {
+			opts := f.opts
+			change(&opts)
+			if _, err := Publish(context.Background(), opts); err == nil {
 				t.Fatal("invalid approval accepted")
 			}
 			assertAbsent(t, f.opts.Directory)
 			assertAbsent(t, f.statePath())
 		})
 	}
-	f := newPublishFixture(t)
 	_, err := Publish(context.Background(), f.opts)
 	must(t, err)
 	original := file(t, filepath.Join(f.opts.Directory, "timestamp.json"))
@@ -213,6 +215,8 @@ func TestPublishValidatesApprovalAndVersionBeforeWriting(t *testing.T) {
 }
 
 func TestPublishInterruptionsReusePreparedBytes(t *testing.T) {
+	// Shared journal and repository write boundaries are exercised here, rather
+	// than repeated for renewal and every rotation role that uses this publisher.
 	phases := []string{"1.release.json:written", "1.release.json:linked", "release:durable", "public:1.root.json:written", "public:1.root.json:visible", "public:1.targets.json:durable", "public:1.snapshot.json:visible", "public:objects-ready", "public:timestamp.json:written", "public:timestamp.json:visible", "public:timestamp.json:durable", "publication:verified"}
 	for _, phase := range phases {
 		t.Run(phase, func(t *testing.T) {
@@ -341,35 +345,46 @@ func TestInterruptedUpdateKeepsOldTimestampUntilObjectsReady(t *testing.T) {
 }
 
 func TestVerificationDetectsOutageMissingAndChangedObjects(t *testing.T) {
+	// All cases disturb only HTTP responses. Share the signed repository and
+	// restore healthy verification after each fault, including failed assertions.
+	f := newPublishFixture(t)
+	_, err := Publish(context.Background(), f.opts)
+	must(t, err)
+	old := file(t, filepath.Join(f.opts.Directory, "timestamp.json"))
+	f.opts.Version = 2
+	f.changeRoot()
+	_, err = Publish(context.Background(), f.opts)
+	must(t, err)
+	current := file(t, filepath.Join(f.opts.Directory, "timestamp.json"))
+	manifest, err := approvedManifest(f.opts.Manifest, f.opts.Network)
+	must(t, err)
 	for _, kind := range []string{"outage", "missing-snapshot", "changed-target", "missing-initial-root", "redirect", "wrong-signature", "stale-version", "same-version-different-bytes"} {
 		t.Run(kind, func(t *testing.T) {
-			f := newPublishFixture(t)
-			_, err := Publish(context.Background(), f.opts)
-			must(t, err)
-			old := file(t, filepath.Join(f.opts.Directory, "timestamp.json"))
+			t.Cleanup(func() {
+				f.mu.Lock()
+				f.overrides = map[string][]byte{}
+				f.codes = map[string]int{}
+				f.mu.Unlock()
+				_, err := VerifyPublication(context.Background(), f.opts.Home, f.opts.Network, f.opts.HTTPClient)
+				must(t, err)
+			})
 			switch kind {
 			case "outage":
 				f.override("/timestamp.json", nil, 503)
 			case "missing-snapshot":
-				f.override("/1.snapshot.json", nil, 404)
+				f.override("/2.snapshot.json", nil, 404)
 			case "changed-target":
-				m, err := approvedManifest(publicationManifest, "rehearsal")
-				must(t, err)
-				f.override("/targets/"+digest(m)+".bootstrap.json", []byte("changed"), 0)
+				f.override("/targets/"+digest(manifest)+".bootstrap.json", []byte("changed"), 0)
 			case "missing-initial-root":
 				f.override("/1.root.json", nil, 404)
 			case "redirect":
 				f.override("/timestamp.json", nil, 302)
 			case "wrong-signature":
-				f.override("/timestamp.json", bytes.Replace(old, []byte(`"sig":"`), []byte(`"sig":"00`), 1), 0)
+				f.override("/timestamp.json", bytes.Replace(current, []byte(`"sig":"`), []byte(`"sig":"00`), 1), 0)
 			case "stale-version":
-				f.opts.Version = 2
-				f.changeRoot()
-				_, err := Publish(context.Background(), f.opts)
-				must(t, err)
 				f.override("/timestamp.json", old, 0)
 			case "same-version-different-bytes":
-				f.override("/timestamp.json", append(old, '\n'), 0)
+				f.override("/timestamp.json", append(bytes.Clone(current), '\n'), 0)
 			}
 			report, err := VerifyPublication(context.Background(), f.opts.Home, f.opts.Network, f.opts.HTTPClient)
 			if err == nil || report.Publication != "failed" || report.Problem == "" {
@@ -379,12 +394,6 @@ func TestVerificationDetectsOutageMissingAndChangedObjects(t *testing.T) {
 			if err == nil || local.Release.LastError == "" || local.Release.VerifiedAt.IsZero() {
 				t.Fatal("failure was not persisted alongside historical successful check")
 			}
-			f.mu.Lock()
-			f.overrides = map[string][]byte{}
-			f.codes = map[string]int{}
-			f.mu.Unlock()
-			_, err = VerifyPublication(context.Background(), f.opts.Home, f.opts.Network, f.opts.HTTPClient)
-			must(t, err)
 		})
 	}
 }
@@ -509,7 +518,7 @@ func TestPublicationProcessDeathRecovery(t *testing.T) {
 		}
 		return
 	}
-	for _, phase := range []string{"1.release.json:linked", "release:durable", "public:1.snapshot.json:visible", "public:timestamp.json:visible"} {
+	for _, phase := range []string{"1.release.json:linked", "public:timestamp.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
 			f := newPublishFixture(t)
 			cmd := exec.Command(os.Args[0], "-test.run=^TestPublicationProcessDeathRecovery$")

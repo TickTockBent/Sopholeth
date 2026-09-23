@@ -37,6 +37,15 @@ The [bootstrap trust client](internal/trust/bootstrap/README.md) is tested by
 the ordinary Go suite. Its integration tests use disposable keys, loopback
 HTTPS, and temporary state directories. No public authority is required.
 
+Omega tests use the same ordinary suite. Keep initialization's all-or-nothing
+recovery coverage, and test shared journal/publication failures in the publisher
+suite. Renewal and rotation tests should cover their distinct reservations,
+offline handoffs, and approval rules. One alternating-role walkthrough covers
+the retained chain and fresh/returning clients. Reuse a valid fixture for
+in-memory policy checks; use separate homes when a case changes custody or
+history. Keep real process-death and concurrency checks at the relevant
+boundaries without repeating the whole failure matrix for every command.
+
 ## Changes and review
 
 - Use `gofmt` on changed Go files and keep changes focused.

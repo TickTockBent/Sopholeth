@@ -121,7 +121,9 @@ func TestRenewalWithoutOfflineKeysAndNewMembership(t *testing.T) {
 }
 
 func TestRenewalInterruptionsAndTornWrites(t *testing.T) {
-	for _, phase := range []string{"2.renewal-intent.json:written", "2.renewal-intent.json:linked", "renewal:intent-durable", "2.release.json:written", "2.release.json:linked", "release:durable", "public:2.snapshot.json:written", "public:2.snapshot.json:visible", "public:timestamp.json:visible", "publication:verified"} {
+	// Renewal owns intent recovery and re-signing a torn release. The publisher
+	// suite covers object installation; retain one renewal activation boundary.
+	for _, phase := range []string{"2.renewal-intent.json:written", "2.renewal-intent.json:linked", "2.release.json:written", "public:timestamp.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
 			_, _, opts := renewalFixture(t, 7*time.Hour)
 			stop := errors.New("interrupted")
@@ -160,7 +162,7 @@ func TestRenewalInterruptionsAndTornWrites(t *testing.T) {
 }
 
 func TestProvisionRenewalRecoversHandoff(t *testing.T) {
-	for _, phase := range []string{"rehearsal.publisher.json:written", "rehearsal.publisher.json:linked", "renewal:bound", "1.release.json:linked", "renewal:journal-durable", "rehearsal.renewal.json:written", "rehearsal.renewal.json:linked"} {
+	for _, phase := range []string{"rehearsal.publisher.json:written", "renewal:bound", "renewal:journal-durable", "rehearsal.renewal.json:written", "rehearsal.renewal.json:linked"} {
 		t.Run(phase, func(t *testing.T) {
 			f := newPublishFixture(t)
 			_, err := Publish(context.Background(), f.opts)

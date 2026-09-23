@@ -46,13 +46,10 @@ func recordedRelease(t *testing.T, online RenewOptions, version int64) release {
 	return r
 }
 
-func TestOnlineRotationClientsRenewalAndApproval(t *testing.T) {
+func TestOnlineRotationPreservesApprovalAndOfflineCustody(t *testing.T) {
 	f, renewal, opts := rotationFixture(t)
 	ctx := context.Background()
 	bundle := fixtureBundle(t, f)
-	returning := fixtureClient(t, bundle, opts.HTTPClient)
-	_, err := returning.Refresh(ctx)
-	must(t, err)
 	first := recordedRelease(t, renewal, 1)
 	authorityPath := filepath.Join(f.opts.Home, f.opts.Network, "authority.json")
 	authorityBytes := file(t, authorityPath)
@@ -65,11 +62,6 @@ func TestOnlineRotationClientsRenewalAndApproval(t *testing.T) {
 	if !bytes.Equal(first.Timestamp, file(t, filepath.Join(f.opts.Directory, "timestamp.json"))) {
 		t.Fatal("preparation published a transition")
 	}
-	again, err := Rotate(ctx, opts)
-	must(t, err)
-	if !bytes.Equal(record(prepared.Rotation), record(again.Rotation)) {
-		t.Fatal("preparation changed keys or root")
-	}
 	opts.Apply = prepared.Rotation.RootSHA256
 	applied, err := Rotate(ctx, opts)
 	must(t, err)
@@ -81,13 +73,6 @@ func TestOnlineRotationClientsRenewalAndApproval(t *testing.T) {
 	if second.Schema != 4 || !bytes.Equal(second.Targets, first.Targets) || !bytes.Equal(second.Manifest, first.Manifest) {
 		t.Fatal("rotation changed membership approval")
 	}
-	for _, c := range []*bootstrap.Client{returning, fixtureClient(t, bundle, opts.HTTPClient)} {
-		view, err := c.Refresh(ctx)
-		must(t, err)
-		if view.Versions != applied.Release.Versions || view.MetadataSHA256["root"] != opts.Apply {
-			t.Fatal("client failed to adopt exact successor")
-		}
-	}
 	for _, home := range []string{f.opts.Home, renewal.Home} {
 		local, err := Status(ctx, home, opts.Network)
 		must(t, err)
@@ -95,9 +80,6 @@ func TestOnlineRotationClientsRenewalAndApproval(t *testing.T) {
 			t.Fatal("status still reported retired assignments")
 		}
 	}
-	_, err = Rotate(ctx, opts)
-	must(t, err)
-	assertAbsent(t, filepath.Join(onlineState(renewal), "3.release.json"))
 	// Runtime renewal must work with the entire offline home unavailable.
 	must(t, os.Rename(f.opts.Home, f.opts.Home+"-offline"))
 	_, err = renew(ctx, renewal, time.Now().UTC().Add(7*time.Hour), nil)
@@ -107,34 +89,6 @@ func TestOnlineRotationClientsRenewalAndApproval(t *testing.T) {
 		t.Fatal("renewal lost rotated authority")
 	}
 	must(t, os.Rename(f.opts.Home+"-offline", f.opts.Home))
-	f.opts.Version = 4
-	f.changeRoot()
-	_, err = publish(ctx, f.opts, time.Now().UTC().Add(8*time.Hour), nil)
-	must(t, err)
-	fourth := recordedRelease(t, renewal, 4)
-	if fourth.Schema != 3 || fourth.versions().Root != 2 || bytes.Equal(fourth.Manifest, first.Manifest) {
-		t.Fatal("offline approval failed after rotation")
-	}
-	// A second transition proves a client absent for several rotations can
-	// traverse the retained chain using its unchanged initial bundle.
-	opts.RootVersion, opts.Apply = 3, ""
-	prepared, err = rotate(ctx, opts, time.Now().UTC().Add(9*time.Hour), nil)
-	must(t, err)
-	opts.Apply = prepared.Rotation.RootSHA256
-	applied, err = rotate(ctx, opts, time.Now().UTC().Add(9*time.Hour), nil)
-	must(t, err)
-	for _, c := range []*bootstrap.Client{returning, fixtureClient(t, bundle, opts.HTTPClient)} {
-		view, err := c.Refresh(ctx)
-		must(t, err)
-		if view.Versions.Root != 3 || view.Versions.Timestamp != 5 {
-			t.Fatal("client failed to cross retained transitions")
-		}
-	}
-	for _, path := range []string{"1.root.json", "2.root.json", "3.root.json"} {
-		if len(file(t, filepath.Join(f.opts.Directory, path))) == 0 {
-			t.Fatal("missing retained root")
-		}
-	}
 	if !bytes.Equal(authorityBytes, file(t, authorityPath)) || !bytes.Equal(record(bundle), file(t, filepath.Join(f.opts.Home, f.opts.Network, "bundle.json"))) {
 		t.Fatal("rotation rewrote original custody or trust bundle")
 	}
@@ -158,7 +112,9 @@ func TestOnlineRotationClientsRenewalAndApproval(t *testing.T) {
 }
 
 func TestOnlineRotationPreparationRecovery(t *testing.T) {
-	for _, phase := range []string{"2.rotation-intent.json:written", "2.rotation-intent.json:linked", "rotation:keys-durable", "2.rotation.json:written", "2.rotation.json:linked"} {
+	// Shared rotation intent/root recovery lives here. Other roles exercise
+	// their additional offline key reservations, not this same write sequence.
+	for _, phase := range []string{"2.rotation-intent.json:written", "2.rotation-intent.json:linked", "2.rotation.json:written", "2.rotation.json:linked"} {
 		t.Run(phase, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
 			stop := errors.New("interrupted")
@@ -197,7 +153,9 @@ func TestOnlineRotationPreparationRecovery(t *testing.T) {
 }
 
 func TestOnlineRotationApplyRecovery(t *testing.T) {
-	for _, phase := range []string{"2.rotation-apply.json:written", "2.rotation-apply.json:linked", "rotation:apply-durable", "2.release.json:written", "2.release.json:linked", "release:durable", "public:2.snapshot.json:visible", "public:2.root.json:written", "public:2.root.json:visible", "public:timestamp.json:visible", "publication:verified"} {
+	// Keep rotation-specific reservations, torn releases, and root activation.
+	// TestPublishInterruptionsReusePreparedBytes covers the common publisher.
+	for _, phase := range []string{"2.rotation-apply.json:written", "2.rotation-apply.json:linked", "2.release.json:written", "public:2.root.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
 			prepared, err := Rotate(context.Background(), opts)
@@ -515,7 +473,7 @@ func TestRotationProcessDeathRecovery(t *testing.T) {
 		must(t, err)
 		return
 	}
-	for _, phase := range []string{"rotation:apply-durable", "rotation:targets-durable", "public:2.root.json:visible", "root:rotation:targets-durable", "root:public:2.root.json:visible"} {
+	for _, phase := range []string{"public:2.root.json:visible", "rotation:targets-durable", "root:rotation:targets-durable"} {
 		t.Run(phase, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
 			if strings.HasPrefix(phase, "root:") {

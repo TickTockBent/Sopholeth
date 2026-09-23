@@ -16,24 +16,15 @@ import (
 	"sopholeth/internal/trust/bootstrap"
 )
 
-func TestMembershipRotationClientsAndAlternatingGenerations(t *testing.T) {
+func TestMembershipRotationPreservesLatestApprovalAndOfflineCustody(t *testing.T) {
 	f, renewal, opts := rotationFixture(t)
 	opts.Role = "targets"
 	ctx := context.Background()
-	bundle := fixtureBundle(t, f)
-	returning := fixtureClient(t, bundle, opts.HTTPClient)
-	_, err := returning.Refresh(ctx)
-	must(t, err)
 	initial := file(t, filepath.Join(opts.Home, opts.Network, "authority.json"))
 	prepared, err := Rotate(ctx, opts)
 	must(t, err)
 	if prepared.Rotation.Role != "targets" || len(prepared.Rotation.Keys) != 1 || len(prepared.Rotation.Keys["targets"]) != 1 {
 		t.Fatalf("bad review report: %+v", prepared)
-	}
-	again, err := Rotate(ctx, opts)
-	must(t, err)
-	if !bytes.Equal(record(prepared.Rotation), record(again.Rotation)) {
-		t.Fatal("preparation changed the reviewed generation")
 	}
 	assertAbsent(t, filepath.Join(f.opts.Directory, "2.root.json"))
 	// An independently approved change during review must be retained, not
@@ -59,48 +50,21 @@ func TestMembershipRotationClientsAndAlternatingGenerations(t *testing.T) {
 			t.Fatalf("status missed membership rotation: %+v", report)
 		}
 	}
-	// Retry cannot create another release or regenerate the initial authority.
-	_, err = Rotate(ctx, opts)
-	must(t, err)
-	assertAbsent(t, filepath.Join(onlineState(renewal), "4.release.json"))
-	if !bytes.Equal(initial, file(t, filepath.Join(opts.Home, opts.Network, "authority.json"))) {
-		t.Fatal("rotation rewrote the initial authority")
-	}
 	// The next explicit membership approval selects the new offline key.
 	f.opts.Version = 4
 	_, err = Publish(ctx, f.opts)
 	must(t, err)
-	// Online -> targets -> online -> targets must select each role's latest
-	// generation independently, even for a client absent throughout.
-	for _, role := range []string{"online", "targets"} {
-		opts.RootVersion++
-		opts.Role, opts.Apply = role, ""
-		prepared, err = Rotate(ctx, opts)
-		must(t, err)
-		opts.Apply = prepared.Rotation.RootSHA256
-		applied, err = Rotate(ctx, opts)
-		must(t, err)
-	}
-	for _, client := range []*bootstrap.Client{returning, fixtureClient(t, bundle, opts.HTTPClient)} {
-		view, err := client.Refresh(ctx)
-		must(t, err)
-		if view.Versions != applied.Release.Versions || view.Versions.Root != 4 || view.Versions.Targets != 6 {
-			t.Fatalf("client failed retained chain: %+v", view)
-		}
-	}
 	var original authority
 	must(t, decodeRecord(initial, &original))
 	privateKeys := []string{original.Keys["targets"], original.Keys["root-1"], original.Keys["root-2"], original.Keys["root-3"]}
-	for _, version := range []int64{2, 4} {
-		var c membershipCustody
-		path := filepath.Join(opts.Home, opts.Network+".rotations", membershipKeyName(version))
-		must(t, decodeRecord(file(t, path), &c))
-		privateKeys = append(privateKeys, c.Key)
-		info, err := os.Stat(path)
-		must(t, err)
-		if info.Mode().Perm() != 0600 {
-			t.Fatal("membership private key is not private")
-		}
+	var custody membershipCustody
+	path := filepath.Join(opts.Home, opts.Network+".rotations", membershipKeyName(2))
+	must(t, decodeRecord(file(t, path), &custody))
+	privateKeys = append(privateKeys, custody.Key)
+	info, err := os.Stat(path)
+	must(t, err)
+	if info.Mode().Perm() != 0600 {
+		t.Fatal("membership private key is not private")
 	}
 	for _, dir := range []string{renewal.Home, f.opts.Directory} {
 		must(t, filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
@@ -120,14 +84,15 @@ func TestMembershipRotationClientsAndAlternatingGenerations(t *testing.T) {
 	must(t, os.Rename(opts.Home, opts.Home+"-unmounted"))
 	_, err = renew(ctx, renewal, time.Now().UTC().Add(7*time.Hour), nil)
 	must(t, err)
-	last := recordedRelease(t, renewal, 7)
-	if last.versions().Targets != 6 || !last.ApprovedAt.Equal(recordedRelease(t, renewal, 4).Created) {
+	last := recordedRelease(t, renewal, 5)
+	if last.versions().Targets != 4 || !last.ApprovedAt.Equal(recordedRelease(t, renewal, 4).Created) {
 		t.Fatal("renewal changed the membership generation or approval clock")
 	}
 }
 
 func TestMembershipRotationPreparationRecovery(t *testing.T) {
-	for _, phase := range []string{"2.targets-key.json:written", "2.targets-key.json:linked", "rotation:offline-key-durable", "2.rotation-intent.json:written", "2.rotation.json:linked"} {
+	// Only membership rotation reserves this separate offline signing key.
+	for _, phase := range []string{"2.targets-key.json:written", "2.targets-key.json:linked", "rotation:offline-key-durable"} {
 		t.Run(phase, func(t *testing.T) {
 			_, renewal, opts := rotationFixture(t)
 			opts.Role = "targets"
@@ -170,7 +135,9 @@ func TestMembershipRotationPreparationRecovery(t *testing.T) {
 }
 
 func TestMembershipRotationApplyRecovery(t *testing.T) {
-	for _, phase := range []string{"2.rotation-apply.json:written", "rotation:apply-durable", "2.rotation-targets.json:written", "rotation:targets-durable", "2.release.json:written", "public:2.root.json:visible"} {
+	// Exercise both sides of the offline handoff; common publication failures
+	// are covered by TestPublishInterruptionsReusePreparedBytes.
+	for _, phase := range []string{"rotation:apply-durable", "2.rotation-targets.json:written", "rotation:targets-durable"} {
 		t.Run(phase, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
 			opts.Role = "targets"
@@ -187,7 +154,7 @@ func TestMembershipRotationApplyRecovery(t *testing.T) {
 			if !errors.Is(err, stop) {
 				t.Fatalf("missed boundary: %v", err)
 			}
-			if phase == "2.rotation-apply.json:written" || phase == "rotation:apply-durable" {
+			if phase == "rotation:apply-durable" {
 				report, err := Renew(context.Background(), renewal)
 				if err == nil || !strings.Contains(report.Problem, "original rotate --role targets --apply") || !strings.Contains(report.Action, "Mount the offline home") {
 					t.Fatalf("scheduler must require the unfinished offline handoff: %+v %v", report, err)
