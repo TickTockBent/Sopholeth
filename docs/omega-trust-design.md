@@ -148,6 +148,12 @@ validation still requires HTTPS origins. URL normalization preserves existing
 origin-only authorities; changing a bound repository path requires an explicit
 migration, not editing authority or client state.
 
+The apex must serve metadata directly. Before public `soph omega init`, change
+Vercel's apex-to-www redirect to serve Production at `sopholeth.io`, with www
+redirecting to the apex, and verify the exact metadata URL without redirects.
+The client intentionally rejects redirects, and initialization binds the chosen
+URL without contacting it. No in-place repository migration is implemented.
+
 The docs site's Vercel configuration now reserves `/omega/` for fixed-name
 `timestamp.json`, numbered root/snapshot/targets metadata, and hash-addressed
 manifests. Timestamp responses use `no-store`; existing immutable objects use

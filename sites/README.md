@@ -70,10 +70,34 @@ on changes outside its folder to trigger a deployment.
 
 `sopholeth.io` reserves `/omega/` for the public metadata repository. The config
 is committed in `sites/sopholeth.io/vercel.json`; this slice needs no new Vercel
-project, environment variables, cron job, or dashboard rule. The existing project
-keeps Root Directory `sites/sopholeth.io` and deploys the configuration through its
-normal Git integration. There are no authority keys or signed metadata in this
-checkout; `/omega/` remains a real 404 until the publisher is integrated.
+project, environment variables, or cron job. The existing project keeps Root
+Directory `sites/sopholeth.io` and deploys the configuration through its normal Git
+integration. There are no authority keys or signed metadata in this checkout;
+the site routes return a real 404 until the publisher is integrated.
+
+**Before public authority initialization, settle the production domain.** On
+2026-09-23, the apex returned a 308 redirect to `www.sopholeth.io`, including for
+`/omega/timestamp.json`. The trust client and publisher reject all redirects.
+To use the planned `https://sopholeth.io/omega/` repository, open the project's
+Settings → Domains, remove the apex-to-www redirect so `sopholeth.io` serves
+Production directly, then redirect `www.sopholeth.io` to the apex. See Vercel's
+[domain redirect settings](https://vercel.com/docs/domains/working-with-domains/deploying-and-redirecting).
+This is a domain setting; committing `vercel.json` does not change it.
+
+Check the exact metadata URL without following redirects before `soph omega init`:
+
+```bash
+curl --silent --show-error --dump-header - --output /dev/null \
+  https://sopholeth.io/omega/timestamp.json
+```
+
+With these routes deployed but no metadata published, expect a direct 404 with
+`Cache-Control: no-store`, no `Location` header, and no login or challenge. After
+publication, require a direct 200 with the verified metadata bytes. The hostname
+and base path are bound into the authority and bundle; the current implementation
+has no in-place repository migration. If www is chosen instead, update the plan
+and examples before initialization. Do not work around the domain setting by
+allowing client redirects.
 
 | Request | Response and caching |
 | --- | --- |

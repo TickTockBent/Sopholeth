@@ -129,6 +129,11 @@ docs deployments and website rollbacks cannot drop or revert metadata; preserve
 the complete retained public history. No live authority or hosted metadata is
 created by the serving configuration alone. Keep daily refresh, seven-day expiry,
 and hourly retries. Deployment credentials remain separate from authority keys.
+Before public `soph omega init`, configure the apex to serve Production directly
+and redirect www to it. Verify the exact metadata URL without following redirects;
+the current apex-to-www 308 is incompatible with the planned repository URL.
+See the [domain preflight](../sites/README.md#omega-metadata-hosting). This is a
+hosting prerequisite, not a reason to relax the client's redirect rejection.
 Consumer integration must still follow the peer-identity decision below;
 compiled trust bundles and #223 remain release gates. Node hosts receive public
 trust material only.
@@ -387,6 +392,8 @@ numbered metadata, and uncached 404s for missing future versions. Verify actual
 HTTP status and cache headers alongside the signed publication. The
 [hosting design](omega-trust-design.md#repository-and-bootstrap-manifest)
 records the implemented URL/routing rules and remaining deployment integration.
+Complete the domain preflight before allocating the public authority: hostname
+and base path become bound state, and no in-place URL migration is implemented.
 
 The runbook must record the following, in execution order:
 

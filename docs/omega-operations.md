@@ -47,6 +47,14 @@ still separate work.
 `init` and local `status` do not contact the repository. Operator commands
 do not read or change client profiles.
 
+Before initializing the public authority, verify the exact production metadata
+URL without following redirects. The planned apex must serve directly, with www
+redirecting to it; the existing apex-to-www redirect must be removed in Vercel.
+Follow the [domain preflight](../sites/README.md#omega-metadata-hosting). A direct
+404 is expected before publication; any redirect, login, or TLS error must be
+resolved first. `init` does not perform this check, and the current implementation
+cannot change the bound repository URL in place.
+
 Initialization creates six distinct Ed25519 keys: a 2-of-3 root quorum and
 separate targets, snapshot, and timestamp keys. It signs and verifies a
 version-1 root with consistent snapshots and a 365-day expiration, then
