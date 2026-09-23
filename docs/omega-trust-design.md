@@ -113,11 +113,16 @@ tolerance before activation:
 | --- | --- | --- |
 | Root | 365 days | Operator rotation with at least 180 days remaining |
 | Targets / membership | 90 days | Review and reapprove with at least 30 days remaining |
-| Snapshot | 7 days | Renew with timestamp every 6 hours |
-| Timestamp | 24 hours | Renew every 6 hours; alert on a missed cycle |
+| Snapshot | 7 days | Renew with timestamp daily |
+| Timestamp | 7 days | Renew daily; check/retry hourly and alert on a missed cycle |
 
-These are proposed operating values, not library defaults. Online renewal
-cannot extend root or membership approval forever. It must refuse to present
+These are the first-network operating values, implemented by the publisher,
+not library defaults. A missed daily renewal normally leaves six days of
+validity in the last timestamp. This tolerates publishing outages while allowing
+previously signed discovery to remain acceptable for up to seven days; signature
+and rollback checks still apply. Root/membership deadlines can shorten that
+window. An unreachable repository can still block clients without a valid cache.
+Online renewal cannot extend root or membership approval forever. It must refuse to present
 expired approval as healthy and warn well before either operator approval is
 due. Here, offline approval means outside unattended renewal, not an air-gapped
 machine. Clock synchronization and clock-error reporting are deployment inputs.

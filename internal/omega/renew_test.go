@@ -21,7 +21,7 @@ func renewalFixture(t *testing.T, age time.Duration) (*publishFixture, Provision
 	t.Helper()
 	f := newPublishFixture(t)
 	_, err := publish(context.Background(), f.opts, time.Now().UTC().Truncate(time.Second).Add(-age), nil)
-	if age < 24*time.Hour {
+	if age < timestampLifetime(timestampDays) {
 		must(t, err)
 	} else if err == nil {
 		t.Fatal("expired publication succeeded")
@@ -34,7 +34,7 @@ func renewalFixture(t *testing.T, age time.Duration) (*publishFixture, Provision
 func onlineState(o RenewOptions) string { return filepath.Join(o.Home, o.Network+".publication") }
 
 func TestRenewalWithoutOfflineKeysAndNewMembership(t *testing.T) {
-	f, p, opts := renewalFixture(t, 7*time.Hour)
+	f, p, opts := renewalFixture(t, renewalInterval+time.Hour)
 	var authorityRecord authority
 	must(t, decodeRecord(file(t, filepath.Join(f.opts.Home, f.opts.Network, "authority.json")), &authorityRecord))
 	original := file(t, filepath.Join(f.statePath(), "1.release.json"))
@@ -111,7 +111,7 @@ func TestRenewalWithoutOfflineKeysAndNewMembership(t *testing.T) {
 	if local.Release.Version != 3 {
 		t.Fatal("offline status did not follow operational binding")
 	}
-	_, err = renew(context.Background(), opts, time.Now().UTC().Add(7*time.Hour), nil)
+	_, err = renew(context.Background(), opts, time.Now().UTC().Add(renewalInterval+time.Hour), nil)
 	must(t, err)
 	var fourth release
 	must(t, decodeRecord(file(t, filepath.Join(onlineState(opts), "4.release.json")), &fourth))
@@ -125,7 +125,7 @@ func TestRenewalInterruptionsAndTornWrites(t *testing.T) {
 	// suite covers object installation; retain one renewal activation boundary.
 	for _, phase := range []string{"2.renewal-intent.json:written", "2.renewal-intent.json:linked", "2.release.json:written", "public:timestamp.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
-			_, _, opts := renewalFixture(t, 7*time.Hour)
+			_, _, opts := renewalFixture(t, renewalInterval+time.Hour)
 			stop := errors.New("interrupted")
 			_, err := renew(context.Background(), opts, time.Now().UTC(), func(at string) error {
 				if at == phase {
@@ -197,9 +197,9 @@ func TestProvisionRenewalRecoversHandoff(t *testing.T) {
 func TestRenewalExpiryAndPublicationFailure(t *testing.T) {
 	for _, kind := range []string{"expired-timestamp", "approval-deadline", "publisher-outage"} {
 		t.Run(kind, func(t *testing.T) {
-			age := 7 * time.Hour
+			age := renewalInterval + time.Hour
 			if kind == "expired-timestamp" {
-				age = 26 * time.Hour
+				age = timestampLifetime(timestampDays) + 2*time.Hour
 			}
 			if kind == "approval-deadline" {
 				age = 90*24*time.Hour - time.Hour
@@ -240,7 +240,7 @@ func TestRenewalExpiryAndPublicationFailure(t *testing.T) {
 }
 
 func TestRenewalConcurrentAndClockRollback(t *testing.T) {
-	_, _, opts := renewalFixture(t, 7*time.Hour)
+	_, _, opts := renewalFixture(t, renewalInterval+time.Hour)
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
 	for range 3 {
@@ -277,7 +277,7 @@ func TestRenewalProcessDeathRecovery(t *testing.T) {
 	}
 	for _, phase := range []string{"renewal:intent-durable", "public:timestamp.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
-			f, _, opts := renewalFixture(t, 7*time.Hour)
+			f, _, opts := renewalFixture(t, renewalInterval+time.Hour)
 			must(t, os.Rename(f.opts.Home, f.opts.Home+"-offline"))
 			cmd := exec.Command(os.Args[0], "-test.run=^TestRenewalProcessDeathRecovery$")
 			cmd.Env = append(os.Environ(), "SOPH_RENEW_TEST_CHILD=1", "SOPH_RENEW_TEST_HOME="+opts.Home, "SOPH_RENEW_TEST_PHASE="+phase)
@@ -317,7 +317,7 @@ func TestRenewalProcessDeathRecovery(t *testing.T) {
 func TestRenewalRefusesChangedCustodyAndPendingApproval(t *testing.T) {
 	for _, kind := range []string{"offline-key", "wrong-role-key", "different-home", "pending-approval", "pending-torn-approval", "tampered-pending-renewal"} {
 		t.Run(kind, func(t *testing.T) {
-			f, p, opts := renewalFixture(t, 7*time.Hour)
+			f, p, opts := renewalFixture(t, renewalInterval+time.Hour)
 			keyPath := filepath.Join(opts.Home, opts.Network+".renewal.json")
 			switch kind {
 			case "offline-key", "wrong-role-key":
@@ -377,7 +377,7 @@ func TestRenewalRefusesChangedCustodyAndPendingApproval(t *testing.T) {
 
 func TestRenewalHomeCannotInitializeReplacementAuthority(t *testing.T) {
 	for _, missingKey := range []bool{false, true} {
-		f, _, opts := renewalFixture(t, 7*time.Hour)
+		f, _, opts := renewalFixture(t, renewalInterval+time.Hour)
 		if missingKey {
 			must(t, os.Remove(filepath.Join(opts.Home, opts.Network+".renewal.json")))
 			r, err := Status(context.Background(), opts.Home, opts.Network)
@@ -425,7 +425,7 @@ func TestExpiredMembershipDoesNotStrandRenewalReservation(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			age, advance := 90*24*time.Hour-time.Hour, 2*time.Hour
 			if kind == "expired-timestamp" {
-				age, advance = 7*time.Hour, 25*time.Hour
+				age, advance = renewalInterval+time.Hour, timestampLifetime(timestampDays)+time.Hour
 			}
 			f, _, opts := renewalFixture(t, age)
 			phase := "renewal:intent-durable"

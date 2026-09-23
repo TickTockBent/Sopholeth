@@ -454,7 +454,7 @@ func TestPublishRejectsImmutableConflictAndLostHistory(t *testing.T) {
 
 func TestExpiredPreparedReleaseRequiresHigherRepair(t *testing.T) {
 	f := newPublishFixture(t)
-	_, err := publish(context.Background(), f.opts, testTime.Add(-25*time.Hour), func(at string) error {
+	_, err := publish(context.Background(), f.opts, testTime.Add(-timestampLifetime(timestampDays)-time.Hour), func(at string) error {
 		if at == "release:durable" {
 			return errors.New("stop")
 		}
@@ -677,7 +677,7 @@ func TestPublishWithRestrictiveUmask(t *testing.T) {
 	// Umask is process-wide: isolate this check from other tests and goroutines.
 	previous := syscall.Umask(0077)
 	defer syscall.Umask(previous)
-	f, _, opts := renewalFixture(t, 7*time.Hour)
+	f, _, opts := renewalFixture(t, renewalInterval+time.Hour)
 	mode := func(path string, want os.FileMode) {
 		t.Helper()
 		info, err := os.Stat(path)

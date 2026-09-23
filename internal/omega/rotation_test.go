@@ -82,7 +82,7 @@ func TestOnlineRotationPreservesApprovalAndOfflineCustody(t *testing.T) {
 	}
 	// Runtime renewal must work with the entire offline home unavailable.
 	must(t, os.Rename(f.opts.Home, f.opts.Home+"-offline"))
-	_, err = renew(ctx, renewal, time.Now().UTC().Add(7*time.Hour), nil)
+	_, err = renew(ctx, renewal, time.Now().UTC().Add(renewalInterval+time.Hour), nil)
 	must(t, err)
 	third := recordedRelease(t, renewal, 3)
 	if third.versions().Root != 2 || !bytes.Equal(third.Targets, first.Targets) {
@@ -352,7 +352,7 @@ func TestOnlineRotationInterruptedClientRevocation(t *testing.T) {
 func TestOnlineRotationExpiredReservationRecovery(t *testing.T) {
 	for _, kind := range []string{"timestamp", "membership", "torn-apply"} {
 		t.Run(kind, func(t *testing.T) {
-			age, advance := time.Duration(0), 25*time.Hour
+			age, advance := time.Duration(0), timestampLifetime(timestampDays)+time.Hour
 			if kind != "timestamp" {
 				age, advance = 90*24*time.Hour-time.Hour, 2*time.Hour
 			}

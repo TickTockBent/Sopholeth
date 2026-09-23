@@ -91,7 +91,7 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 	_, err = Publish(ctx, f.opts)
 	must(t, err)
 	must(t, os.Rename(f.opts.Home, f.opts.Home+"-offline"))
-	_, err = renew(ctx, online, time.Now().UTC().Add(7*time.Hour), nil)
+	_, err = renew(ctx, online, time.Now().UTC().Add(renewalInterval+time.Hour), nil)
 	must(t, err)
 }
 
@@ -136,7 +136,7 @@ func TestRootRotationExpiredAuthorityRecovery(t *testing.T) {
 	_, err = Publish(ctx, f.opts)
 	must(t, err) // Approval must use the active root expiry, not authority.json's.
 	must(t, os.Rename(f.opts.Home, f.opts.Home+"-offline"))
-	_, err = renew(ctx, online, time.Now().UTC().Add(7*time.Hour), nil)
+	_, err = renew(ctx, online, time.Now().UTC().Add(renewalInterval+time.Hour), nil)
 	must(t, err)
 }
 
@@ -360,7 +360,7 @@ func TestRootRotationExpiredApplyAndOfflineRepair(t *testing.T) {
 	reserved := file(t, filepath.Join(onlineState(online), rotationTargetsName(2)))
 	before := file(t, filepath.Join(f.opts.Directory, "timestamp.json"))
 	must(t, os.Rename(f.opts.Home, f.opts.Home+"-offline"))
-	later := time.Now().UTC().Add(25 * time.Hour)
+	later := time.Now().UTC().Add(timestampLifetime(timestampDays) + time.Hour)
 	if _, err := renew(context.Background(), online, later, nil); err == nil {
 		t.Fatal("expired reserved release was published")
 	}

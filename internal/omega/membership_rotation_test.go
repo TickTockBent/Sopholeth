@@ -82,7 +82,7 @@ func TestMembershipRotationPreservesLatestApprovalAndOfflineCustody(t *testing.T
 	}
 	// Scheduler neither requires offline custody nor resets the approval clock.
 	must(t, os.Rename(opts.Home, opts.Home+"-unmounted"))
-	_, err = renew(ctx, renewal, time.Now().UTC().Add(7*time.Hour), nil)
+	_, err = renew(ctx, renewal, time.Now().UTC().Add(renewalInterval+time.Hour), nil)
 	must(t, err)
 	last := recordedRelease(t, renewal, 5)
 	if last.versions().Targets != 4 || !last.ApprovedAt.Equal(recordedRelease(t, renewal, 4).Created) {
@@ -322,9 +322,9 @@ func TestMembershipRotationTornHandoffAndExpiredRecovery(t *testing.T) {
 	if _, err := Renew(context.Background(), renewal); err == nil {
 		t.Fatal("scheduler reconstructed an offline signature")
 	}
-	// After a day the recorded release must finish privately, then a higher
+	// After a week the recorded release must finish privately, then a higher
 	// online release repairs freshness. It cannot rewrite the reserved clock.
-	later := time.Now().UTC().Add(25 * time.Hour)
+	later := time.Now().UTC().Add(timestampLifetime(timestampDays) + time.Hour)
 	before := file(t, filepath.Join(f.opts.Directory, "timestamp.json"))
 	if _, err := rotate(context.Background(), opts, later, nil); err == nil {
 		t.Fatal("expired apply reported successful publication")

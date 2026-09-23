@@ -502,10 +502,16 @@ func publicationFailure(report Report, err error) (Report, error) {
 	return report, err
 }
 
-const renewalInterval = 6 * time.Hour
+const renewalInterval = 24 * time.Hour
 
 func publicationReport(r release, m bootstrap.Manifest, expires map[string]time.Time, now time.Time) *PublicationReport {
-	renewAfter := minTime(r.Created.Add(renewalInterval), expires["timestamp"])
+	interval := renewalInterval
+	if r.TimestampDays == 0 {
+		// Renew old one-day releases before their original deadline. The next
+		// unreserved release adopts the seven-day policy.
+		interval = 6 * time.Hour
+	}
+	renewAfter := minTime(r.Created.Add(interval), expires["timestamp"])
 	p := &PublicationReport{Version: r.Version, Versions: r.versions(), Roots: m.Roots, Expires: expires, RenewAfter: renewAfter, RenewalDue: !now.Before(renewAfter)}
 	if p.RenewalDue {
 		p.Warnings = append(p.Warnings, "Freshness renewal is due; run soph omega publish --renew from the operational home.")

@@ -14,6 +14,17 @@ import (
 )
 
 const maxReleases = 10000
+const timestampDays = 7
+
+// Zero denotes the original one-day policy. Omission preserves the exact
+// serialization of old journal records and interrupted signing reservations.
+func validTimestampDays(days int) bool { return days == 0 || days == timestampDays }
+func timestampLifetime(days int) time.Duration {
+	if days == 0 {
+		days = 1
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
 
 // A release contains public bytes only. Once durable, these exact bytes are
 // used for all retries; signing clocks and keys cannot change a numbered file.
@@ -30,6 +41,7 @@ type release struct {
 	TargetsVersion int64     `json:"targets_version,omitempty"`
 	ApprovedAt     time.Time `json:"approved_at,omitzero"`
 	Roots          [][]byte  `json:"roots,omitempty"`
+	TimestampDays  int       `json:"timestamp_days,omitempty"`
 }
 
 func digest(data []byte) string        { return fmt.Sprintf("%x", sha256.Sum256(data)) }
@@ -72,7 +84,7 @@ func metadataFile(version int64, data []byte) *metadata.MetaFiles {
 }
 
 func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previous string, manifest []byte, now time.Time, roots ...[]byte) (release, error) {
-	r := release{Schema: 1, Version: version, Previous: previous, Fingerprint: bundle.Fingerprint(), Created: now, Manifest: manifest, Roots: roots}
+	r := release{Schema: 1, Version: version, Previous: previous, Fingerprint: bundle.Fingerprint(), Created: now, Manifest: manifest, Roots: roots, TimestampDays: timestampDays}
 	if len(roots) > 0 {
 		r.Schema = 3
 	}
@@ -102,7 +114,7 @@ func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previou
 	if err != nil {
 		return r, err
 	}
-	timestamp := metadata.Timestamp(minTime(now.Add(24*time.Hour), a.Expires))
+	timestamp := metadata.Timestamp(minTime(now.Add(timestampLifetime(r.TimestampDays)), a.Expires))
 	timestamp.Signed.Version = version
 	timestamp.Signed.Meta["snapshot.json"] = metadataFile(version, r.Snapshot)
 	r.Timestamp, err = signMetadata(timestamp, a.Keys["timestamp"])
@@ -119,7 +131,7 @@ func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previou
 func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[string]time.Time, error) {
 	var empty bootstrap.Manifest
 	fail := func(err error) (bootstrap.Manifest, map[string]time.Time, error) { return empty, nil, err }
-	if r.Schema < 1 || r.Schema > 6 || (r.Schema > 2) != (len(r.Roots) > 0) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
+	if !validTimestampDays(r.TimestampDays) || r.Schema < 1 || r.Schema > 6 || (r.Schema > 2) != (len(r.Roots) > 0) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
 		return fail(errors.New("omega: invalid release identity or schema"))
 	}
 	canonical, err := approvedManifest(r.Manifest, bundle.Network)
@@ -190,7 +202,7 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 	}
 	if !expires["targets"].Equal(minTime(approvedAt.Add(90*24*time.Hour), expires["root"])) ||
 		!expires["snapshot"].Equal(minTime(r.Created.Add(7*24*time.Hour), deadline)) ||
-		!expires["timestamp"].Equal(minTime(r.Created.Add(24*time.Hour), deadline)) {
+		!expires["timestamp"].Equal(minTime(r.Created.Add(timestampLifetime(r.TimestampDays)), deadline)) {
 		return fail(errors.New("omega: release expiration policy mismatch"))
 	}
 	if !r.isRenewal() && r.Schema != 5 && expires["root"].Sub(r.Created) < 24*time.Hour {
@@ -241,25 +253,25 @@ func (r release) approvalTime() time.Time {
 
 // Renewal preserves the exact offline-approved targets and manifest. Only the
 // two online roles advance; neither can extend the offline approval deadline.
-func prepareRenewal(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time) (release, error) {
-	return prepareRenewalWithRoots(keys, bundle, previous, now, previous.Roots)
+func prepareRenewal(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, days int) (release, error) {
+	return prepareRenewalWithRoots(keys, bundle, previous, now, previous.Roots, days)
 }
 
-func prepareRenewalWithRoots(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte) (release, error) {
-	return prepareContinuedRelease(keys, bundle, previous, now, roots, nil)
+func prepareRenewalWithRoots(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte, days int) (release, error) {
+	return prepareContinuedRelease(keys, bundle, previous, now, roots, nil, days)
 }
 
-func prepareMembershipRelease(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte, targets []byte) (release, error) {
+func prepareMembershipRelease(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte, targets []byte, days int) (release, error) {
 	if err := sameTargetsApproval(previous.Targets, targets, previous.Version+1); err != nil {
 		return release{}, err
 	}
-	return prepareContinuedRelease(keys, bundle, previous, now, roots, targets)
+	return prepareContinuedRelease(keys, bundle, previous, now, roots, targets, days)
 }
 
-func prepareContinuedRelease(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte, rotatedTargets []byte) (release, error) {
+func prepareContinuedRelease(keys map[string]string, bundle bootstrap.Bundle, previous release, now time.Time, roots [][]byte, rotatedTargets []byte, days int) (release, error) {
 	r := release{Schema: 2, Version: previous.Version + 1, Previous: digest(record(previous)), Fingerprint: bundle.Fingerprint(),
 		Created: now.Truncate(time.Second), Manifest: previous.Manifest, Targets: previous.Targets,
-		TargetsVersion: previous.versions().Targets, ApprovedAt: previous.approvalTime(), Roots: roots}
+		TargetsVersion: previous.versions().Targets, ApprovedAt: previous.approvalTime(), Roots: roots, TimestampDays: days}
 	if len(roots) > 0 {
 		r.Schema = 4
 	}
@@ -302,7 +314,7 @@ func prepareContinuedRelease(keys map[string]string, bundle bootstrap.Bundle, pr
 	if err != nil {
 		return r, err
 	}
-	timestamp := metadata.Timestamp(minTime(r.Created.Add(24*time.Hour), deadline))
+	timestamp := metadata.Timestamp(minTime(r.Created.Add(timestampLifetime(r.TimestampDays)), deadline))
 	timestamp.Signed.Version = r.Version
 	timestamp.Signed.Meta["snapshot.json"] = metadataFile(r.Version, r.Snapshot)
 	r.Timestamp, err = signMetadata(timestamp, keys["timestamp"])

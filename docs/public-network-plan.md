@@ -90,6 +90,7 @@ uses a local directory served by separately configured HTTPS, with immutable
 release history, timestamp-last writes, and verification of the exact served
 release through the real client. Renewal preserves the exact approved membership,
 uses only online keys, and caps freshness at the offline approval deadlines.
+Refresh daily with seven-day snapshot/timestamp validity; check and retry hourly.
 The operator guide includes scheduler examples, monitoring fields, and the
 prepare/review/apply procedures for all three rotation roles, including offline
 custody, root-expiry recovery, and recoverable signed handoff. Root application

@@ -173,7 +173,7 @@ commits but loses its terminal output.
 
 Each approval signs targets, snapshot, and timestamp metadata with their
 respective keys; it copies the existing signed root without using root keys
-to sign again. Proposed lifetimes are 90 days, 7 days, and 24 hours, capped by
+to sign again. Lifetimes are 90 days, 7 days, and 7 days, capped by
 root expiration. Signing requires at least 24 hours of remaining root validity.
 This is a manual approval path with disposable custody. Unattended renewal
 using only separately provisioned online keys is described below.
@@ -348,7 +348,7 @@ transport and relocation require a later explicit workflow.
 `publish --renew` takes no manifest, output-directory, or version flags. It uses
 the bound repository and latest approved membership in the journal:
 
-- Before six hours have elapsed, verify the existing release without creating
+- Before 24 hours have elapsed, verify the existing release without creating
   a new version. An unsuccessful verification is a failed invocation.
 - When due, reserve the next version and signing time durably. Sign only
   snapshot and timestamp, retain the exact manifest and signed targets bytes,
@@ -378,14 +378,21 @@ Schemas 3 and 4 serve the same purposes after rotation and also retain the
 authenticated root chain. This does not change the private `authority.json`
 schema or make it production-ready.
 
+Release and renewal/rotation-apply records pin `timestamp_days: 7` for the new
+policy. Older records omit the field and retain their exact one-day timestamps
+and six-hour renewal trigger. Interrupted old reservations finish with that
+policy; the next new release adopts seven days. Existing journal bytes and
+signatures are never rewritten by this upgrade.
+
 ### Scheduler and monitoring
 
 The example [service](examples/omega/soph-omega-renewal@.service) and
 [timer](examples/omega/soph-omega-renewal@.timer) run hourly. Successful runs
-verify the current release; the first invocation at least six hours after
-creation renews it. An hourly retry permits recovery from a transient failure
-before the normal 24-hour timestamp expiry. The timer catches missed runs after
-downtime. These are opt-in examples; installing Sopholeth does not enable them.
+verify the current release; the first invocation at least 24 hours after
+creation renews it. Hourly retries continue after failure, before the normal
+seven-day snapshot/timestamp expiry. A missed daily renewal normally leaves
+six days of validity, unless root/membership approval expires sooner. The timer
+catches missed runs after downtime. These are opt-in examples; installing Sopholeth does not enable them.
 
 Adjust the executable, user, network, and paths, provision custody, publish and
 verify the first approval, then install the reviewed units:

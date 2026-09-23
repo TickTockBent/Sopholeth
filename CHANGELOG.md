@@ -4,6 +4,12 @@
 
 ### Public discovery
 
+- Renew omega snapshot/timestamp metadata daily with seven-day validity, retaining
+  hourly scheduler checks/retries and root/membership expiry caps. Preserve older
+  one-day releases and interrupted signing reservations byte-for-byte; their
+  next new release adopts the longer window. Signing keys do not rotate on this
+  schedule.
+
 - Add `soph omega rotate --role root` for disposable Linux authorities, with
   old/new 2-of-3 signatures, offline signer generations, reviewed root expiry,
   and explicit `--renew-approval` of the unchanged membership. Recover expired

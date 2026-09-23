@@ -112,8 +112,11 @@ restore procedure are sufficient; a new backup subcommand is not a launch gate.
 
 Retain go-tuf signature verification, both old and new root quorums for rotation,
 immutable prepared outputs, monotonic counters, exact-byte retries, and
-timestamp-last publication. The existing single publisher, local-directory
-repository, and same-host operational binding are sufficient. Encryption does
+timestamp-last publication. Renew snapshot/timestamp daily with seven-day
+validity, capped by root/membership approval, and retry failures hourly. This
+provides publishing-outage headroom without changing signing keys. The existing
+single publisher, local-directory repository, and same-host operational binding
+are sufficient. Encryption does
 not require a new publication protocol. Serve only the public repository over
 HTTPS; keep operator keys behind an internal interface for future backends.
 

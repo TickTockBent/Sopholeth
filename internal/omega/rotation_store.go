@@ -45,12 +45,13 @@ type rotationRecord struct {
 }
 
 type rotationApply struct {
-	Schema      int       `json:"schema"`
-	Version     int64     `json:"version"`
-	Previous    string    `json:"previous_sha256"`
-	RootVersion int64     `json:"root_version"`
-	RootSHA256  string    `json:"root_sha256"`
-	Created     time.Time `json:"created"`
+	Schema        int       `json:"schema"`
+	Version       int64     `json:"version"`
+	Previous      string    `json:"previous_sha256"`
+	RootVersion   int64     `json:"root_version"`
+	RootSHA256    string    `json:"root_sha256"`
+	Created       time.Time `json:"created"`
+	TimestampDays int       `json:"timestamp_days,omitempty"`
 }
 
 func prepareRotation(state *store, bundle bootstrap.Bundle, previous []byte, version int64, a authority, now time.Time) (rotationRecord, error) {
@@ -280,7 +281,7 @@ func reserveRotationApply(state *store, bundle bootstrap.Bundle, latest release,
 		return err
 	}
 	intent := rotationApply{Schema: 1, Version: version, Previous: digest(record(latest)), RootVersion: rotation.RootVersion,
-		RootSHA256: digest(rotation.Root), Created: now.Truncate(time.Second)}
+		RootSHA256: digest(rotation.Root), Created: now.Truncate(time.Second), TimestampDays: timestampDays}
 	return state.install(name, record(intent))
 }
 
@@ -304,7 +305,7 @@ func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bun
 	if err := decodeRecord(data, &intent); err != nil {
 		return history, false, fmt.Errorf("omega: invalid rotation apply intent; rerun rotate with its original --apply digest or restore the journal: %w", err)
 	}
-	if intent.Schema != 1 || intent.Version != latest.Version+1 || intent.Version > maxReleases || intent.Previous != digest(record(latest)) ||
+	if !validTimestampDays(intent.TimestampDays) || intent.Schema != 1 || intent.Version != latest.Version+1 || intent.Version > maxReleases || intent.Previous != digest(record(latest)) ||
 		intent.RootVersion != latest.versions().Root+1 || intent.Created.IsZero() || intent.Created.Before(latest.Created) || now.Before(intent.Created) {
 		return history, false, errors.New("omega: rotation apply intent differs from history or clock predates it")
 	}
@@ -345,12 +346,12 @@ func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bun
 			return history, false, fmt.Errorf("%w: finish with the original rotate --role %s --apply command and offline home (--renew-approval for root): %w", errOfflineHandoff, role, targetErr)
 		}
 		if keys.Schema == 3 {
-			next, err = prepareContinuedRelease(onlineKeys, bundle, latest, intent.Created, roots, targets)
+			next, err = prepareContinuedRelease(onlineKeys, bundle, latest, intent.Created, roots, targets, intent.TimestampDays)
 		} else {
-			next, err = prepareMembershipRelease(onlineKeys, bundle, latest, intent.Created, roots, targets)
+			next, err = prepareMembershipRelease(onlineKeys, bundle, latest, intent.Created, roots, targets, intent.TimestampDays)
 		}
 	} else {
-		next, err = prepareRenewalWithRoots(keys.Keys, bundle, latest, intent.Created, roots)
+		next, err = prepareRenewalWithRoots(keys.Keys, bundle, latest, intent.Created, roots, intent.TimestampDays)
 	}
 	if err != nil {
 		return history, false, err

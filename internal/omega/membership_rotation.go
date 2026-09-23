@@ -218,7 +218,7 @@ func prepareRotationTargets(home, state *store, bundle bootstrap.Bundle, latest 
 	if err != nil {
 		return err
 	}
-	if intent.Schema != 1 || intent.Version != latest.Version+1 || intent.Version > maxReleases || intent.Previous != digest(record(latest)) ||
+	if !validTimestampDays(intent.TimestampDays) || intent.Schema != 1 || intent.Version != latest.Version+1 || intent.Version > maxReleases || intent.Previous != digest(record(latest)) ||
 		intent.RootVersion != latest.versions().Root+1 || intent.RootVersion != r.RootVersion || intent.RootSHA256 != digest(r.Root) ||
 		intent.Created.IsZero() || intent.Created.Before(latest.Created) || intent.Created.Before(preparation.Created) || now.Before(intent.Created) {
 		return errors.New("omega: targets apply reservation differs from history, transition, or clock")

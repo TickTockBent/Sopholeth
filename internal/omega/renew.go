@@ -20,7 +20,7 @@ type RenewOptions struct {
 const renewalProvisionAction = "Check --home. For first-time setup, run soph omega provision-renewal from the existing offline authority home; restore the operational home and journal if it was already provisioned."
 
 // Renew is a scheduler-friendly single invocation. It completes an interrupted
-// release first, renews after six hours, or verifies the existing release when
+// release first, renews daily, or verifies the existing release when
 // not due. No code path opens an offline authority or signs targets/root.
 func Renew(ctx context.Context, opts RenewOptions) (Report, error) {
 	return renew(ctx, opts, time.Time{}, nil)
@@ -157,7 +157,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		if err := decodeRecord(intentData, &intent); err != nil {
 			return report, err
 		}
-		if intent.Schema != 1 || intent.Version != latest.Version+1 || intent.Previous != digest(record(latest)) ||
+		if !validTimestampDays(intent.TimestampDays) || intent.Schema != 1 || intent.Version != latest.Version+1 || intent.Previous != digest(record(latest)) ||
 			intent.Created.IsZero() || intent.Created.Before(latest.Created) || now.Before(intent.Created) {
 			return report, errors.New("omega: invalid renewal intent or clock predates it")
 		}
@@ -188,7 +188,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		if intentErr != nil && !expired && (!verified || !report.Release.RenewalDue) {
 			return publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient)
 		}
-		intent = renewalIntent{Schema: 1, Version: latest.Version + 1, Previous: digest(record(latest)), Created: now.Truncate(time.Second)}
+		intent = renewalIntent{Schema: 1, Version: latest.Version + 1, Previous: digest(record(latest)), Created: now.Truncate(time.Second), TimestampDays: timestampDays}
 	}
 	if intent.Version > maxReleases {
 		return report, errors.New("omega: publication journal version limit reached")
@@ -202,7 +202,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	if err := state.phase("renewal:intent-durable"); err != nil {
 		return report, err
 	}
-	r, err := prepareRenewal(keys, bundle, latest, intent.Created)
+	r, err := prepareRenewal(keys, bundle, latest, intent.Created, intent.TimestampDays)
 	if err != nil {
 		return report, err
 	}
@@ -220,10 +220,11 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 }
 
 type renewalIntent struct {
-	Schema   int       `json:"schema"`
-	Version  int64     `json:"version"`
-	Previous string    `json:"previous_sha256"`
-	Created  time.Time `json:"created"`
+	Schema        int       `json:"schema"`
+	Version       int64     `json:"version"`
+	Previous      string    `json:"previous_sha256"`
+	Created       time.Time `json:"created"`
+	TimestampDays int       `json:"timestamp_days,omitempty"`
 }
 
 func renewalIntentName(version int64) string { return fmt.Sprintf("%d.renewal-intent.json", version) }
