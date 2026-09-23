@@ -4,6 +4,10 @@
 
 ### Public discovery
 
+- Give newly created public repositories the operational account's ownership,
+  so privileged publication can hand off to an unprivileged renewal service.
+  Reject existing repository ownership mismatches with an actionable path.
+
 - Accept formatted operator JSON in the Vercel config and wait briefly for
   production-edge propagation after promotion. The hosted rehearsal exercises
   signed publication, CLI renewal and rotation, and docs deployment isolation.

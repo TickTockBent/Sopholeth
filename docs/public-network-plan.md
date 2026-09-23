@@ -136,10 +136,12 @@ The apex serves directly and www redirects to it. The
 CLI renewal without offline custody, online-key rotation, fresh/returning clients,
 and survival of docs deployment/rollback under a unique rehearsal prefix.
 
-**Next operator step:** the operator will configure Kraid, install its service
-credential, and run the [manual encrypted rehearsal](omega-kraid-rehearsal.md),
-including an actual scheduled renewal from that host. No agent SSH access or
-remote setup is planned. Reserve `/omega/` itself for the final authority to avoid
+**Remote operator check:** the operator configured Kraid and completed a successful
+systemd service invocation after repairing the public-spool ownership bug found
+in the [manual encrypted rehearsal](omega-kraid-rehearsal.md). The timer is now
+disabled and removed; a full daily scheduled cycle remains unobserved. The code
+fix and a real UID-transition regression cover the setup failure. Reserve
+`/omega/` itself for the final authority to avoid
 immutable-cache collisions. No production authority has been created. Deployment
 credentials remain separate from authority keys. Recheck the
 [domain preflight](../sites/README.md#omega-metadata-hosting)

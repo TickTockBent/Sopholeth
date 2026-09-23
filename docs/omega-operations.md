@@ -357,7 +357,12 @@ Public files are installed in this order:
 
 Immutable filenames are never overwritten with different bytes. Public data
 files use mode `0644`. Newly created repository and `targets/` directories use
-mode `0755`, including under `umask 077`. Existing directory modes are preserved;
+mode `0755`, including under `umask 077`. A new repository inherits its owner and
+group from the operational home, even when a privileged operator publishes it.
+Its lock and public objects inherit that owner. Existing repository ownership
+must match the operational home; it is not silently reassigned. Before handing
+an existing publication to another account, explicitly transfer the public
+repository and its contents to that account. Existing directory modes are preserved;
 the operator must configure access through those directories and their parents
 for the HTTPS serving account. The destination also contains a private, empty
 `.omega-publish.lock`; temporary `.pending` public files may survive a killed

@@ -215,7 +215,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		}
 		return report, nil
 	}
-	repo, err := openRepository(ctx, binding.Directory, online.root.Name())
+	repo, err := openRepository(ctx, binding.Directory, online)
 	if err != nil {
 		return report, err
 	}

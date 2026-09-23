@@ -113,7 +113,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		return report, errors.New("omega: clock moved backward since the last publication check")
 	}
 	report.Release.CheckedAt, report.Release.VerifiedAt, report.Release.LastError = receipt.CheckedAt, receipt.VerifiedAt, receipt.Error
-	repo, err := openRepository(ctx, binding.Directory, home.root.Name())
+	repo, err := openRepository(ctx, binding.Directory, home)
 	if err != nil {
 		return report, err
 	}

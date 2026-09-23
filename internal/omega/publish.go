@@ -115,7 +115,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	if containsPath(home.root.Name(), canonical) || containsPath(canonical, home.root.Name()) {
 		return report, errors.New("omega: repository and offline custody home must be disjoint")
 	}
-	repo, err := openRepository(ctx, opts.Directory, operational.root.Name())
+	repo, err := openRepository(ctx, opts.Directory, operational)
 	if err != nil {
 		return report, err
 	}

@@ -349,7 +349,7 @@ func copyPublication(ctx context.Context, source, dest *store, bundle bootstrap.
 			return err
 		}
 	}
-	repo, err := openRepository(ctx, binding.Directory, dest.root.Name())
+	repo, err := openRepository(ctx, binding.Directory, dest)
 	if err != nil {
 		return err
 	}

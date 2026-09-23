@@ -50,12 +50,12 @@ func containsPath(parent, child string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func openRepository(ctx context.Context, path, home string) (*repositoryStore, error) {
+func openRepository(ctx context.Context, path string, home *store) (*repositoryStore, error) {
 	canonical, err := canonicalPath(path)
 	if err != nil {
 		return nil, err
 	}
-	if containsPath(home, canonical) || containsPath(canonical, home) {
+	if containsPath(home.root.Name(), canonical) || containsPath(canonical, home.root.Name()) {
 		return nil, errors.New("omega: repository and private custody home must be disjoint directory trees")
 	}
 	for p := filepath.Dir(canonical); ; p = filepath.Dir(p) {
@@ -70,7 +70,9 @@ func openRepository(ctx context.Context, path, home string) (*repositoryStore, e
 			break
 		}
 	}
+	created := false
 	if err := os.Mkdir(canonical, 0755); err == nil {
+		created = true
 		// Public directories must remain traversable by the HTTPS account even
 		// under the private custody umask. Preserve existing operator modes.
 		if err := os.Chmod(canonical, 0755); err != nil {
@@ -84,7 +86,7 @@ func openRepository(ctx context.Context, path, home string) (*repositoryStore, e
 		return nil, err
 	}
 	if err := publicDir(info); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("omega: repository %s: %w", canonical, err)
 	}
 	root, err := os.OpenRoot(canonical)
 	if err != nil {
@@ -92,6 +94,29 @@ func openRepository(ctx context.Context, path, home string) (*repositoryStore, e
 	}
 	s := &store{root: root}
 	fail := func(err error) (*repositoryStore, error) { s.close(); return nil, err }
+	owner, err := home.root.Stat(".")
+	if err != nil {
+		return fail(err)
+	}
+	if created {
+		// A privileged publisher creates this directory on behalf of the
+		// operational account. Its lock, targets directory, and objects then
+		// inherit this owner just like the private publication journal does.
+		dir, err := root.Open(".")
+		if err != nil {
+			return fail(err)
+		}
+		if err := errors.Join(inheritOwnership(dir, owner), dir.Close()); err != nil {
+			return fail(err)
+		}
+	}
+	info, err = root.Stat(".")
+	if err != nil {
+		return fail(err)
+	}
+	if !sameOwner(info, owner) {
+		return fail(fmt.Errorf("omega: repository %s must belong to the operational home's owner; repair ownership of this public repository and its contents before retrying", canonical))
+	}
 	if info, err := root.Lstat(".omega-publish.lock"); err == nil {
 		if err := safeFile(info); err != nil {
 			return fail(err)

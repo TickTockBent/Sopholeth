@@ -75,14 +75,22 @@ Deployment credentials are not saved there. These tests do not enable a timer.
 
 ## Operator handoff: Kraid
 
-The operator selected Kraid for permanent renewal and will perform its setup.
-No SSH connection or remote modification was made during this rehearsal.
-Use the [Kraid rehearsal steps](omega-kraid-rehearsal.md) to exercise the real
-operator commands, encrypted custody, service permissions, and systemd on that
-host before creating production authority.
+The operator selected Kraid for permanent renewal and performed its setup with
+encrypted disposable custody. Its first service invocation exposed a root-owned
+public repository created by privileged publication. Authorized read-only SSH
+diagnosis confirmed correct service/online-key ownership and the public-spool
+mismatch. The operator repaired that spool's ownership and reported a successful
+systemd invocation at log time 19:00:48 on 2026-09-23, then disabled and removed the
+rehearsal timer. No agent-side remote modifications were made.
 
-The remaining hosting work is the remote service/token setup, an actual scheduled
-run, and checking the result from that second location. The final authority,
+The publisher now assigns new repositories to the operational account. A local
+regression reproduced the old error, then verified privileged encrypted setup
+followed by due renewal under a different UID with offline custody inaccessible.
+CI runs that small UID-transition test explicitly; ordinary unprivileged tests
+cannot exercise this boundary. See the [Kraid steps](omega-kraid-rehearsal.md).
+
+A full daily cycle under the remote timer remains unobserved; the successful
+service invocation verifies the current release. The final authority,
 its independent backup/recovery record, and release fingerprint are still future
 steps. Continue with the [launch plan](public-network-plan.md); successful metadata
 hosting does not close peer identity, admission, Windows-client, or other root gates.

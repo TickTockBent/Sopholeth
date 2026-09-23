@@ -18,6 +18,11 @@ func owned(info os.FileInfo) error {
 	}
 	return nil
 }
+func sameOwner(first, second os.FileInfo) bool {
+	a, aOK := first.Sys().(*syscall.Stat_t)
+	b, bOK := second.Sys().(*syscall.Stat_t)
+	return aOK && bOK && a.Uid == b.Uid
+}
 func safeAncestor(info os.FileInfo) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || !info.IsDir() || (os.Geteuid() != 0 && stat.Uid != 0 && stat.Uid != uint32(os.Geteuid())) || (info.Mode().Perm()&0022 != 0 && info.Mode()&os.ModeSticky == 0) {

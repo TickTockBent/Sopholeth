@@ -61,3 +61,8 @@ jobs:
 
     - name: Test
       run: go test -race ./...
+
+    - name: Test privileged setup and unprivileged renewal
+      run: |
+        go test -race -c -o "$RUNNER_TEMP/omega-ownership.test" ./internal/omega
+        sudo "$RUNNER_TEMP/omega-ownership.test" -test.run '^TestRenewalWithServiceOwnership$' -test.v

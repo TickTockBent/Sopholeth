@@ -119,6 +119,26 @@ targets 1 unchanged. Check the journal and `status --verify` afterward. Do not e
 the clock or journal to force a renewal. Reports, version numbers, and error output
 are enough to review the result; do not share keys, passwords, or token files.
 
+### Existing installations with a root-owned public spool
+
+An earlier publisher created a missing `/srv/omega-public/kraid-rehearsal` as
+root during privileged publication. The service then failed with
+`authority material must belong to the current user`, despite correctly owned
+online custody. Current builds inherit the operational home's owner and report
+an existing repository mismatch with its path.
+
+For that earlier setup, repair the public spool and retry the service:
+
+```bash
+sudo chown -R soph-omega:soph-omega /srv/omega-public/kraid-rehearsal
+sudo systemctl restart soph-omega-renewal@kraid-rehearsal.service
+sudo journalctl -u soph-omega-renewal@kraid-rehearsal.service -n 20 --no-pager
+```
+
+This changes no signed bytes, versions, or custody keys.
+
+## Finish the rehearsal
+
 When finished, stop this disposable timer and preserve its custody/history:
 
 ```bash
