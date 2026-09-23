@@ -40,6 +40,9 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 	must(t, err)
 	initial := file(t, filepath.Join(f.opts.Home, opts.Network, "authority.json"))
 	first := recordedRelease(t, online, 1)
+	initialRoot, err := metadata.Root().FromBytes(bundle.Root)
+	must(t, err)
+	previousExpiry := initialRoot.Signed.Expires
 	must(t, os.Remove(filepath.Join(f.opts.Home, opts.Network, encryptedKeyName("root-1"))))
 	for _, role := range []string{"root", "online", "targets", "root", "targets", "online"} {
 		opts.Role, opts.Apply, opts.RenewApproval = role, "", false
@@ -128,9 +131,10 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 		if applied.RootVersion != opts.RootVersion || applied.Publication != "verified" || applied.Rotation.Role != role || applied.Fingerprint != bundle.Fingerprint() {
 			t.Fatalf("bad application: %+v", applied)
 		}
-		if role == "root" && (!applied.RootExpires.After(first.Created.Add(rootLifetime)) || applied.Roles["root"].Threshold != 2 || len(applied.Rotation.Keys["root"]) != 3) {
-			t.Fatal("root policy or review fields missing")
+		if role == "root" && (!applied.RootExpires.After(previousExpiry) || applied.Roles["root"].Threshold != 2 || len(applied.Rotation.Keys["root"]) != 3) {
+			t.Fatalf("root policy or review fields missing: previous expiry %s, report %+v", previousExpiry, applied)
 		}
+		previousExpiry = applied.RootExpires
 		_, err = Rotate(ctx, opts)
 		must(t, err)
 		assertAbsent(t, filepath.Join(onlineState(online), releaseName(opts.RootVersion+1)))
