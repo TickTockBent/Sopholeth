@@ -15,6 +15,7 @@ type RenewOptions struct {
 	Home, Network string
 	Disposable    bool
 	HTTPClient    *http.Client
+	Vercel        *VercelOptions
 }
 
 const renewalProvisionAction = "Check --home. For first-time setup, run soph omega provision-renewal from the existing offline authority home; restore the operational home and journal if it was already provisioned."
@@ -131,7 +132,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	}
 	if resumed {
 		latest = history[len(history)-1]
-		return publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient)
+		return publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient, opts.Vercel)
 	}
 	for _, name := range []string{rotationTargetsName(latest.Version + 1), rotationTargetsName(latest.Version+1) + ".pending"} {
 		if _, err := state.root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
@@ -191,7 +192,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		expired := !now.Before(expires["timestamp"])
 		verified := receiptErr == nil && receipt.Error == "" && !receipt.VerifiedAt.IsZero()
 		if intentErr != nil && !expired && (!verified || !report.Release.RenewalDue) {
-			return publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient)
+			return publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient, opts.Vercel)
 		}
 		intent = renewalIntent{Schema: 1, Version: latest.Version + 1, Previous: digest(record(latest)), Created: now.Truncate(time.Second), TimestampDays: timestampDays}
 	}
@@ -221,7 +222,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		return report, err
 	}
 	history = append(history, r)
-	return publishPrepared(ctx, state, repo, bundle, history, r, report, now, opts.HTTPClient)
+	return publishPrepared(ctx, state, repo, bundle, history, r, report, now, opts.HTTPClient, opts.Vercel)
 }
 
 type renewalIntent struct {

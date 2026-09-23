@@ -1,15 +1,14 @@
 # Omega trust lifecycle: integration spike and proposed design
 
-Status: trust client, atomic disposable authority initialization, local-directory
-publication, unattended online renewal, online/membership/root-key rotation, and served-release
-verification and root-expiry recovery implemented. Encrypted disposable init,
-public inspection, and restored-key verification are implemented. Production custody/hosting,
-and consumer integration remain pending.
+Status: trust client, atomic encrypted authority initialization, local-directory
+and Vercel publication, unattended online renewal, online/membership/root-key
+rotation, served-release verification, and root-expiry recovery are implemented.
+Hosted rehearsal, release integration, and discovery consumers remain pending.
 The completed [spike](../test/omega-tuf/README.md) established the design for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md). Its scenarios now exercise the
 [durable client](../internal/trust/bootstrap/README.md) in the main Go suite.
-`soph omega init`, `provision-renewal`, local-directory `publish` with online
+`soph omega init`, `provision-renewal`, `publish` with online
 renewal, online/membership/root-key `rotate`, and `status --verify` implement the current operator slices.
 This does not switch node discovery or establish a production authority.
 The [audit](omega-signing-audit.md) remains the record of the interim protocol.
@@ -148,9 +147,9 @@ validation still requires HTTPS origins. URL normalization preserves existing
 origin-only authorities; changing a bound repository path requires an explicit
 migration, not editing authority or client state.
 
-The apex must serve metadata directly. Before public `soph omega init`, change
-Vercel's apex-to-www redirect to serve Production at `sopholeth.io`, with www
-redirecting to the apex, and verify the exact metadata URL without redirects.
+The apex must serve metadata directly. Production at `sopholeth.io`, with www
+redirecting to the apex, was verified on 2026-09-23. Before public `soph omega init`,
+recheck the exact metadata URL without redirects.
 The client intentionally rejects redirects, and initialization binds the chosen
 URL without contacting it. No in-place repository migration is implemented.
 
@@ -162,12 +161,14 @@ including future root versions. Internal/pending filenames are denied even if
 present in the site output. Other docs pages retain their existing routing.
 See [hosting configuration and checks](../sites/README.md#omega-metadata-hosting).
 
-Deployment automation remains pending. Publication must be independent of docs
-deployments so a website rebuild or rollback cannot erase or revert metadata.
-Do not activate a live authority by manually dropping metadata into the current
-Git-deployed docs site. The deployment integration must preserve authoritative
-history across both metadata and website changes, then verify served bytes and
-cache headers. No public keys or signed metadata are created by these route rules.
+The Vercel adapter stages retained public objects in a separate metadata-only
+project, checks their exact bytes and cache policy, promotes the deployment, and
+verifies the canonical public URL. Promotion state is journaled across retries.
+A project-level rewrite keeps `/omega/` independent of docs deployments and
+rollbacks. That route and the signed hosted rehearsal remain activation work;
+do not put metadata into the Git-deployed docs site. Rehearsal authorities use a
+unique subpath so their immutable objects cannot collide with the final authority.
+See [Vercel publication](omega-vercel.md). No public authority has been created.
 
 Use consistent snapshots, a fixed target name `bootstrap.json`, numbered
 root/targets/snapshot files, and content-hashed target objects. Upload immutable

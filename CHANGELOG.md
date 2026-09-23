@@ -4,6 +4,12 @@
 
 ### Public discovery
 
+- Add Vercel publication to `soph omega publish`, renewal, and rotation application.
+  Retain public history in a metadata-only project, verify staged bytes/cache rules
+  before promotion, reconcile interrupted promotions, and verify canonical HTTPS
+  before success. Hourly checks do not redeploy unchanged metadata. Public
+  authority creation and the signed hosted rehearsal remain separate launch steps.
+
 - Support HTTPS metadata base paths such as `sopholeth.io/omega/` throughout
   authority initialization, TUF downloads, and publisher verification. Confine
   downloads to the configured directory and retain origin-only node endpoints.

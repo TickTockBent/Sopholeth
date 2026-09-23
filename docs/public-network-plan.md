@@ -123,17 +123,24 @@ internal/pending names cannot be served. The existing encrypted lifecycle runs
 against a path-prefixed HTTPS fixture; a Vercel local-router smoke test checks
 headers, misses, and docs routing.
 
-**Next operator/hosting slice:** add the Vercel publication/deployment adapter
-with explicit served-byte verification. Resolve publication ownership so normal
-docs deployments and website rollbacks cannot drop or revert metadata; preserve
-the complete retained public history. No live authority or hosted metadata is
-created by the serving configuration alone. Keep daily refresh, seven-day expiry,
-and hourly retries. Deployment credentials remain separate from authority keys.
-Before public `soph omega init`, configure the apex to serve Production directly
-and redirect www to it. Verify the exact metadata URL without following redirects;
-the current apex-to-www 308 is incompatible with the planned repository URL.
-See the [domain preflight](../sites/README.md#omega-metadata-hosting). This is a
-hosting prerequisite, not a reason to relax the client's redirect rejection.
+**Vercel adapter — implemented; hosted rehearsal next:** `publish`, renewal,
+and rotation application accept a metadata-project config and upload only public
+objects reconstructed from the retained journal. Staging cannot assign production
+domains. Exact bytes/cache checks precede promotion, promotion state is journaled
+for retry, and success requires canonical HTTPS/TUF verification. Hourly checks
+do not deploy unchanged metadata; daily refresh and seven-day expiry remain.
+
+The separate `sopholeth-omega` project is created and configured. The apex now
+serves directly and www redirects to it; production missing-metadata responses
+were verified as uncached JSON 404s on 2026-09-23. Complete the
+[Vercel setup and rehearsal](omega-vercel.md): configure the publisher credential,
+use the verified empty metadata deployment, and install a project-level `/omega/`
+rewrite independent of docs deployments. Rehearse signed disposable metadata
+under a unique `/omega/rehearsal-.../` prefix, including docs rollback isolation.
+Reserve `/omega/` itself for the final authority to avoid immutable-cache collisions.
+No live authority has been created. Deployment credentials remain separate from
+authority keys. Recheck the [domain preflight](../sites/README.md#omega-metadata-hosting)
+before public `soph omega init`; keep the client's redirect rejection.
 Consumer integration must still follow the peer-identity decision below;
 compiled trust bundles and #223 remain release gates. Node hosts receive public
 trust material only.

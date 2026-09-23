@@ -374,7 +374,7 @@ func copyPublication(ctx context.Context, source, dest *store, bundle bootstrap.
 		return err
 	}
 	for _, name := range names {
-		if name != "binding.json" && name != "binding.json.pending" && !journalEntry.MatchString(name) {
+		if name != "binding.json" && name != "binding.json.pending" && !isVercelJournalFile(name) && !journalEntry.MatchString(name) {
 			continue
 		}
 		if err := ctx.Err(); err != nil {

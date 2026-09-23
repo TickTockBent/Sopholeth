@@ -34,6 +34,10 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	var apply string
 	var rotationRole string
 	var renewApproval bool
+	var vercelConfig string
+	if cmd == "publish" || cmd == "rotate" {
+		fs.StringVar(&vercelConfig, "vercel-config", "", "metadata-only Vercel project JSON; credentials use VERCEL_TOKEN")
+	}
 	if cmd == "init" || cmd == "publish" || cmd == "provision-renewal" || cmd == "rotate" {
 		fs.BoolVar(&disposable, "disposable", false, "operate on a disposable rehearsal authority (must match its recorded mode)")
 	}
@@ -76,9 +80,29 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	if cmd == "init" && !disposable {
 		encrypted = true
 	}
+	var hosting *omega.VercelOptions
+	if vercelConfig != "" {
+		file, err := os.Open(vercelConfig)
+		if err != nil {
+			return err
+		}
+		data, err := io.ReadAll(io.LimitReader(file, 4097))
+		file.Close()
+		if err != nil {
+			return err
+		}
+		config, err := omega.ParseVercelConfig(data)
+		if err != nil {
+			return err
+		}
+		hosting = &omega.VercelOptions{Config: config, Token: a.getenv("VERCEL_TOKEN")}
+	}
 	timeout := a.timeout
 	if (encrypted || checkKeys || cmd == "rotate" || cmd == "provision-renewal" || (cmd == "publish" && !renew)) && !a.timeoutSet {
 		timeout = 2 * time.Minute
+	}
+	if hosting != nil && !a.timeoutSet {
+		timeout = 5 * time.Minute
 	}
 	opCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -103,12 +127,12 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 		if renewApproval && (rotationRole != "root" || apply == "") || rotationRole == "root" && apply != "" && !renewApproval {
 			return usagef("omega rotate --role root --apply requires --renew-approval; other operations do not accept it")
 		}
-		report, err = omega.Rotate(opCtx, omega.RotateOptions{Home: *home, Network: *network, RootVersion: rootVersion, Role: rotationRole, Apply: apply, RenewApproval: renewApproval, Disposable: disposable, Passphrase: passphrase, HTTPClient: a.newHTTPClient()})
+		report, err = omega.Rotate(opCtx, omega.RotateOptions{Home: *home, Network: *network, RootVersion: rootVersion, Role: rotationRole, Apply: apply, RenewApproval: renewApproval, Disposable: disposable, Passphrase: passphrase, HTTPClient: a.newHTTPClient(), Vercel: hosting})
 	} else if cmd == "publish" && renew {
 		if manifestPath != "" || directory != "" || version != 0 {
 			return usagef("omega publish --renew accepts no manifest, repository-dir, or version; the operational journal supplies them")
 		}
-		report, err = omega.Renew(opCtx, omega.RenewOptions{Home: *home, Network: *network, Disposable: disposable, HTTPClient: a.newHTTPClient()})
+		report, err = omega.Renew(opCtx, omega.RenewOptions{Home: *home, Network: *network, Disposable: disposable, HTTPClient: a.newHTTPClient(), Vercel: hosting})
 	} else if cmd == "publish" {
 		if manifestPath == "" || directory == "" || version < 1 {
 			return usagef("omega publish requires --manifest, --repository-dir, and --version")
@@ -125,7 +149,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 		if closeErr != nil {
 			return closeErr
 		}
-		report, err = omega.Publish(opCtx, omega.PublishOptions{Home: *home, Network: *network, Directory: directory, Manifest: manifest, Version: version, Disposable: disposable, Passphrase: passphrase, HTTPClient: a.newHTTPClient()})
+		report, err = omega.Publish(opCtx, omega.PublishOptions{Home: *home, Network: *network, Directory: directory, Manifest: manifest, Version: version, Disposable: disposable, Passphrase: passphrase, HTTPClient: a.newHTTPClient(), Vercel: hosting})
 	} else if checkKeys {
 		report, err = omega.CheckKeys(opCtx, *home, *network, passphrase)
 	} else if verify {

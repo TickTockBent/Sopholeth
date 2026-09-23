@@ -4,6 +4,7 @@ Usage: python3 test/hosting/omega_routes.py [vercel command ...]
 Defaults to npx --yes vercel@59.7.0. No project link or deployment is made.
 """
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,6 @@ import shutil
 import signal
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.error
@@ -24,11 +24,17 @@ PAYLOAD = b'{"fixture":"routing only, not signed metadata"}\n'
 
 
 def main():
-    command = sys.argv[1:] or ["npx", "--yes", "vercel@59.7.0"]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--metadata-config", type=Path, help="exercise the publisher's metadata-only configuration")
+    parser.add_argument("command", nargs=argparse.REMAINDER, help="installed Vercel CLI command")
+    args = parser.parse_args()
+    command = args.command or ["npx", "--yes", "vercel@59.7.0"]
     with tempfile.TemporaryDirectory(prefix="soph-omega-routes-") as temporary:
         base = Path(temporary)
         site = base / "site"
         shutil.copytree(ROOT / "sites/sopholeth.io", site)
+        if args.metadata_config:
+            shutil.copyfile(args.metadata_config, site / "vercel.json")
         (site / "omega/targets").mkdir(parents=True)
         files = ["timestamp.json", "1.root.json", "1.snapshot.json", "1.targets.json",
                  "targets/" + "a" * 64 + ".bootstrap.json"]
@@ -65,7 +71,7 @@ def main():
                 deadline = time.monotonic() + 90
                 while time.monotonic() < deadline and process.poll() is None:
                     try:
-                        if fetch("/")[0] == 200:
+                        if fetch("/omega/timestamp.json")[0] == 200:
                             break
                     except (urllib.error.URLError, TimeoutError):
                         pass
@@ -86,9 +92,15 @@ def main():
                     assert status == 404, (path, status)
                     assert headers.get("Vercel-CDN-Cache-Control") == NO_STORE, (path, dict(headers))
                     assert json.loads(body) == {"error": "Metadata not found"}, (path, body)
-                assert fetch("/")[2] == (site / "index.html").read_bytes()
-                status, _, body = fetch("/missing-doc")
-                assert status == 404 and body == (site / "404.html").read_bytes()
+                if args.metadata_config:
+                    for path in ["/", "/index.html", "/missing-doc", "/vercel.json"]:
+                        status, headers, body = fetch(path)
+                        assert status == 404 and headers.get("Vercel-CDN-Cache-Control") == NO_STORE
+                        assert json.loads(body) == {"error": "Metadata not found"}
+                else:
+                    assert fetch("/")[2] == (site / "index.html").read_bytes()
+                    status, _, body = fetch("/missing-doc")
+                    assert status == 404 and body == (site / "404.html").read_bytes()
                 print("PASS: metadata bytes, CDN cache rules, uncached JSON misses, blocked files, and docs routing")
             finally:
                 try:

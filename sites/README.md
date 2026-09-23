@@ -78,7 +78,8 @@ the site routes return a real 404 until the publisher is integrated.
 **Before public authority initialization, settle the production domain.** On
 2026-09-23, the apex returned a 308 redirect to `www.sopholeth.io`, including for
 `/omega/timestamp.json`. The trust client and publisher reject all redirects.
-To use the planned `https://sopholeth.io/omega/` repository, open the project's
+The redirect was reversed and direct apex responses verified later that day.
+For a new setup using `https://sopholeth.io/omega/`, open the project's
 Settings → Domains, remove the apex-to-www redirect so `sopholeth.io` serves
 Production directly, then redirect `www.sopholeth.io` to the apex. See Vercel's
 [domain redirect settings](https://vercel.com/docs/domains/working-with-domains/deploying-and-redirecting).
@@ -129,18 +130,20 @@ overrides browser `Cache-Control` to `max-age=0`; the check exercises the CDN
 header and verifies the matching browser directive in the config. Confirm both
 on a deployed preview and again at the public endpoint during publication rehearsal.
 
-**Deployment integration remains next.** The current Git deployment has no
-metadata source. A later ordinary docs deployment would remove manually uploaded
-metadata; a website rollback could restore stale metadata. Before activating a
-live authority, give metadata publication an independent deployment path or make
-every docs deployment preserve the current authoritative repository. Keep the
-full retained history and verify the served release after every publication.
+**Deployment adapter implemented; hosted rehearsal remains.** The
+`sopholeth-omega` project owns metadata deployments without a Git connection.
+`soph omega` stages and verifies retained public history before promotion, then
+checks the canonical public URL. Install a project-level `/omega/:path*` rewrite
+to its production hostname independently of docs deployments. The exact project
+IDs, route, credential setup, and rehearsal steps are in
+[Vercel publication](../docs/omega-vercel.md). Keep metadata out of this site's
+Git output. A docs rollback must not change the project-level metadata route.
 
 The public endpoint must be reachable by unauthenticated clients with ordinary
 TLS: no login redirect or interactive challenge. Preview deployment protection
 can remain enabled; any preview-only verification access must not become a public
-client dependency. Deployment credentials and project/team configuration will be
-needed for the publisher integration, not for this configuration-only hosting slice.
+client dependency. The metadata-only project needs anonymous access even at its
+isolated deployment URLs so staging can be verified before promotion.
 
 ## Local preview
 

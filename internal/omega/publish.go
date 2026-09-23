@@ -25,6 +25,7 @@ type PublishOptions struct {
 	Passphrase PassphraseFunc
 	codec      keyCodec
 	HTTPClient *http.Client
+	Vercel     *VercelOptions
 }
 
 type PublicationReport struct {
@@ -224,10 +225,13 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 		}
 		history = append(history, r)
 	}
-	return publishPrepared(ctx, state, repo, bundle, history, r, report, now, opts.HTTPClient)
+	return publishPrepared(ctx, state, repo, bundle, history, r, report, now, opts.HTTPClient, opts.Vercel)
 }
 
-func publishPrepared(ctx context.Context, state *store, repo *repositoryStore, bundle bootstrap.Bundle, history []release, r release, report Report, now time.Time, hc *http.Client) (_ Report, resultErr error) {
+func publishPrepared(ctx context.Context, state *store, repo *repositoryStore, bundle bootstrap.Bundle, history []release, r release, report Report, now time.Time, hc *http.Client, hosting *VercelOptions) (_ Report, resultErr error) {
+	if err := bindVercel(state, hosting); err != nil {
+		return report, err
+	}
 	if err := state.syncDir(); err != nil {
 		return report, err
 	}
@@ -307,6 +311,9 @@ func publishPrepared(ctx context.Context, state *store, repo *repositoryStore, b
 		return report, err
 	}
 	report.Publication = "unverified"
+	if err := deployVercel(ctx, state, bundle, history, hosting, verifier.http); err != nil {
+		return report, err
+	}
 	if err := verifier.verify(ctx, bundle, r); err != nil {
 		return report, err
 	}
@@ -499,6 +506,20 @@ func inspectPublication(ctx context.Context, home *store, bundle bootstrap.Bundl
 	if err == nil {
 		defer cleanup()
 		err = verifier.verify(ctx, bundle, r)
+		if err == nil {
+			if data, readErr := state.read(vercelBindingName); readErr == nil {
+				_, err = ParseVercelConfig(data)
+				if err == nil {
+					var objects []publicObject
+					objects, err = retainedObjects(bundle, history)
+					if err == nil {
+						err = verifyHostedObjects(ctx, verifier.http, bundle.Repository, objects)
+					}
+				}
+			} else if !errors.Is(readErr, os.ErrNotExist) {
+				err = readErr
+			}
+		}
 	}
 	checked := time.Now().UTC()
 	saveErr := saveVerification(state, r, err, checked)

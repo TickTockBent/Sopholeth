@@ -24,6 +24,7 @@ type RotateOptions struct {
 	Passphrase    PassphraseFunc
 	codec         keyCodec
 	HTTPClient    *http.Client
+	Vercel        *VercelOptions
 }
 
 type RotationReport struct {
@@ -251,7 +252,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		latest = history[len(history)-1]
 	}
 	report.Rotation.State = "applying"
-	report, err = publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient)
+	report, err = publishPrepared(ctx, state, repo, bundle, history, latest, report, now, opts.HTTPClient, opts.Vercel)
 	if err != nil {
 		return report, err
 	}

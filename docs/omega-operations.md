@@ -4,9 +4,9 @@
 encrypted TUF authorities, unattended renewal, online/membership/root-key
 rotation, root-expiry recovery, and verified publication to a local HTTPS-served
 repository on Linux. Production initialization uses encrypted custody by default.
-No live authority is created by this implementation. Automated hosted publication,
-the compiled trust bundle/release gate, and discovery consumers remain in the
-[public-network plan](public-network-plan.md).
+No live authority is created by this implementation. Vercel publication is
+implemented; hosted rehearsal, the compiled trust bundle/release gate, and
+discovery consumers remain in the [public-network plan](public-network-plan.md).
 
 The launch profile uses one secured connected operator workstation and a tested
 backup. The operator may use `sudo`; the renewal service runs as a separate,
@@ -42,14 +42,14 @@ host/default-port spellings normalize before keys are allocated. Path segments
 use literal ASCII letters, digits, or `-._~`. Traversal, doubled slashes, percent
 escapes, credentials, queries, fragments, and backslashes are rejected. The
 repository URL is part of authority/key bindings: do not edit an existing
-origin-only authority to move it under a path. Hosting/deployment automation is
-still separate work.
+origin-only authority to move it under a path. For Vercel setup and the hosted
+publication flags, see [Vercel publication](omega-vercel.md).
 `init` and local `status` do not contact the repository. Operator commands
 do not read or change client profiles.
 
 Before initializing the public authority, verify the exact production metadata
 URL without following redirects. The planned apex must serve directly, with www
-redirecting to it; the existing apex-to-www redirect must be removed in Vercel.
+redirecting to it; this domain configuration was verified on 2026-09-23.
 Follow the [domain preflight](../sites/README.md#omega-metadata-hosting). A direct
 404 is expected before publication; any redirect, login, or TLS error must be
 resolved first. `init` does not perform this check, and the current implementation
@@ -240,15 +240,17 @@ be outside the custody home; neither directory tree may contain the other. The p
 creates the final directory if absent. A first publication requires an empty
 directory. Existing site files cannot be adopted as a repository.
 
-This first backend writes to a **local filesystem directory**. The HTTPS
-server is a separate, already configured service; `publish` does not start it,
-upload through an HTTP API, configure Vercel, or deploy root nodes. Verification
-uses normal TLS certificate/hostname checks and refuses redirects. A private
+The default backend writes to a **local filesystem directory** served by a
+separate, already configured HTTPS server. Adding `--vercel-config <file>` uploads
+retained public metadata to the configured metadata-only project and promotes it
+after staging checks. The local directory remains a public spool. Neither backend
+deploys root nodes. Verification uses normal TLS certificate/hostname checks and
+refuses redirects. A private
 rehearsal CA can be supplied through the platform's trusted CA configuration
 (for example `SSL_CERT_FILE` on Linux); there is no insecure TLS flag. Hosting
 at `sopholeth.io/omega/` has base-path support and committed Vercel routing/cache
-rules; the deployment adapter is still pending. See the
-[hosting notes](../sites/README.md#omega-metadata-hosting).
+rules and a deployment adapter. Project-level routing and a hosted rehearsal must
+precede public activation. See [Vercel publication](omega-vercel.md).
 
 Create the approved manifest, for example `bootstrap.json`:
 
