@@ -77,8 +77,9 @@ fail without making a partially populated authority slot visible.
 The custody home is the durable registry of network identities. Keep using it
 and preserve its backups. An offline command cannot detect a second independent
 home or a deleted registry; changing homes is not a recovery procedure. A
-production ceremony must establish the canonical registry and independent
-custody before this command can create production material.
+production workflow must establish the canonical registry, encrypted key storage,
+and tested backups before public activation. The proposed first profile permits
+one connected operator workstation.
 
 ### Files, custody, and status
 
@@ -98,14 +99,14 @@ checks consistency; it is not protection against someone who controls the
 operator account and can replace all custody material.
 
 This first implementation deliberately requires `--disposable`: all six keys
-are stored together for development. It does not claim independent root-key
-custody or create independent recovery copies. Production initialization must
+are stored in plaintext together for development. It does not provide the planned
+encrypted storage or verified recovery workflow. Production initialization must
 wait for the custody/recovery workflow and rehearsal. `authority.json` schema 1
 is permanently reserved for disposable authorities: production custody requires
 a new schema, not an extension that enables production use of schema 1.
 The [production custody proposal](omega-production-custody.md) describes the
-selected encrypted-file backend and the planned creation/recovery workflow;
-its command extensions are not implemented yet.
+encrypted-file backend on one connected workstation and the creation/recovery
+workflow; that production behavior is not implemented yet.
 Windows public-client support remains a
 [separate required gate](public-network-plan.md#windows-public-client-gate).
 
@@ -287,8 +288,8 @@ external clients and regional caches still need the planned remote rehearsal.
 
 This is still **disposable Linux custody**. The authority remains schema 1 and
 contains six plaintext keys; production custody must use a new schema with
-independent recovery. Provisioning copies exactly the snapshot and timestamp
-private keys into a separate `0600` renewal record. It never generates an
+encrypted operator keys and tested backups. Provisioning copies exactly the
+snapshot and timestamp private keys into a separate `0600` renewal record. It never generates an
 authority, changes a role assignment, or exports root/membership private keys.
 
 Use two disjoint private homes with stable canonical paths. The following
@@ -297,7 +298,9 @@ account, `soph-omega`, and the HTTPS server can read `/srv/omega-public`.
 Prepare the parent directories and serving permissions before publishing.
 The renewal service must not have access to the offline home: keep its storage
 unmounted between approvals and retain the service's filesystem restriction.
-This setup does not provide hardware-backed or independent production custody.
+This disposable setup does not implement the proposed encrypted-file backend.
+Production service access restrictions must also cover permissions while the
+operator's keys are mounted; an air gap is not required.
 
 ```bash
 soph --json --timeout 2m omega provision-renewal \
@@ -413,7 +416,7 @@ and JSON reports; these examples do not send notifications themselves. Monitor:
   one scheduled invocation plus timer jitter; a stopped process cannot report
   its own failure. Run an independent health check as well as watching job exits.
 - `release.expires` and `warnings`. Reapprove membership with 30 days remaining
-  and plan the root ceremony with 180 days remaining. Warnings are actionable
+  and plan root rotation with 180 days remaining. Warnings are actionable
   even when the current release is valid and the command exits zero.
 
 A failed invocation exits nonzero. Fix hosting, connectivity, permissions, or
@@ -526,8 +529,8 @@ This disposable implementation keeps old key copies in immutable initialization,
 renewal, and rotation records. It stops selecting retired generations for new
 signatures, but does not erase their bytes. Do not edit or delete these records
 to perform physical key destruction. Production custody must separate retention
-of public history from independently protected key generations, with a new
-authority schema and a verified destruction/recovery workflow. Loss of the
+of public history from encrypted private key generations, with a new
+authority schema and a documented retirement/recovery workflow. Loss of the
 whole online custody record or journal still requires restoration; automated
 recovery of lost operational journals still requires backups. Later sections
 describe recovery of lost rotated membership and root signers.
@@ -599,7 +602,7 @@ The last case is a limited recovery path, not production custody. Loss of the
 initial `authority.json`, an expired approval combined with a lost active
 membership key, or damage to the journal still requires verified restoration.
 The initial disposable record contains all six keys and must remain intact.
-Production custody and independent backup/compromise recovery require a new
+Production encrypted custody and backup/compromise recovery require a new
 authority schema. The next section covers the narrower disposable root workflow.
 Keep every public numbered root and preserve custody/journal backups; this
 command does not delete old private generations.
@@ -676,10 +679,11 @@ disconnected client's existing lease.
 
 These are disposable Linux recovery mechanics. The original six-key
 `authority.json` and its completion receipt must still remain intact, even after
-rotation; loss of that file needs restoration. Separate files in one offline home
-do not constitute independent production custody. Production keys require a new
-authority schema, independently protected signers, and rehearsed backups. A
-compromised root quorum requires an independently distributed replacement trust
+rotation; loss of that file needs restoration. Production keys require a new
+authority schema, encrypted storage, and rehearsed backups. The
+[first-network proposal](omega-production-custody.md) permits one connected
+operator workstation and an explicit network reset after authority compromise;
+clients must deliberately adopt an independently distributed replacement trust
 anchor. Keep all public transition history and protected recovery material; this
 command does not physically destroy old keys. A prepared successor that itself
 expires before apply cannot be refreshed in place or overwritten; preserve its

@@ -94,23 +94,27 @@ The operator guide includes scheduler examples, monitoring fields, and the
 prepare/review/apply procedures for all three rotation roles, including offline
 custody, root-expiry recovery, and recoverable signed handoff. Root application
 requires explicit renewal of the unchanged membership approval. The next operator
-slice is production custody and independent backup/loss/compromise recovery;
-the [custody proposal](omega-production-custody.md) specifies encrypted offline
-key files, verified recovery copies, public signing handoffs, and a new authority
-schema. Its first implementation slice separates public authority inspection
-from private-key access and adds the encrypted single-key backend. The complete
-production lifecycle and recovery rehearsal must precede real authority
-activation. Hosted publication also remains pending. Fold the existing
-standalone `omega` tool into `soph` and retire that binary, updating builds, releases, and
-documentation. Node hosts receive public trust material, not the ultimate
+slice is encrypted custody and practical recovery. The
+[custody proposal](omega-production-custody.md) targets one operator's connected
+workstation, encrypted key files, a tested backup, and a new authority schema.
+Its launch criteria are authenticated discovery and a usable operator recovery
+path. Air gaps and independent signing machines are not requirements. Authority
+compromise or unrecoverable state may lead to an explicit experimental-network
+reset, with a new trust bundle that clients must deliberately adopt.
+The first implementation slice separates public inspection from encrypted key
+access and reuses atomic initialization; the next carries that backend through
+the existing lifecycle and rehearses recovery. Hosted publication also remains
+pending. Fold the standalone `omega` tool into `soph` and retire that binary,
+updating builds, releases, and documentation. Node hosts receive public trust material, not the ultimate
 private authority key. Routine freshness renewal must run unattended without
 requiring repeated use of that ultimate key.
 
 Reserve `authority.json` schema 1 permanently for disposable authorities.
 Production custody must introduce a new schema; it must never store production
 authority material in schema 1 or extend that schema to enable production use.
-The new schema must represent the independent custody and recovery workflow,
-rather than carrying forward the disposable file containing all six keys.
+The new schema must separate public identity from encrypted key storage and
+support recovery, rather than carrying forward the disposable six-key plaintext
+record.
 
 Implement the related findings in the selected design:
 

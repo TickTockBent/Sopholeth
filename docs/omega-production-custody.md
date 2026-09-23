@@ -1,288 +1,181 @@
 # Omega production custody and recovery
 
-Status: encrypted offline files selected; operator workflow proposed,
-2026-09-23. This specifies the next slice of
+Status: proposal for the first experimental public network, revised 2026-09-23.
+This scopes the next slice of
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md#1-build-the-omega-suite). The
 [implemented commands](omega-operations.md) still require disposable custody.
-Command extensions below are proposals, not runnable production instructions.
+The production behavior described here is not implemented yet.
 
-## First production profile
+## Launch criteria and accepted limits
 
-The selected first backend uses individually encrypted offline key files and
-separately stored recovery copies. Keep the existing Ed25519 roles: three root
-signers with a 2-of-3 threshold, one membership signer, and separate
-snapshot/timestamp keys.
-Use the existing `soph` binary for every operation. Hardware-backed signers can
-be added behind the same signing boundary later; the initial profile does not
-require an HSM service or a second operator CLI.
+For this launch, secure operation has two requirements:
 
-The first operator backend targets Linux, matching the existing filesystem
-guarantees. This does not defer the separate native Windows public-client gate.
+1. **Discovery cannot be forged without the authorized signing keys.** Clients
+   authenticate metadata against the pinned authority, enforce role thresholds,
+   and reject tampering, rollback, and expired approval. The publisher cannot
+   approve membership or replace the authority using its online keys alone.
+2. **The operator has a recovery path.** Interrupted work preserves the same
+   authority; a tested backup restores keys and state; ordinary expiry and key
+   rotation remain recoverable. If keys or trustworthy history cannot be
+   recovered, an explicit network reset is acceptable.
 
-| Material | Normal location and use | Recovery material |
-| --- | --- | --- |
-| Each root private key | Its own offline signing environment; used for initial authority and role rotations | Individually encrypted copy on separate media, with independently recoverable unlock information |
-| Membership private key | A separate offline signer; used to approve membership and its expiry | Encrypted backup kept apart from its working copy |
-| Snapshot/timestamp private keys | Dedicated online publisher account, never a node host | Protected backup of current keys and the complete operational journal |
-| Authority registry and signing decisions | Coordinator and the relevant offline signers; contains public identities and transaction history | Complete recoverable archives, including prepared but unpublished decisions |
-| Published metadata and manifest | HTTPS repository | All numbered roots, immutable release objects, and the recorded publication history |
+Use one operator's secured, normally connected Linux workstation, encrypted key
+files, and a tested backup on separate storage. An air gap, dedicated signing
+laptop, multiple administrators, and separate root signing machines are **not
+launch requirements**.
 
-One person can operate the signers. Independence concerns the places where
-keys can be stolen or lost, not a requirement to recruit three administrators.
-Different filenames, passwords, or USB drives used on one persistently
-compromised computer do not make independent signing environments. No ordinary
-host should accumulate a root quorum's decrypted keys, even across separate
-sessions. The operator must record the actual signing environments and backup
-locations before activation; software cannot prove their physical independence.
+This network has no current users, financial assets, or critical data. We accept
+that a workstation compromise could expose its authority and require starting
+a new network. Encryption protects stored copies, not keys unlocked on a
+compromised host. Revisit this profile when others depend on network continuity
+or valuable data; stronger custody is future work.
 
-The coordinator moves public proposals and signatures between signers. It
-never imports root or membership private keys. The publisher can run unattended
-with just its two online keys. Root-node credentials remain a separate concern.
-These choices preserve the existing [role separation](omega-trust-design.md#authority-and-custody).
+## Keys and authority records
 
-## File protection and signing access
+Keep the existing roles and metadata format: three root keys with a 2-of-3
+threshold, one membership key, and separate snapshot/timestamp keys. All three
+root files may live on the workstation and be used in one session. This threshold
+permits replacement of one lost key; it does not provide host-compromise
+protection or independent human approval in this profile.
 
-Use the maintained Go implementation of **age**, embedded in `soph`, for the
-offline file backend. Its passphrase profile supplies an established encrypted
-file format; do not invent an encryption envelope or shell out to an installed
-`age` command. Pin and review the library version, dependency changes, and
-resource limits in the first implementation PR. The library exposes a maximum
-scrypt work factor for bounding hostile inputs.
+| Material | Location and use |
+| --- | --- |
+| Root and membership keys | Encrypted files in the operator's private home; unlocked for explicit initialization, approval, or rotation |
+| Snapshot/timestamp keys | Protected files in the renewal service's separate operational home; available for unattended publication |
+| Authority record and journals | Public identities, signed history, and durable transaction state; retained alongside the corresponding private homes |
+| Recovery copy | Encrypted backup on separate storage, including keys and complete journals; unlock information recoverable without relying on the workstation alone |
+| Published metadata | Public HTTPS repository; no private keys or custody archives |
+
+The renewal service must not have access to root/membership keys or their
+passwords. Separate operating-system accounts and permissions on the same
+machine are sufficient; a separate publisher host is optional. This boundary
+protects against a compromise confined to the service account, not a whole-host
+compromise. Node processes receive public trust material only. Use normal host
+updates, access controls, private-file permissions, and protected storage.
+
+The suite's term **offline approval** means an operator action outside unattended
+renewal for this profile, not a disconnected computer. This deliberately relaxes
+TUF's recommended offline root/targets custody while retaining its role separation
+and verification rules. [TUF custody guidance](https://theupdateframework.io/docs/faq/).
+
+Embed the maintained Go implementation of **age** in `soph` for passphrase
+encryption. Pin and review the dependency and bound file sizes and scrypt work;
+do not invent cryptography or require another CLI.
 [Format](https://c2sp.org/age@v1.1.0#the-scrypt-recipient-type),
 [Go API](https://pkg.go.dev/filippo.io/age#ScryptIdentity.SetMaxWorkFactor).
+Store one key per encrypted payload, bound to its role, generation, and authority;
+validate the complete payload and derived public identity before use.
 
-Each encrypted payload holds exactly one key, its public identity, role,
-generation, and binding to the authority-creation transaction. Validate the
-whole decrypted record and derived public key before signing. Reject malformed,
-truncated, oversized, foreign-authority, or wrong-role files. Use separate
-high-entropy unlock secrets for independent signers and recover those secrets
-separately from their encrypted media. Changing a password does not change a
-signing key or revoke an older encrypted copy.
-
-Offline unlocking uses a non-echoing terminal prompt. Secrets never appear in
-flags, environment variables, JSON reports, logs, or plaintext temporary files.
-A future noninteractive offline interface would need an explicit protected
-input channel; it is unnecessary for the first profile. Decrypted keys exist
-only for the signing operation. Do not promise perfect memory erasure in Go;
-the signing environment must also protect swap and crash dumps.
-
-For unattended renewal, start with separate service-owned key files protected
-by the operating system and filesystem permissions. Password encryption with
-the password stored beside an online key does not protect against compromise
-of that service. Encrypt its recovery archive separately and keep the recovery
-secret off the publisher. Offline keys must not be copied into that archive.
-
-## Public authority records and local state
+Unlock through a non-echoing terminal prompt. One strong passphrase for the local
+key set is acceptable; keep recovery information apart from backup media. No
+secrets belong in arguments, environment variables, logs, JSON reports, or
+plaintext temporary files. Avoid retaining decrypted keys between commands;
+account for swap/dumps without promising perfect memory erasure in Go. The two
+service keys may use service-owned files and filesystem permissions for unattended
+renewal; encrypt their backups. Changing a password does not revoke an old key copy.
 
 Reserve `authority.json` **schema 1** permanently for disposable authorities.
-Introduce **schema 2** for production. It records the network, repository,
-creation transaction, initial root fingerprint, public key assignments, and
-custody profile; it contains no private keys or passwords. Bind completion to
-the exact public root/bundle and recovery-verification records. Keep portable
-authority identity separate from machine-specific paths and signer locations.
+Use **schema 2** for a public-only record of the network, repository, creation
+transaction, initial fingerprint, roles, and custody profile. Keep encrypted
+private files separate, including rotated generations. Update renewal/rotation
+records that currently embed plaintext keys too. Reject mixed identities and
+disposable records substituted into production state; do not relabel existing
+disposable keys as a production authority. `status` must inspect public state
+without unlocking keys, including when one root key is unavailable.
 
-Give key payloads, signing requests, receipts, and operational bindings explicit
-record types and independently checked versions. Existing disposable rotation
-and renewal records also contain private material: changing `authority.json`
-alone is insufficient. Production parsers must reject a disposable key map or
-record substituted into the new workflow. Do not offer an in-place conversion
-that relabels previously co-located disposable keys as independent production
-custody.
+## Initialization and routine operation
 
-The existing bundle fingerprint remains the hash of the exact initial signed
-root. Use a separately persisted creation transaction ID to bind keys generated
-before that root exists. Once the public assignments and signing template are
-fixed, retries must preserve their bytes, clock, versions, and transaction ID.
-Freeze the signature set and serialized root before recording its fingerprint;
-late signatures cannot rewrite the committed initial root.
+Keep initialization a local, recoverable transaction. Persist fixed intent and
+encrypted key allocations, stage and verify the complete authority, then promote
+it atomically without replacing an existing authority. Preserve the existing
+locking and durability guarantees. Durable allocations and signed root bytes
+must survive retries unchanged; corruption must not trigger silent regeneration.
+Resolve incomplete first-write recovery in the encrypted backend implementation.
 
-`status` must verify production public state with every offline key unmounted.
-Report authority state, missing ceremony inputs, collected signing quorum,
-recorded backup verification, and publication state separately. A historical
-backup check does not mean that a removable drive is connected or healthy now.
+A failure before promotion leaves inactive pending work; after promotion, report
+the committed identity and any unconfirmed durability. Never expose a partial
+bundle as initialized. Preserve expired pending material for explicit recovery.
+Keep the canonical registry and its backups: a second empty home cannot establish
+that a network has never existed.
 
-## Initialization: prepare, recover, commit
+Verify a backup **after initialization and before public activation**. If copying
+fails, retry the backup of the same committed authority. No cross-device commit,
+signed backup receipt, or multi-machine ceremony is required.
 
-An interrupted ceremony may leave durable pending work, but must never expose
-a partly initialized authority as usable. Atomicity applies to activation in
-the authority registry, not simultaneous writes across independent machines
-and removable drives. Preserve completed key allocations during recovery.
+Use the existing `soph omega init`, `publish`, `rotate`, `provision-renewal`, and
+`status` commands. Root operations can unlock the needed keys locally in one
+invocation. Keep prepare/review/apply where already needed for recoverable
+rotation, without adding distributed signature collection, per-signer journals,
+or standalone `key` and `sign` commands. Existing backup tools plus a documented
+restore procedure are sufficient; a new backup subcommand is not a launch gate.
 
-1. **Reserve the network transaction.** Lock the established registry, validate
-   configuration, and durably create its pending transaction before exporting
-   requests. An existing, damaged, or interrupted authority is inspected or
-   recovered, never replaced. Reusing a different empty registry cannot prove
-   that the network has never existed; preserving the registry is an operator
-   responsibility, as in the disposable workflow.
-2. **Allocate keys at their owners.** Each root/membership signer creates and
-   durably stores one encrypted key locally. The publisher allocates its two
-   online keys. Export a public descriptor only after its private allocation is
-   durable and can be reopened. An established descriptor or complete key
-   record forbids silent regeneration. Define torn first-write handling before
-   implementing this step; no identity may escape from an incomplete allocation.
-3. **Verify recovery copies.** Reopen the independently stored copy with the
-   working copy unavailable, verify its expected key identity, and produce a
-   signature over a fresh, domain-separated recovery challenge. Bind the receipt
-   to the transaction, key, encrypted-copy digest, and verification time. Check
-   all three root keys, membership, and both online keys. The receipt proves key
-   possession during that check; media separation remains an operator assertion.
-4. **Review and sign one root.** Freeze the public template and designated
-   initial signing quorum. Each signer independently displays the network,
-   repository, all role keys and thresholds, expiry, and proposal digest before
-   signing. Verify distinct authorized signatures through go-tuf. An encrypted
-   file, copied receipt, or matching label alone never counts as a TUF signature.
-5. **Prepare complete activation material.** Assemble the signed root, public
-   bundle, schema-2 record, receipts, and completion record. Verify their exact
-   relationship without reopening private keys. Archive the complete creation
-   record and verify it can be restored. Partial signature packets remain
-   ceremony inputs; `soph` must not export an activatable bundle from pending
-   state.
-6. **Commit once.** Use the existing exclusive promotion and directory-sync
-   semantics to expose the complete authority. Only this state permits normal
-   bundle export and provisioning. After interruption, return the same committed
-   identity or an actionable pending/invalid report. Never report `initialized`
-   merely because some keys or signatures exist.
+Retain go-tuf signature verification, both old and new root quorums for rotation,
+immutable prepared outputs, monotonic counters, exact-byte retries, and
+timestamp-last publication. The existing single publisher, local-directory
+repository, and same-host operational binding are sufficient. Encryption does
+not require a new publication protocol. Serve only the public repository over
+HTTPS; keep operator keys behind an internal interface for future backends.
 
-Bad passwords, unavailable signers, failed backup checks, or filesystem errors
-before promotion leave pending work inactive; damaged material requires its
-recovery copies. A failure after promotion must report the complete committed
-identity and any unconfirmed durability, never imply that creation can restart.
-Do not hold a process or lock open while waiting for another signing
-environment: each invocation checkpoints
-its progress. Never delete pending custody as an automatic rollback. Expired or
-conflicting signed proposals require explicit recovery; they are not permission
-to create another root 1. Recovery of an expired initial root must preserve that
-anchor and establish a signed successor before activation.
+## Recovery and deliberate reset
 
-No tool can recall material an operator exports manually or make multiple
-independently copied registries globally exclusive. Release fingerprint checks
-and the recorded activation ceremony remain necessary.
+Back up complete authority and operational state, including pending transactions
+and signed but unpublished outputs. Copy consistently while signing/publication
+is stopped or under its existing locks. Update backups after key changes and
+retain current journal history; old keys alone cannot safely resume current
+versions. One separately stored encrypted recovery set is sufficient initially.
 
-## Operator commands and signing decisions
+Before launch, restore it to a temporary private location with the working copy
+unavailable. Check the expected fingerprint, reopen recovered keys, and verify
+the journal. Rehearse signing and publication with throwaway keys; never run a
+second live publisher from a backup. Record the backup and unlock-recovery
+locations, verified fingerprint, and restore date in private operator notes.
 
-Extend the existing command family with a small shared custody/signing workflow.
-The exact flags belong to the implementation PRs; these are required behaviors.
-
-| Proposed surface | Responsibility |
+| Failure | First-network response |
 | --- | --- |
-| `soph omega key` | Create a local key allocation, export its public descriptor, and inspect its identity; no general plaintext-key export |
-| `soph omega backup` | Make and verify a key recovery copy or a complete transaction/journal archive; distinguish key recovery from history recovery |
-| `soph omega sign` | Review and sign a typed public proposal using one local signer; return public signatures only |
-| `soph omega init` | Prepare/resume the creation ceremony and commit only when its required inputs and recovery evidence are complete |
-| `soph omega publish` / `rotate` | Prepare fixed approval/rotation requests, accept verified signatures, and finish their existing publication/recovery lifecycle |
-| `soph omega provision-renewal` / `status` | Bind the publisher to its authorized keys and journal; inspect public state without offline unlocks |
+| Interrupted initialization or signing | Resume the same transaction and allocations; restore damaged material rather than regenerate it |
+| One root key lost | Use the remaining two to rotate; verify the replacement backup |
+| Workstation or multiple keys lost, without suspected exposure | Restore the current backup on a replacement workstation and verify identity and history |
+| Membership key compromised | Replace it through the root quorum and approve safe membership |
+| Renewal service compromised, operator keys unaffected | Stop the old publisher, rotate both online keys, and resume verified history in a clean service environment |
+| Root quorum or operator workstation compromised | Retire the experimental network and establish a new authority on a clean workstation |
+| Required keys or current journal unrecoverable | Stop; deliberately reset the network instead of building forensic recovery tooling |
 
-A signing request carries the operation, creation ID or established fingerprint,
-network/repository, predecessor metadata, exact proposed metadata, versions,
-expiry, and request digest. Use go-tuf's canonical signing representation and
-signature verification. Signers validate the retained root chain against their
-own pinned identity and compare explicit policy changes; a coordinator-supplied
-digest is not sufficient authorization. Review the actual endpoint changes for
-membership, and require explicit reapproval when a root rotation renews it.
+Before resuming an authority, establish the latest allocated versions from
+trustworthy journals and published history. An old backup or HTTP 404 does not
+establish that a version is unused. If history cannot be established, stop rather
+than sign conflicting metadata. Disable the old publisher before restoring
+another; a local file lock does not fence two hosts. Ordinary rotation retains
+the public root chain; old private backups are never automatic fallback signers.
 
-Each signer keeps a durable local record of accepted root history and signed
-decisions. Repeating a decision returns its exact signature; another body for
-the same authority, role, and metadata version is rejected. Persist and back up
-the decision before exporting its signature. This prevents a fresh coordinator
-or a replayed request from inducing conflicting signatures. Pending signatures
-do not by themselves advance the signer's trusted active root; that requires
-the complete authenticated successor. Catch-up validates all missing roots.
-
-Import verifies the request binding, canonical bytes, key IDs, and thresholds.
-Reject duplicate signers, signatures for another transaction, altered metadata,
-and unexpected role changes. Root replacement requires both the old and new
-quorums. These remain TUF signatures, not a new network trust protocol.
-[TUF root verification, section 5.3](https://theupdateframework.github.io/specification/latest/).
-
-Freshness renewal must continue while an offline approval is being reviewed.
-Reserve the relevant root/targets version and exact signed content separately
-from the next online release; do not hold a release-number reservation across
-human signing. After importing approval, use current snapshot/timestamp
-versions and clock, bounded by that approval's fixed expiry. Reject superseded
-membership or predecessor roots rather than silently rebasing a signed request.
-The disposable code's coupled release/targets counters and apply-time signing
-therefore need an explicit production journal design in slice 2.
-
-Unattended renewal keeps one fenced publisher and the existing timestamp-last
-publication order. Its role-scoped signer receives only snapshot/timestamp
-requests. Replacing absolute same-host custody bindings with public signing
-handoffs is part of this work; independent offline signers cannot depend on
-mounting the live publisher home.
-
-## Recovery and retirement
-
-Back up the complete signing decisions and publication journal as well as keys.
-A decryptable old key backup does not establish the latest allocated version.
-Retain prepared, partially signed, and published transactions: valid signatures
-may have escaped even when publication was not acknowledged. Archives need a
-manifest of exact bytes and versions, bound to an independently retained latest
-checkpoint. Checksums detect corruption; they do not prove freshness against
-an attacker replacing the whole archive.
-
-| Failure | Required operator path |
-| --- | --- |
-| Interrupted initialization or signing | Resume the existing transaction and exact allocations; recover missing material from its verified copies |
-| One root signer lost or unavailable | Use the surviving quorum to authorize replacements; preserve the root chain and verify new backups before retirement |
-| Two root signers lost, recoverable copies intact | Restore enough current signers and their decision histories into clean environments, then rotate if exposure is possible |
-| Membership key lost or compromised | Use the root quorum to revoke/replace it and explicitly approve safe membership; a compromise can have authorized hostile endpoints already |
-| Online keys or publisher compromised | Fence the old publisher, recover trustworthy history, rotate both online keys through the root quorum, and resume on a clean host |
-| Journal or signer checkpoint missing/stale | Recover the latest complete archives, including unpublished decisions; compare with independent checkpoints and served objects. Refuse signing if the high-water mark cannot be established |
-| Root quorum compromised, or quorum and every recovery copy lost | Use an independently distributed new trust anchor and an explicit client recovery/release procedure; the compromised repository cannot authorize its own replacement |
-
-The last boundary follows the
+A reset is an explicit operator decision, never `init` silently replacing an
+existing network. Stop the old deployment, archive its state, and create a new
+network identity and trust bundle in a fresh home on a clean workstation.
+Distribute that bundle through the release/operator channel independently of
+the compromised repository. Existing clients must explicitly adopt it with
+fresh trust state; deleting the server does not revoke their old anchor.
+Data continuity across a reset is not required. This follows TUF's requirement
+for out-of-band root replacement after root-quorum compromise.
 [TUF compromise guidance](https://theupdateframework.io/docs/faq/).
-Recovery cannot undo an attack already accepted by a client.
 
-Before restoring a publisher, stop and disable the old instance; a local file
-lock does not fence a second host. Restore to a new working location, verify
-the known authority and complete history, and resume or repair forward. Never
-roll counters back, overwrite numbered public metadata, or infer unused
-versions solely from an HTTP 404. The first implementation requires the latest
-archive; automatic reconstruction of lost journals is a later feature.
+## Implementation scope
 
-Retire replaced private keys only after verified publication and recorded
-adoption, retaining the public root chain permanently. Inventory encrypted
-backups and recovery secrets too: deleting one working file is not destruction
-of every copy. Old backups must not become an automatic fallback signer.
+1. **Encrypted custody and public inspection.** Add schema 2 and encrypted key
+   access, separate public verification from unlocking, and reuse the existing
+   atomic initialization transaction. Keep schema 1 disposable-only.
+2. **Existing lifecycle and launch rehearsal.** Carry the backend through
+   approval, rotation, renewal provisioning, and status. Document and test backup
+   restore and deliberate reset with throwaway keys. Retire the standalone
+   `omega` binary and update its consumers when the replacement is complete.
 
-## Implementation slices and evidence
+These slices must demonstrate the two launch criteria above. Air gaps, independent
+signing devices, HSMs, multiparty approvals, portable signing requests, signed
+backup attestations, and automatic reconstruction of lost journals are future
+work, not gates. Other launch work remains in the public-network plan.
 
-The existing [authority verifier](../internal/omega/authority.go) derives role
-identities from the six-key private record, and
-[release signing](../internal/omega/release.go) accepts encoded private keys
-directly. The first slice replaces those assumptions for production while
-preserving the existing metadata validation and disposable behavior.
-
-1. **Public authority model and encrypted single-key backend.** Introduce the
-   schema-2 public record and role-scoped signing interface; separate inspection
-   from key access. Implement one-key creation, unlock, and restored-copy
-   verification. Resolve first-write recovery and library/resource limits here.
-2. **Portable signing and recovery archives.** Implement reviewed requests,
-   signature collection, durable signer decisions, and verified archive restore.
-   Separate offline approval reservations from continuing online renewal.
-   Exercise a coordinator with no private keys and disjoint signer homes.
-3. **Atomic production initialization.** Connect key descriptors, all recovery
-   checks, frozen signatures, and complete archival evidence to exclusive
-   activation. Rehearse interruption, concurrent retry, and expired preparation
-   without creating a second identity.
-4. **Complete operator lifecycle.** Carry the new backend through membership
-   approval, all rotation roles, renewal provisioning, status, and recovery.
-   Retire the standalone `omega` binary and its build/release consumers when the
-   replacement is complete. Rehearse the recovery table before enabling real
-   production initialization.
-
-Use throwaway keys throughout implementation and rehearsal. Keep production
-activation gated until these slices and the custody inventory are complete.
-Hosting at `https://sopholeth.io/omega/`, the compiled bundle/release gate,
-Windows public-client support, and peer/public-ingress blockers keep their
-places in the launch plan; custody work does not satisfy those gates.
-
-Follow the [test guidance](../CONTRIBUTING.md#development) from #229: use fast
-in-memory policy/signature cases, test shared file transactions once, and add
-only the new custody boundaries. Cover wrong unlock secrets, tampered/truncated
-files, mixed identities, duplicate signatures, conflicting same-version
-requests, backup-only restoration, and refusal of stale/unknown history.
-Keep one end-to-end ceremony with real files and a process interruption, then
-one disposable recovery rehearsal across the distinct custody failures.
-Do not multiply the existing publisher matrix by every signer and backend.
+Follow the [test guidance](../CONTRIBUTING.md#development) from #229. Add focused
+checks for encryption/unlock failures, wrong identity, interrupted encrypted
+allocation, and backup restoration. Reuse existing verification, publication, and
+rotation coverage. One throwaway end-to-end rehearsal should establish that this
+profile can initialize, publish, renew, rotate, restore, and intentionally reset;
+do not multiply existing fault matrices by every signer or backend.

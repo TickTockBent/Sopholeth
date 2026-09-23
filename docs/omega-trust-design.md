@@ -78,26 +78,30 @@ cover interrupted writes, bounded HTTPS, concurrent access, and runtime leases.
 
 | TUF role | Sopholeth responsibility | Proposed custody |
 | --- | --- | --- |
-| Root | Authorize role keys, thresholds, and successor authorities | Offline 2-of-3 Ed25519 keys with independent recovery copies |
-| Targets | Approve the bootstrap manifest and its validity period | Separate protected offline membership key, 1-of-1 initially |
+| Root | Authorize role keys, thresholds, and successor authorities | Encrypted 2-of-3 Ed25519 keys on the operator workstation, with a separately stored backup |
+| Targets | Approve the bootstrap manifest and its validity period | Separate encrypted membership key on that workstation, 1-of-1 initially |
 | Snapshot | Bind approved metadata versions into a release | Online renewal service, separate key |
 | Timestamp | Advertise a short-lived current snapshot | Online renewal service, separate key |
 
 The three root signing keys are unrelated to the three public **node** roots.
 Node hosts receive public trust material only. Hosting credentials are also
-separate from signing keys. Keeping all three authority keys on one ordinary
-host would defeat the intended custody separation, even if a threshold were
-configured. Rehearsal must verify custody and recovery before activation.
+separate from signing keys. The first public-network profile permits one
+connected operator workstation to hold and unlock the root quorum. The threshold
+supports recovery from one lost key; it does not protect against compromise of
+that workstation. An air gap and independent signing machines are future options.
 
 The [production custody proposal](omega-production-custody.md) develops this
-into an operator workflow using the selected encrypted offline file backend,
-independent recovery verification, schema-2 public authority records, and
-portable signing requests. It remains implementation work; schema 1 stays
-disposable-only.
+into a workflow with encrypted files, a tested backup, and schema-2 public
+authority records. Authenticated discovery and operator recovery are the launch
+criteria. An explicit network reset is acceptable after authority compromise or
+unrecoverable state; clients must deliberately adopt the replacement trust bundle.
+The backend remains implementation work; schema 1 stays disposable-only.
 
-Compromise of the online service must not permit new membership approval or
-replacement of the root authority. It can still deny updates or replay an
-older, still-valid approved manifest to a client without newer state. Expiry
+Compromise confined to the renewal service account must not permit new membership
+approval or replacement of the root authority. Keep operator keys and passwords
+inaccessible to that account; a whole-host compromise is outside this boundary.
+The service can still deny updates or replay an older, still-valid approved
+manifest to a client without newer state. Expiry
 limits that exposure; signing separation does not eliminate it. Membership
 key compromise permits malicious approved endpoints until corrected through
 the authority; it deserves protected storage and a rehearsed revocation path.
@@ -107,15 +111,16 @@ tolerance before activation:
 
 | Metadata | Lifetime | Renewal trigger |
 | --- | --- | --- |
-| Root | 365 days | Planned ceremony with at least 180 days remaining |
+| Root | 365 days | Operator rotation with at least 180 days remaining |
 | Targets / membership | 90 days | Review and reapprove with at least 30 days remaining |
 | Snapshot | 7 days | Renew with timestamp every 6 hours |
 | Timestamp | 24 hours | Renew every 6 hours; alert on a missed cycle |
 
 These are proposed operating values, not library defaults. Online renewal
 cannot extend root or membership approval forever. It must refuse to present
-expired approval as healthy and warn well before either offline ceremony is
-due. Clock synchronization and clock-error reporting are deployment inputs.
+expired approval as healthy and warn well before either operator approval is
+due. Here, offline approval means outside unattended renewal, not an air-gapped
+machine. Clock synchronization and clock-error reporting are deployment inputs.
 
 ## Repository and bootstrap manifest
 
