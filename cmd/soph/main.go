@@ -281,7 +281,7 @@ Authority operations:
 Global flags:
   --network <name>   use a saved network for this command (also SOPH_NETWORK)
   --json             machine-readable output
-  --timeout <dur>    timeout (default 15s; encrypted omega init/check-keys 2m)
+  --timeout <dur>    timeout (default 15s; omega signing/check-keys 2m)
   --config <path>    config file (default $SOPH_CONFIG_DIR/soph.json)
 
 Use 'soph <command> --help' for command-specific flags and arguments.

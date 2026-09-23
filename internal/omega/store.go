@@ -15,6 +15,9 @@ type store struct {
 	root *os.Root
 	lock *os.File
 	hook func(string) error
+	// Publication stores borrow the already locked operational home for
+	// separate online key files. Closing a child never closes this parent.
+	keyHome *store
 }
 
 // One lock and one immutable authority slot per network within the custody
@@ -78,6 +81,9 @@ func openHome(ctx context.Context, home, network string, create bool) (*store, e
 	}
 	s.lock, err = root.OpenFile(name, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
+		return fail(err)
+	}
+	if err := s.inherit(s.lock); err != nil {
 		return fail(err)
 	}
 	if err := waitForLock(ctx, s.lock); err != nil {
@@ -222,6 +228,9 @@ func (s *store) install(name string, data []byte) error {
 		return err
 	}
 	defer f.Close()
+	if err := s.inherit(f); err != nil {
+		return err
+	}
 	if !reuse {
 		if _, err := f.Write(data); err != nil {
 			return err
@@ -270,4 +279,35 @@ func (s *store) cleanPending(names []string) error {
 		}
 	}
 	return s.syncDir()
+}
+
+func (s *store) inherit(file *os.File) error {
+	parent, err := s.root.Stat(".")
+	if err != nil {
+		return err
+	}
+	return inheritOwnership(file, parent)
+}
+func (s *store) mkdir(name string, mode os.FileMode) error {
+	mkdirErr := s.root.Mkdir(name, mode)
+	if mkdirErr != nil && !errors.Is(mkdirErr, os.ErrExist) {
+		return mkdirErr
+	}
+	// Repair ownership if a privileged creator died between mkdir and chown.
+	// Validate before opening an existing entry: never adopt a symlink.
+	info, err := s.root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("omega: custody directory cannot be a symlink or file")
+	}
+	dir, err := s.root.Open(name)
+	if err != nil {
+		return err
+	}
+	if err := errors.Join(s.inherit(dir), dir.Close()); err != nil {
+		return err
+	}
+	return mkdirErr
 }

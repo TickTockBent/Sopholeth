@@ -15,7 +15,7 @@ import (
 	"sopholeth/internal/trust/bootstrap"
 )
 
-// These records are disposable custody, not a production authority schema.
+// Schema 2 keeps online secrets in separate service-owned files.
 // The publisher binding permanently routes offline approvals to one journal.
 // The online record contains no root or membership private keys.
 type publisherBinding struct {
@@ -24,14 +24,18 @@ type publisherBinding struct {
 	Home        string `json:"home"`
 }
 type renewalCustody struct {
-	Schema int               `json:"schema"`
-	Mode   string            `json:"mode"`
-	Bundle bootstrap.Bundle  `json:"bundle"`
-	Keys   map[string]string `json:"private_keys"`
+	Schema     int               `json:"schema"`
+	Mode       string            `json:"mode"`
+	Bundle     bootstrap.Bundle  `json:"bundle"`
+	Keys       map[string]string `json:"private_keys"`
+	Custody    string            `json:"custody,omitempty"`
+	KeyDigests map[string]string `json:"key_file_sha256,omitempty"`
 }
 type ProvisionRenewalOptions struct {
 	Home, Network, RenewalHome string
 	Disposable                 bool
+	Passphrase                 PassphraseFunc
+	codec                      keyCodec
 }
 
 func readRenewal(home *store, network string) (renewalCustody, error) {
@@ -43,11 +47,16 @@ func readRenewal(home *store, network string) (renewalCustody, error) {
 	if err := decodeRecord(data, &c); err != nil {
 		return c, err
 	}
-	if c.Schema != 1 || c.Mode != "disposable" || c.Bundle.Network != network || len(c.Keys) != 2 {
-		return c, errors.New("omega: invalid disposable renewal custody")
+	if c.Bundle.Network != network || (c.Schema != 1 && c.Schema != 2) ||
+		(c.Schema == 1 && (c.Mode != "disposable" || len(c.Keys) != 2 || c.Custody != "" || len(c.KeyDigests) != 0)) ||
+		(c.Schema == 2 && (!validCustodyMode(c.Mode) || c.Custody != encryptedCustody || len(c.Keys) != 0 || len(c.KeyDigests) != 2 || !validDigest(c.KeyDigests["snapshot"]) || !validDigest(c.KeyDigests["timestamp"]))) {
+		return c, errors.New("omega: invalid renewal custody")
 	}
 	if _, err := bootstrap.ParseBundle(record(c.Bundle)); err != nil {
 		return c, err
+	}
+	if c.Schema == 2 {
+		return c, nil
 	}
 	return c, verifyOnlineKeys(c.Keys, c.Bundle.Root)
 }
@@ -95,7 +104,7 @@ func readPublisherBinding(home *store, bundle bootstrap.Bundle) (publisherBindin
 
 // A pending handoff also blocks use of the old journal. Only provisioning may
 // complete it, including a process killed before the binding's final link.
-func operationalHome(ctx context.Context, home *store, bundle bootstrap.Bundle) (*store, func(), error) {
+func operationalHome(ctx context.Context, home *store, bundle bootstrap.Bundle, mode string) (*store, func(), error) {
 	binding, err := readPublisherBinding(home, bundle)
 	if errors.Is(err, os.ErrNotExist) {
 		if _, e := home.root.Lstat(bundle.Network + ".publisher.json.pending"); !errors.Is(e, os.ErrNotExist) {
@@ -115,7 +124,7 @@ func operationalHome(ctx context.Context, home *store, bundle bootstrap.Bundle) 
 	}
 	cleanup := func() { online.close() }
 	c, err := readRenewal(online, bundle.Network)
-	if err == nil && !bytes.Equal(record(c.Bundle), record(bundle)) {
+	if err == nil && (c.Mode != mode || !bytes.Equal(record(c.Bundle), record(bundle))) {
 		err = errors.New("omega: operational home belongs to a different authority")
 	}
 	if err != nil {
@@ -131,8 +140,8 @@ func ProvisionRenewal(ctx context.Context, opts ProvisionRenewalOptions) (Report
 }
 
 func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook func(string) error) (report Report, resultErr error) {
-	if !opts.Disposable || !networkID.MatchString(opts.Network) || opts.RenewalHome == "" {
-		return report, errors.New("omega: provision-renewal requires a network, renewal home, and --disposable")
+	if !networkID.MatchString(opts.Network) || opts.RenewalHome == "" {
+		return report, errors.New("omega: provision-renewal requires a network and renewal home")
 	}
 	home, err := openHome(ctx, opts.Home, opts.Network, false)
 	if err != nil {
@@ -149,8 +158,9 @@ func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook fu
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
-	if report.Custody == encryptedCustody {
-		return encryptedLifecyclePending(report)
+	if err := requireCustodyMode(report.Mode, opts.Disposable); err != nil {
+		report.Problem = err.Error()
+		return report, err
 	}
 	defer func() {
 		if resultErr != nil {
@@ -193,15 +203,39 @@ func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook fu
 	if _, err := online.root.Lstat(opts.Network); !errors.Is(err, os.ErrNotExist) {
 		return report, errors.New("omega: renewal home must not contain the offline authority")
 	}
-	var a authority
-	data, err := current.read("authority.json")
+	session, err := openOperatorKeys(ctx, home, current, bundle, opts.Passphrase, opts.codec)
 	if err != nil {
 		return report, err
 	}
-	if err := decodeRecord(data, &a); err != nil {
-		return report, err
+	defer session.close()
+	var planned renewalCustody
+	existing, existingErr := readRenewal(online, opts.Network)
+	if existingErr == nil && session.public != nil {
+		if existing.Schema != 2 || existing.Mode != session.mode() || !bytes.Equal(record(existing.Bundle), record(bundle)) {
+			return report, errors.New("omega: operational custody differs from encrypted authority")
+		}
+		planned = existing
+	} else {
+		if existingErr != nil && !errors.Is(existingErr, os.ErrNotExist) {
+			return report, existingErr
+		}
+		keys := map[string]string{}
+		for _, name := range []string{"snapshot", "timestamp"} {
+			key, err := session.initial(name)
+			if err != nil {
+				return report, err
+			}
+			keys[name] = key
+		}
+		planned = renewalCustody{Schema: 1, Mode: session.mode(), Bundle: bundle, Keys: keys}
+		if session.public != nil {
+			hashes, err := installOnlineKeys(online, bundle, session.mode(), 1, "", keys)
+			if err != nil {
+				return report, err
+			}
+			planned = renewalCustody{Schema: 2, Mode: session.mode(), Custody: encryptedCustody, Bundle: bundle, KeyDigests: hashes}
+		}
 	}
-	planned := renewalCustody{Schema: 1, Mode: "disposable", Bundle: bundle, Keys: map[string]string{"snapshot": a.Keys["snapshot"], "timestamp": a.Keys["timestamp"]}}
 	if data, err := online.read(opts.Network + ".renewal.json.pending"); err == nil {
 		if json.Valid(data) && !bytes.Equal(data, record(planned)) {
 			return report, errors.New("omega: fully written pending renewal custody differs; preserve it for recovery")
@@ -264,6 +298,7 @@ func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook fu
 	report.OperationalHome = path
 	// A completed handoff can be retried after the initial root expires. Report
 	// the active root from authenticated history rather than that old anchor.
+	var latest release
 	state, _, err := openPublication(online, bundle, nil, false)
 	if err == nil {
 		defer state.close()
@@ -272,14 +307,19 @@ func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook fu
 			return report, err
 		}
 		if len(history) > 0 {
-			if err := applyReleaseRoot(&report, bundle, history[len(history)-1]); err != nil {
+			latest = history[len(history)-1]
+			if err := applyReleaseRoot(&report, bundle, latest); err != nil {
 				return report, err
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return report, err
 	}
-	report.Action = "Renewal custody is ready. Keep the authority home offline between membership approvals; schedule soph omega publish --renew using the operational home."
+	if _, err := planned.activeKeys(online, state, latest); err != nil {
+		return report, err
+	}
+
+	report.Action = "Renewal custody is ready. Keep the authority home inaccessible to the renewal account; schedule soph omega publish --renew using the operational home."
 	if report.State == "expired" {
 		report.Action = "Custody handoff is complete. Use rotate --role root to recover the expired authority before scheduling renewal; provisioning does not extend its validity."
 	}
@@ -318,7 +358,7 @@ func copyPublication(ctx context.Context, source, dest *store, bundle bootstrap.
 		return err
 	}
 	name := bundle.Network + ".publication"
-	if err := dest.root.Mkdir(name, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := dest.mkdir(name, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
 	if err := dest.syncDir(); err != nil {
@@ -365,7 +405,7 @@ func copyPublication(ctx context.Context, source, dest *store, bundle bootstrap.
 // was lost. Status must ask for recovery, and init must not create replacement
 // authority keys alongside existing publication state.
 func rejectOrphanedOperationalState(home *store, network string) error {
-	for _, suffix := range []string{".renewal.json", ".renewal.json.pending", ".publisher.json", ".publisher.json.pending", ".publication", ".rotations"} {
+	for _, suffix := range []string{".renewal.json", ".renewal.json.pending", ".publisher.json", ".publisher.json.pending", ".publication", ".rotations", ".online-keys"} {
 		if _, err := home.root.Lstat(network + suffix); err == nil {
 			return errors.New("omega: existing operational state requires recovery, not authority initialization; restore the missing custody material")
 		} else if !errors.Is(err, os.ErrNotExist) {

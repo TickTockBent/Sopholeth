@@ -1,14 +1,23 @@
 # Sopholeth omega operations
 
 `soph omega init`, `provision-renewal`, `publish`, `rotate`, and `status` support
-disposable TUF authorities, unattended renewal, online/membership/root-key
+encrypted TUF authorities, unattended renewal, online/membership/root-key
 rotation, root-expiry recovery, and verified publication to a local HTTPS-served
-repository on Linux. Encrypted initialization, public inspection, and restored-key
-verification are also available for disposable rehearsals. Production custody/hosting and discovery consumer integration remain
-the next steps in the
-[public-network plan](public-network-plan.md). No production authority exists.
+repository on Linux. Production initialization uses encrypted custody by default.
+No live authority is created by this implementation. HTTPS hosting, the compiled
+trust bundle/release gate, and discovery consumers remain in the
+[public-network plan](public-network-plan.md).
 
-## Initialize a disposable authority
+The launch profile uses one secured connected operator workstation and a tested
+backup. The operator may use `sudo`; the renewal service runs as a separate,
+unprivileged account with access only to its own online keys. See the
+[custody decisions](omega-production-custody.md) for the accepted limits.
+For throwaway rehearsals, add `--encrypted --disposable` to `init` and
+`--disposable` to provision/publish/rotate. The flag must match the recorded mode.
+Plain `--disposable` retains the legacy plaintext backend for tests only;
+existing authorities cannot be relabeled as production.
+
+## Initialize an authority
 
 Build the existing CLI, then choose **one private custody home** for all
 operator work. Its parent must exist and be protected from replacement by
@@ -16,13 +25,12 @@ other users. The home is created with mode `0700` if absent.
 
 ```bash
 make build-soph
-./bin/soph omega init \
+sudo ./bin/soph omega init \
   --home /path/to/private/omega-home \
-  --network rehearsal \
-  --repository https://metadata.example.invalid \
-  --disposable
-./bin/soph --json omega status \
-  --home /path/to/private/omega-home --network rehearsal
+  --network sopholeth \
+  --repository https://metadata.example.invalid
+sudo ./bin/soph --json omega status \
+  --home /path/to/private/omega-home --network sopholeth
 ```
 
 `--network` here identifies the authority, not a saved client profile. It goes
@@ -85,11 +93,11 @@ one connected operator workstation.
 
 ### Files, custody, and status
 
-A default plaintext network directory contains these files, all mode `0600`:
+The network directory contains these public records, all mode `0600` in custody:
 
 | File | Purpose |
 | --- | --- |
-| `authority.json` | **Private** initialization record containing all six keys and fixed intent. |
+| `authority.json` | Public-only schema-2 identity, fixed intent, public keys, and encrypted-file digests. |
 | `1.root.json` | Verified, signed public initial TUF root. |
 | `bundle.json` | Public network/repository/initial-root bundle for the client. |
 | `complete.json` | Integrity receipt binding the committed files and root fingerprint. |
@@ -100,46 +108,34 @@ never copy the whole home to a site, repository, node host, or logs. The receipt
 checks consistency; it is not protection against someone who controls the
 operator account and can replace all custody material.
 
-Without `--encrypted`, all six keys are stored in plaintext together for
-development. `authority.json` schema 1 remains permanently disposable-only.
-The encrypted backend below uses schema 2, but production initialization still
-waits for encrypted publication/rotation and the complete recovery rehearsal in
-the [custody plan](omega-production-custody.md).
+Production initialization always uses encrypted keys. Schema 1, which embeds
+six plaintext keys, remains permanently disposable-only. Schema 2 separates
+public identity from private encrypted files and rejects mixed custody modes.
 Windows public-client support remains a
 [separate required gate](public-network-plan.md#windows-public-client-gate).
 
-`status` verifies local private/public consistency and the completion receipt.
+`status` verifies signed public identity, history, and the completion receipt without a password.
 Text and `--json` output include state, network, repository, initial-root
 fingerprint, current root version/expiration, and role thresholds/key IDs. Missing, pending,
 corrupt, or expired authority returns a nonzero exit with a corrective action.
 Unknown expiration dates are omitted. No output contains private keys.
 
-## Rehearse encrypted custody and backup restoration
-
-Use a separate throwaway network/home for this first encrypted slice. It supports
-`init`, ordinary public `status`, and `status --check-keys` on Linux. It still
-requires `--disposable`; publication, renewal provisioning, rotation, and
-`status --verify` reject encrypted authorities before creating lifecycle state.
-The later sections describe the existing plaintext disposable lifecycle.
-
-```bash
-./bin/soph omega init \
-  --home /path/to/private/encrypted-home \
-  --network encrypted-rehearsal \
-  --repository https://metadata.example.invalid \
-  --encrypted --disposable
-./bin/soph --json omega status \
-  --home /path/to/private/encrypted-home --network encrypted-rehearsal
-```
+## Encrypted custody and backup restoration
 
 New initialization prompts for one strong passphrase and confirmation on the
-controlling terminal, with echo disabled. A retry unlocks the existing allocation;
-an already complete authority does not prompt. Passwords are not accepted through
-arguments, environment variables, or stdin. JSON stays on stdout and prompts stay
-on the terminal. Ctrl-C, cancellation, and normal errors restore terminal settings.
-Encrypted init and key checks default to two minutes, including password entry;
-an explicit global `--timeout`, before `omega`, overrides this. These operations
-contact no server.
+controlling terminal with echo disabled. New passphrases require **at least 12
+characters**, including when creating a rotated encrypted key. Choose a long,
+unpredictable phrase; length alone does not prevent guessing. Older short
+passphrases still unlock existing copies for recovery. Rotation creates new keys
+and therefore requires the creation policy; there is no password-change command.
+
+A retry unlocks an existing allocation; completed initialization, provisioning,
+and prepared-rotation inspection do not prompt. Passwords are not accepted in
+arguments, environment variables, or stdin. JSON stays on stdout and prompts
+stay on the terminal. Ctrl-C, cancellation, and ordinary errors restore echo.
+Commands that unlock keys default to two minutes including password entry;
+an explicit global `--timeout`, before `omega`, overrides this. Ordinary status,
+HTTPS verification, and unattended renewal never request a password.
 
 ### Encrypted files and interruption recovery
 
@@ -157,7 +153,7 @@ to its authority transaction, network, repository, role, and generation. The
 backend uses scrypt work factor 18 (roughly 256 MiB per operation), processes keys
 sequentially, and rejects higher work factors, ciphertext over 16 KiB, and
 plaintext over 4 KiB. It authenticates the complete decrypted stream before use.
-No plaintext key file is written. Clearing mutable buffers is best effort;
+No plaintext operator key file is written. Clearing mutable buffers is best effort;
 Go/library copies, swap, and process dumps prevent a perfect memory-erasure claim.
 
 Before any public output, staging durably fixes all six **encrypted** allocations
@@ -171,39 +167,58 @@ interruption, preserving the original home, network, and repository.
 
 ### Verify a restored copy
 
-Stop operator commands and copy the **whole private custody home** consistently
-to separate protected storage. Preserve permissions. Keep passphrase recovery
-information separately, accessible if the workstation is lost. Do not upload
-this home or its backup to the public metadata site.
+Stop the renewal timer and operator commands before taking a consistent backup.
+Copy **both complete private homes**, including bindings, every key generation,
+publication and rotation journals, and complete pending transactions; also retain
+the full public repository. Preserve ownership and permissions. Use encrypted
+backup storage: the running service's snapshot/timestamp files are plaintext.
+Keep passphrase recovery information separately, recoverable without the original
+workstation. Update the backup after rotations and retain current publication
+history; old keys alone cannot safely resume allocated versions.
 
-Restore that copy to a temporary private directory while the working copy is
-unavailable, then run:
+Before activation, restore with the working copies unavailable. Initial,
+unprovisioned custody can be checked at a temporary private path. After
+provisioning, restore the operational home and public repository at their
+**original bound absolute paths**, on an isolated replacement or with the originals
+safely moved aside and the old publisher disabled. Restore the operator home too.
+Do not edit bindings or reset journals to make a backup run somewhere else.
+Never operate a second publisher against the live repository.
 
 ```bash
-./bin/soph --json omega status \
-  --home /path/to/private/restored-home --network encrypted-rehearsal
-./bin/soph --json omega status --check-keys \
-  --home /path/to/private/restored-home --network encrypted-rehearsal
+sudo soph --json omega status --home /srv/omega-offline --network sopholeth
+sudo soph --json omega status --check-keys --home /srv/omega-offline --network sopholeth
+sudo soph --json --timeout 2m omega status --verify --home /srv/omega-online --network sopholeth
 ```
 
-Compare the fingerprint with the one recorded independently at initialization.
-Ordinary `status` checks the signed public authority and receipt without unlocking.
-Its `key_files` entries report `locked` (matching ciphertext), `missing`, or
-`damaged`; public state can remain `initialized` with unavailable keys. This is
-public inspection, not proof that a backup can unlock. `--check-keys` prompts once,
-requires all six files, verifies decrypted identities against the public record,
-and reports `verified` for each key. Wrong passwords, missing/corrupt files, or
-identity mismatches return nonzero with a problem and corrective action; no
-metadata is signed or published. An expired authority can have matching recovered
-keys but still returns an expiry error.
+Compare the initial fingerprint and current root/release versions with independent
+operator notes and trustworthy published history. Ordinary status inspects public
+identity without unlocking. Its active `key_files` inventory reports `locked`
+(matching encrypted bytes), `protected` (service-owned online files), `missing`,
+or `damaged`. Public identity can remain initialized with an unavailable signer.
+`--check-keys` prompts once and verifies all six **active** keys against the
+current root. Retired encrypted files are not fallback signers and need not be
+present for that check. Wrong passwords, missing/corrupt active keys, or identity
+mismatches return a problem and action. No metadata is signed or published.
+An expired root can have matching keys but still returns an expiry error; stale
+timestamps do not prevent checking recovered keys. HTTPS verification is separate.
 
-Record the verified fingerprint, restore date, backup location, and unlock
-recovery location in private operator notes. Retain the original authority and
-its verified backup. Publication, rotation, and recovery from a missing root key
-using the remaining quorum are the next encrypted-backend slice; this check does
-not enable public activation yet.
+Record the fingerprint, active versions, restore date, backup location, and
+unlock-recovery location privately. Rehearse signing and renewal with throwaway
+authorities. Only resume the real publisher when identity and the latest allocated
+versions are established; HTTP 404 or an old backup cannot prove a version unused.
 
-## Publish a disposable three-root manifest
+### Deliberate reset
+
+If the root quorum is compromised or trustworthy keys/history cannot be restored,
+stop the old deployment and archive its state. On a clean workstation, explicitly
+choose a new network ID and fresh custody home, then initialize and back up a new
+authority. Distribute its new trust bundle independently of the compromised
+repository. Clients must deliberately adopt that bundle with fresh trust state;
+deleting the old server does not revoke their old anchor. There is no force/reset
+flag and `init` never replaces an existing identity. This experimental-network
+recovery path accepts loss of continuity; it is not a normal rotation.
+
+## Publish a three-root manifest
 
 Prepare a dedicated directory to be served at the authority bundle's exact
 HTTPS repository origin. Its parent must exist, and it must be outside the
@@ -224,7 +239,7 @@ Create the approved manifest, for example `bootstrap.json`:
 ```json
 {
   "schema": 1,
-  "network": "rehearsal",
+  "network": "sopholeth",
   "enclave": "default",
   "roots": [
     {"id": "root-a", "origin": "https://root-a.example.invalid"},
@@ -240,12 +255,12 @@ unknown/duplicate fields and malformed endpoints before signing. Node
 reachability and gossip identity are separate deployment checks.
 
 ```bash
-./bin/soph --timeout 2m omega publish \
-  --home /path/to/private/omega-home --network rehearsal \
+sudo ./bin/soph --timeout 2m omega publish \
+  --home /path/to/private/omega-home --network sopholeth \
   --manifest bootstrap.json --repository-dir /path/to/public/omega-repository \
-  --version 1 --disposable
-./bin/soph --json --timeout 2m omega status \
-  --home /path/to/private/omega-home --network rehearsal --verify
+  --version 1
+sudo ./bin/soph --json --timeout 2m omega status \
+  --home /path/to/private/omega-home --network sopholeth --verify
 ```
 
 Version 1 starts publication. Repeat the **same approval version and manifest**
@@ -262,7 +277,7 @@ Each approval signs targets, snapshot, and timestamp metadata with their
 respective keys; it copies the existing signed root without using root keys
 to sign again. Lifetimes are 90 days, 7 days, and 7 days, capped by
 root expiration. Signing requires at least 24 hours of remaining root validity.
-This is a manual approval path with disposable custody. Unattended renewal
+This is an explicit operator approval using the active membership key. Unattended renewal
 using only separately provisioned online keys is described below.
 
 ### Publication journal and write order
@@ -276,13 +291,17 @@ provisioning, the authority home also serves as the operational home:
 - `N.release.json` contains the exact public signed bytes, canonical manifest,
   creation time, and the preceding release's digest. These immutable records
   form the durable version history. They contain no private keys.
-- `R.rotation-intent.json` contains preparation identity for root version `R`.
-  Schema 1 contains **private** replacement online keys; schema 2 contains only
-  the replacement membership **public** key; schema 3 contains the three successor
-  root **public** keys and reviewed expiration. `R.rotation.json` binds the intent
-  to the exact signed public successor root. Membership private generations
-  stay at `<offline-home>/<network>.rotations/R.targets-key.json` (mode `0600`
-  in a `0700` directory), outside this journal and the immutable authority slot.
+- `R.rotation-intent.json` is a public handoff: schema 2 for a replacement
+  membership key, schema 3 for successor root keys and expiry, schema 4 for
+  replacement online keys. Encrypted custody includes the mode and exact private
+  file digests without embedding secrets. Schema 1, with inline online secrets,
+  remains legacy disposable-only. `R.rotation.json` binds the intent to the
+  exact signed successor root.
+- Encrypted operator generations live in
+  `<operator-home>/<network>.rotations/R.<role>-key.age.json`, with
+  `R.encrypted-plan.json` fixing identity, role, and clock. Online generations
+  live separately in `<operational-home>/<network>.online-keys/` as
+  `R.snapshot-key.json` and `R.timestamp-key.json`. All use private permissions.
 - `N.rotation-apply.json` records the reviewed root digest, next release version,
   predecessor, and signing time before the transition release is signed.
 - `N.rotation-targets.json` is the public, offline-signed targets handoff for
@@ -295,13 +314,15 @@ provisioning, the authority home also serves as the operational home:
   signing time before signing, allowing recovery of torn writes.
 - `N.verification.json` records the last check/attempt, its failure if any,
   and the most recent successful check time for that release.
-- `.verify-*` directories are disposable client-verification scratch. They
-  are removed on completion or the next verification after process death.
+
+Client-verification scratch is private temporary data outside the custody homes,
+removed on ordinary completion. A killed process may leave a `soph-omega-verify-*`
+temporary directory for system cleanup; it has no ordering authority or keys.
 
 The network lock serializes operator work; a separate destination lock prevents
 concurrent publishers from racing the mutable timestamp. The entire signed
 release is durably recorded before any public object is written. There are
-currently at most 10,000 sequential releases per disposable journal; there is
+currently at most 10,000 sequential releases per journal; there is
 no history compaction or reset command.
 
 Public files are installed in this order:
@@ -373,39 +394,46 @@ external clients and regional caches still need the planned remote rehearsal.
 
 ## Provision and schedule unattended renewal
 
-This is still **disposable Linux custody**. The authority remains schema 1 and
-contains six plaintext keys; production custody must use a new schema with
-encrypted operator keys and tested backups. Provisioning copies exactly the
-snapshot and timestamp private keys into a separate `0600` renewal record. It never generates an
-authority, changes a role assignment, or exports root/membership private keys.
+Provisioning decrypts only the initial snapshot/timestamp keys and puts them in
+separate service-owned `0600` files under `<network>.online-keys/`. The schema-2
+`<network>.renewal.json` contains public identity, mode, and exact file digests.
+It never generates an authority, changes roles, or exports root/membership secrets.
+Legacy disposable schema-1 renewal records retain their original inline keys.
 
-Use two disjoint private homes with stable canonical paths. The following
-example assumes the custody operator and rehearsal service use the same Unix
-account, `soph-omega`, and the HTTPS server can read `/srv/omega-public`.
-Prepare the parent directories and serving permissions before publishing.
-The renewal service must not have access to the offline home: keep its storage
-unmounted between approvals and retain the service's filesystem restriction.
-This plaintext lifecycle does not yet support the encrypted initialization backend.
-Production service access restrictions must also cover permissions while the
-operator's keys are mounted; an air gap is not required.
+Use two disjoint homes with stable paths. Create a dedicated `soph-omega` system
+account using the host's account-management tools, then prepare these directories:
 
 ```bash
-soph --json --timeout 2m omega provision-renewal \
-  --home /srv/omega-offline --network rehearsal \
-  --renewal-home /srv/omega-online --disposable
+sudo install -d -o root -g root -m 0700 /srv/omega-offline
+sudo install -d -o soph-omega -g soph-omega -m 0700 /srv/omega-online
+sudo install -d -o soph-omega -g soph-omega -m 0755 /srv/omega-public
+```
+
+Initialize the authority at `/srv/omega-offline` with the earlier command and
+approved network/repository values. Privileged operator commands can maintain
+both homes; newly created files and directories retain their destination home's
+ownership. Unprivileged commands still require ownership. The renewal account
+cannot traverse the root-owned operator home and receives no passphrase. The
+HTTPS server needs read access only to `/srv/omega-public`. The term *offline*
+here means outside unattended renewal; the workstation can remain connected.
+
+```bash
+sudo soph --json --timeout 2m omega provision-renewal \
+  --home /srv/omega-offline --network sopholeth \
+  --renewal-home /srv/omega-online
 
 # Publish the first approval, or a later membership change, from the offline home.
 # The durable binding routes its publication writes to the operational home.
-soph --json --timeout 2m omega publish \
-  --home /srv/omega-offline --network rehearsal \
+sudo soph --json --timeout 2m omega publish \
+  --home /srv/omega-offline --network sopholeth \
   --manifest /path/to/approved-roots.json \
-  --repository-dir /srv/omega-public --version 1 --disposable
+  --repository-dir /srv/omega-public --version 1
 
 # No offline mount or authority files are needed for either command below.
-soph --json --timeout 2m omega publish \
-  --home /srv/omega-online --network rehearsal --renew --disposable
-soph --json --timeout 2m omega status \
-  --home /srv/omega-online --network rehearsal --verify
+sudo -u soph-omega soph --json --timeout 2m omega publish \
+  --home /srv/omega-online --network sopholeth --renew
+sudo soph --json --timeout 2m omega status \
+  --home /srv/omega-online --network sopholeth --verify
 ```
 
 Provisioning works before the first approval or with an existing publication.
@@ -419,8 +447,8 @@ For an existing publication, omit the version-1 publish example. The operation:
    filenames and signed bytes do not change. Existing history in the offline
    home becomes an archive; publishing and status follow the binding.
 3. Commits `<network>.renewal.json` in the operational home only after its
-   journal is durable. It contains the public bundle and exactly the two
-   online keys. Only this final record enables renewal.
+   journal and online key files are durable. Its public bundle and file digests
+   bind the two online keys. Only this final record enables renewal.
 
 After interruption, rerun the same provisioning command with both homes
 available. It completes the same handoff; it cannot redirect the authority to
@@ -487,9 +515,9 @@ verify the first approval, then install the reviewed units:
 ```bash
 sudo install -m 0644 docs/examples/omega/soph-omega-renewal@.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now soph-omega-renewal@rehearsal.timer
-systemctl status soph-omega-renewal@rehearsal.timer
-journalctl -u soph-omega-renewal@rehearsal.service
+sudo systemctl enable --now soph-omega-renewal@sopholeth.timer
+systemctl status soph-omega-renewal@sopholeth.timer
+journalctl -u soph-omega-renewal@sopholeth.service
 ```
 
 The service allows writes only to the operational and public directories and
@@ -541,18 +569,18 @@ Preparation does not publish anything or reserve a release number.
 
 ```bash
 # Prepare root 2; subsequent rotations use consecutive root versions.
-soph --json --timeout 2m omega rotate \
-  --home /srv/omega-offline --network rehearsal \
-  --root-version 2 --disposable
+sudo soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network sopholeth \
+  --root-version 2
 
 # After reviewing rotation.root_sha256 and the old/new key IDs, paste that
 # exact digest in place of <root_sha256> below.
-soph --json --timeout 2m omega rotate \
-  --home /srv/omega-offline --network rehearsal \
-  --root-version 2 --apply '<root_sha256>' --disposable
+sudo soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network sopholeth \
+  --root-version 2 --apply '<root_sha256>'
 
-soph --json --timeout 2m omega status \
-  --home /srv/omega-online --network rehearsal --verify
+sudo soph --json --timeout 2m omega status \
+  --home /srv/omega-online --network sopholeth --verify
 ```
 
 Review the network, initial fingerprint, current root version, successor digest,
@@ -562,8 +590,8 @@ requires an existing preparation with an exactly matching digest. Both commands
 are idempotent for the explicit root version. Repeating an older applied version
 verifies the latest release rather than restoring its old timestamp.
 
-The new keys become durable in the private operational journal before the root
-is signed. Complete pending writes retain their bytes; torn first writes before
+The new keys become durable in separate operational key files before the root
+is signed; the public journal binds their digests. Complete pending writes retain their bytes; torn first writes before
 signing can be reconstructed. Application reserves a release version and clock
 before signing with the new keys. The release commits the active generation;
 ordinary renewal and offline membership approval select those keys from then
@@ -574,7 +602,7 @@ an approval made after preparation. Snapshot and timestamp advance to the next
 release number. Dependencies are durable before the successor root is exposed;
 timestamp is replaced last. Success means the exact release and all retained
 roots were verified through HTTPS. There are at most 64 root versions and
-10,000 releases in a disposable journal; there is no reset or compaction command.
+10,000 releases in a journal; there is no reset or compaction command.
 
 ### Interrupted application and recovery
 
@@ -619,17 +647,15 @@ rotation is not instantaneous revocation of disconnected clients. Keep all
 numbered roots permanently, even after expiration, so returning clients can
 authenticate the full transition chain. Preserve publication and custody backups.
 
-This disposable implementation keeps old key copies in immutable initialization,
-renewal, and rotation records. It stops selecting retired generations for new
-signatures, but does not erase their bytes. Do not edit or delete these records
-to perform physical key destruction. Production custody must separate retention
-of public history from encrypted private key generations, with a new
-authority schema and a documented retirement/recovery workflow. Loss of the
-whole online custody record or journal still requires restoration; automated
-recovery of lost operational journals still requires backups. Later sections
-describe recovery of lost rotated membership and root signers.
-Root quorum compromise requires an independently distributed trust anchor;
-an unsigned replacement from the compromised repository is not recovery.
+Encrypted custody separates private generations from retained public history.
+New signatures use only the current generation. Once the successor is verified,
+adoption is confirmed, and its backup is tested, retired private generations may
+be removed from working custody; keep protected recovery copies while needed.
+Retain the public authority, receipts, plans, every handoff and release, and all
+numbered roots. The command never erases keys or falls back to old copies.
+Legacy schema-1 records must remain intact; do not edit their embedded secrets.
+Missing journal history requires verified restoration, not reconstruction from
+whatever an HTTPS server currently returns.
 
 ## Rotate the membership signing key
 
@@ -643,17 +669,17 @@ Changing the list or extending its approval requires a separate `publish`.
 
 ```bash
 # Use the next root version; this example follows an applied online root 2.
-soph --json --timeout 2m omega rotate \
-  --home /srv/omega-offline --network rehearsal \
-  --role targets --root-version 3 --disposable
+sudo soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network sopholeth \
+  --role targets --root-version 3
 
 # Review rotation.role, root_sha256, replaces.targets, and keys.targets.
-soph --json --timeout 2m omega rotate \
-  --home /srv/omega-offline --network rehearsal \
-  --role targets --root-version 3 --apply '<root_sha256>' --disposable
+sudo soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network sopholeth \
+  --role targets --root-version 3 --apply '<root_sha256>'
 
-soph --json --timeout 2m omega status \
-  --home /srv/omega-online --network rehearsal --verify
+sudo soph --json --timeout 2m omega status \
+  --home /srv/omega-online --network sopholeth --verify
 ```
 
 Preparation durably stores the new private generation in the offline home
@@ -692,14 +718,10 @@ does not prove fleet adoption or revoke disconnected clients immediately.
 | Committed handoff damaged, or apply reservation missing beside signed handoff | Restore matching journal records. Do not discard the handoff or reuse its release number. |
 | Active rotated membership private key lost, approval still valid | With the initial authority, root quorum, and operational journal intact, prepare and apply the next `--role targets` generation. Then approve future membership with that key; never fall back to a retired key. |
 
-The last case is a limited recovery path, not production custody. Loss of the
-initial `authority.json`, an expired approval combined with a lost active
-membership key, or damage to the journal still requires verified restoration.
-The initial disposable record contains all six keys and must remain intact.
-Production encrypted custody and backup/compromise recovery require a new
-authority schema. The next section covers the narrower disposable root workflow.
-Keep every public numbered root and preserve custody/journal backups; this
-command does not delete old private generations.
+Loss of the public `authority.json`, an expired approval combined with a lost
+active membership key, or journal damage requires verified restoration. Keep
+all public numbered roots and current custody/journal backups. The command does
+not delete old private generations or recover a missing current journal.
 
 ## Rotate the root authority and recover expiration
 
@@ -721,23 +743,24 @@ under the shared lock, not the list that happened to exist at preparation time.
 
 ```bash
 # Use the next consecutive root version; this follows the preceding examples.
-soph --json --timeout 2m omega rotate \
-  --home /srv/omega-offline --network rehearsal \
-  --role root --root-version 4 --disposable
+sudo soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network sopholeth \
+  --role root --root-version 4
 
 # Approve the reviewed root digest and renew the unchanged current membership.
-soph --json --timeout 2m omega rotate \
-  --home /srv/omega-offline --network rehearsal \
+sudo soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network sopholeth \
   --role root --root-version 4 --apply '<root_sha256>' \
-  --renew-approval --disposable
+  --renew-approval
 
-soph --json --timeout 2m omega status \
-  --home /srv/omega-online --network rehearsal --verify
+sudo soph --json --timeout 2m omega status \
+  --home /srv/omega-online --network sopholeth --verify
 ```
 
-New root signers live in separate `R.root-1-key.json`, `R.root-2-key.json`, and
-`R.root-3-key.json` files under `<offline-home>/<network>.rotations/`, with the
-same private permissions as membership keys. `R.root-plan.json` fixes the
+New encrypted root signers live in `R.root-1-key.age.json`,
+`R.root-2-key.age.json`, and `R.root-3-key.age.json` under
+`<offline-home>/<network>.rotations/`, with the same permissions as membership
+keys. `R.encrypted-plan.json` fixes the
 preparation identity and clock before creating keys. Preserve complete pending
 writes and all committed files; retries never generate replacement material for
 a handed-off identity. Only public root keys, metadata, and signed approvals
@@ -771,163 +794,23 @@ nodes and representative clients before retiring keys; `applied` confirms served
 publication, not adoption by every node. Rotation cannot instantly revoke a
 disconnected client's existing lease.
 
-These are disposable Linux recovery mechanics. The original six-key
-`authority.json` and its completion receipt must still remain intact, even after
-rotation; loss of that file needs restoration. Production keys require a new
-authority schema, encrypted storage, and rehearsed backups. The
-[first-network proposal](omega-production-custody.md) permits one connected
-operator workstation and an explicit network reset after authority compromise;
-clients must deliberately adopt an independently distributed replacement trust
-anchor. Keep all public transition history and protected recovery material; this
-command does not physically destroy old keys. A prepared successor that itself
+The public schema-2 authority and completion receipt stay intact after rotation.
+The first-network custody profile permits one connected operator workstation
+and an explicit network reset after authority compromise; clients must deliberately
+adopt an independently distributed replacement anchor. Keep public transition
+history and protected recovery material. A prepared successor that itself
 expires before apply cannot be refreshed in place or overwritten; preserve its
 records for a separately reviewed recovery procedure.
 
-## Legacy DNS tooling reference
+## Release integration and legacy lab tooling
 
-The remaining sections describe the interim standalone `omega` tool and
-current DNS discovery consumers, which are still present until the TUF
-publishing and consumer migration ships. Do not use this legacy workflow for
-the first public network. The [signing audit](omega-signing-audit.md) records
-its known defects; the [trust design](omega-trust-design.md) defines its replacement.
+The standalone `omega` binary is retired. The old DNS signer lives only in
+[test/burnin/legacy-omega](../test/burnin/legacy-omega/README.md), for existing
+burn-in consumers awaiting TUF migration. It must not create the public network.
 
-## Build the operator tool
-
-From the checkout:
-
-```bash
-go build -o bin/omega ./cmd/omega
-```
-
-The operator tool is `omega`. Use **HTTP ports** in root addresses.
-Its publication hints share the discovery defaults used by the node.
-
-## Establish the trust anchor
-
-On the offline signing machine, using a private working directory:
-
-```bash
-umask 077
-./bin/omega keygen \
-  --out-private omega-v1.key \
-  --out-public omega-v1.pub
-```
-
-The tool checks for existing output paths and creates the private key with
-mode `0600`, but the audit found a concurrent overwrite race and partial-pair
-failure. These must be resolved in `soph omega init` before production use.
-For disposable development keys, retain the private key and a recoverable backup.
-Copy only the public key into the release's
-[trust anchor](../internal/trust/omega.go), replacing its empty value.
-Record the public key, release revision, and operator custody procedure.
-
-No production key generation or trust-anchor change is part of the rebrand.
-Disposable lab keys must never become the public network's trust anchor.
-
-## Public release validation
-
-Ordinary builds leave the authority unset and reject public discovery before
-consulting DNS or cached roots. The retired all-zero placeholder is rejected
-even when supplied explicitly. Private-network development does not require
-an authority.
-
-After the planned authority ceremony, a public release must match an
-independently recorded fingerprint: SHA-256 of the decoded 32-byte public
-key, represented as 64 hexadecimal digits. Validate the release checkout:
-
-```bash
-OMEGA_EXPECTED_SHA256='paste-the-reviewed-64-hex-digit-fingerprint' make check-public-release
-```
-
-The check rejects a missing or malformed expected fingerprint, an
-unconfigured/malformed anchor, or a fingerprint mismatch. Normal development
-tests skip this release-only check unless the variable is present. The Docker
-workflow requires it before publishing any `v*` tag, using the repository
-variable `OMEGA_EXPECTED_SHA256`. Main and manual branch builds continue to
-support private development. The expected value must come from the authority
-record, not be calculated from the checkout being verified merely to make the
-check pass.
-
-This validates the current anchor, not public-network readiness. The trust
-design and `soph omega` lifecycle still precede any production key ceremony.
-
-## Sign and publish
-
-The following addresses are placeholders. Replace them with the deployed
-roots' advertised hostnames and HTTP ports:
-
-```bash
-./bin/omega sign \
-  --key omega-v1.key \
-  --version omega-v1 \
-  --expires-in 24h \
-  --nodes root-a.example:8080,root-b.example:8080 \
-  > omega-record.txt
-```
-
-`--expires-in` takes a Go duration such as `24h` or `30m`, not a bare
-number of seconds. Standard output contains the signed TXT value; explanatory
-output goes to stderr. Transfer the signed record to the DNS publisher,
-keeping the private key offline.
-
-For the intended launch namespace, publish the signed record at
-`_omega.sopholeth.io` and this pointer at `_bootstrap.sopholeth.io`:
-
-```text
-omega=_omega.sopholeth.io
-```
-
-**Prerequisite:** domain ownership and a release containing the real public
-key. Current source queries `_bootstrap.sopholeth.io`; its trust anchor is
-unset and public discovery is disabled.
-
-After publication, inspect both records:
-
-```bash
-dig +short TXT _bootstrap.sopholeth.io
-dig +short TXT _omega.sopholeth.io
-```
-
-DNS visibility is only the first check. Start the intended release with an
-empty cache and verify signature acceptance, the chosen seeds, and root
-status. Choose a publication schedule with enough margin before expiration
-for DNS propagation and operator recovery. DNS TTL and the signed `exp`
-are separate clocks.
-
-## Root configuration
-
-- Use public mode and leave manual peers unset so verified discovery runs.
-- Make each root's advertised `address:httpPort` exactly match its signed
-  entry. The address must be reachable from intended participants.
-- Set a writable cache directory, explicit payload capacity, and appropriate
-  transport exposure.
-- Enable inbound WebSocket attachments on roots intended to serve as
-  substrates.
-- Observe discovery refresh, peer reachability, storage usage, and quorum
-  outcomes. A healthy HTTP response alone does not validate the network.
-
-Environment variables are documented in
-[node configuration](configuration.md). Changing the root set requires
-signing and publishing a new list; nodes adopt it on refresh.
-
-## Renewal, rotation, and recovery
-
-For routine renewal, sign a fresh list with the same trusted key before the
-previous list expires. For a root-set change, remember that cached or replayed
-older lists remain valid until their signed expiration.
-
-A new trust key or signed format requires a release plan. Current clients
-trust one compiled key and version. Define the discovery path, overlap,
-upgrade requirements, and retirement behavior before changing either.
-Parallel TXT records behind one shared pointer are not sufficient for
-automatic version selection.
-
-If signing is unavailable, an already signed list remains usable only until
-its expiration. Fresh startup has no valid discovery source once both DNS and
-cache are expired. Existing processes may continue peer traffic, but the
-[current running-node expiration gap](discovery.md#refresh-and-current-limits)
-must be resolved before relying on a safe public cutover. Restore the signer
-from its offline recovery procedure and publish a fresh record.
-
-The old dnsmasq signing loop is a lab helper with online test keys and
-host-service side effects. It is not the production signing workflow.
+Ordinary builds still have no public trust anchor and reject public discovery.
+The existing `make check-public-release` gate compares `OMEGA_EXPECTED_SHA256`
+with the **legacy decoded 32-byte public key**, not this suite's initial signed
+TUF-root fingerprint. The compiled bundle and release gate must be migrated
+together before a public release; do not paste the new fingerprint into the old
+gate to bypass that work. Private-network development remains available.

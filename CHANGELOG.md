@@ -4,12 +4,22 @@
 
 ### Public discovery
 
+- Complete encrypted `soph omega` publication, provisioning, and all three
+  rotation roles. Production init defaults to schema 2; new passphrases require
+  12 characters while existing copies still unlock for recovery. Keep online
+  secrets in separate service-owned files and root/membership keys encrypted in
+  operator custody. Verify active restored keys after rotation, rehearse backup
+  recovery and deliberate reset, and document the separate-account workflow.
+  Retire the standalone operator binary; retain legacy DNS signing only as a
+  burn-in helper. Hosted metadata and discovery integration remain launch work.
+
+
 - Add `soph omega init --encrypted --disposable` with a public-only schema-2
   authority and six separate age-encrypted key files. Recover interrupted
   initialization without replacing allocations, inspect public identity without
   passwords, and verify a restored backup with `status --check-keys`. Document
   terminal unlock, missing/damaged key reports, and backup recovery. Encrypted
-  publication/rotation and production creation remain gated for the next slice.
+  publication/rotation and production creation are covered by the lifecycle above.
 
 - Renew omega snapshot/timestamp metadata daily with seven-day validity, retaining
   hourly scheduler checks/retries and root/membership expiry caps. Preserve older

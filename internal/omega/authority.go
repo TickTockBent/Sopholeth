@@ -42,7 +42,7 @@ type InitOptions struct {
 
 // This private transaction record is durable before signing. All recovery
 // derives from these same keys, never fresh randomness after that boundary.
-// Schema 1 is disposable-only; production custody requires a new schema.
+// Schema 1 is disposable-only; encrypted production custody uses schema 2.
 type authority struct {
 	Schema     int               `json:"schema"`
 	Mode       string            `json:"mode"`
@@ -96,7 +96,7 @@ func initialize(ctx context.Context, opts InitOptions, now time.Time, hook func(
 
 func initializeWithCodec(ctx context.Context, opts InitOptions, now time.Time, hook func(string) error, codec keyCodec) (Report, error) {
 	if !opts.Disposable {
-		return Report{}, errors.New("omega: --disposable is required until production custody and recovery are implemented")
+		opts.Encrypted = true
 	}
 	if !networkID.MatchString(opts.Network) {
 		return Report{}, errors.New("omega: network must be 1–64 ASCII letters, digits, underscores or hyphens, starting with a letter or digit")
@@ -120,10 +120,10 @@ func initializeWithCodec(ctx context.Context, opts InitOptions, now time.Time, h
 		if err != nil {
 			return report, err
 		}
-		if report.Network != opts.Network || report.Repository != repository || opts.Encrypted != (report.Custody == encryptedCustody) {
+		if report.Mode != custodyMode(opts.Disposable) || report.Network != opts.Network || report.Repository != repository || opts.Encrypted != (report.Custody == encryptedCustody) {
 			err := errors.New("omega: network already has an authority with different configuration")
 			report.Problem = err.Error()
-			report.Action = "Check --network, --repository, and --encrypted against the existing authority; do not replace its material."
+			report.Action = "Check --network, --repository, --disposable, and --encrypted against the existing authority; do not replace its material."
 			return report, err
 		}
 		if opts.Encrypted {
@@ -144,7 +144,7 @@ func initializeWithCodec(ctx context.Context, opts InitOptions, now time.Time, h
 		return failedReport(err), err
 	}
 	stageName := "." + opts.Network + ".pending"
-	if err := home.root.Mkdir(stageName, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := home.mkdir(stageName, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return Report{}, err
 	}
 	if err := home.syncDir(); err != nil {
@@ -160,7 +160,7 @@ func initializeWithCodec(ctx context.Context, opts InitOptions, now time.Time, h
 	}
 	if opts.Encrypted {
 		if err := stage.prepareEncrypted(ctx, opts, now, codec); err != nil {
-			return Report{Schema: 1, State: "pending", Mode: "disposable", Custody: encryptedCustody, Network: opts.Network, Repository: opts.Repository,
+			return Report{Schema: 1, State: "pending", Mode: custodyMode(opts.Disposable), Custody: encryptedCustody, Network: opts.Network, Repository: opts.Repository,
 				Publication: "not_checked", Problem: err.Error(), Action: "Preserve staging; check the passphrase and rerun the same encrypted init, or restore damaged allocations from backup."}, err
 		}
 	} else {
@@ -339,6 +339,7 @@ func status(ctx context.Context, homePath, network string, verify bool, httpClie
 	defer home.close()
 	if c, err := readRenewal(home, network); err == nil {
 		report, err := inspectBundle(c.Bundle, time.Now().UTC())
+		report.Mode = c.Mode
 		report.OperationalHome = home.root.Name()
 		if err != nil && !errors.Is(err, errRootExpired) {
 			return report, err
@@ -374,26 +375,33 @@ func status(ctx context.Context, homePath, network string, verify bool, httpClie
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
-	if report.Custody == encryptedCustody {
-		if verify {
-			return encryptedLifecyclePending(report)
-		}
-		if report.State == "expired" {
-			return report, errRootExpired
-		}
-		return report, nil
-	}
 	_, bundle, err := current.verify()
 	if err != nil {
 		return report, err
 	}
-	operational, cleanup, err := operationalHome(ctx, home, bundle)
+	operational, cleanup, err := operationalHome(ctx, home, bundle, report.Mode)
 	if err != nil {
 		return publicationFailure(report, err)
 	}
 	defer cleanup()
 	report.OperationalHome = operational.root.Name()
-	return inspectPublication(ctx, operational, bundle, report, verify, httpClient)
+	report, resultErr := inspectPublication(ctx, operational, bundle, report, verify, httpClient)
+	if report.Custody == encryptedCustody {
+		var inspectErr error
+		report, inspectErr = inspectEncryptedKeys(home, current, operational, bundle, report, nil)
+		if inspectErr != nil {
+			return publicationFailure(report, inspectErr)
+		}
+		if resultErr == nil {
+			for _, state := range report.KeyFiles {
+				if state == "missing" || state == "damaged" {
+					report.Action = "Public authority is intact. Restore unavailable active key files; status --check-keys verifies the recovered generations."
+					break
+				}
+			}
+		}
+	}
+	return report, resultErr
 }
 
 func absentReport(network string) (Report, error) {
@@ -433,8 +441,8 @@ func (s *store) inspect(now time.Time) (Report, error) {
 		if readErr != nil {
 			return failedReport(readErr), readErr
 		}
-		report.Custody, report.KeyFiles = encryptedCustody, s.encryptedKeyStatus(p)
-		report.Action = "Back up this disposable encrypted home and verify a restored copy with soph omega status --check-keys. Publishing and rotation are not implemented for encrypted custody yet."
+		report.Mode, report.Custody, report.KeyFiles = p.Mode, encryptedCustody, s.encryptedKeyStatus(p)
+		report.Action = "Back up this encrypted home and verify a restored copy with soph omega status --check-keys before public activation."
 		if keyErr := requireKeyFiles(report); keyErr != nil {
 			report.Action = "Public authority is intact. Restore unavailable encrypted keys before signing; status --check-keys verifies the recovered copies."
 		}

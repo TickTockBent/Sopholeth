@@ -37,6 +37,10 @@ func newPublishFixture(t *testing.T) *publishFixture {
 }
 
 func newPublishFixtureAt(t *testing.T, created time.Time) *publishFixture {
+	return newCustodyPublishFixture(t, created, false)
+}
+
+func newCustodyPublishFixture(t *testing.T, created time.Time, encrypted bool) *publishFixture {
 	t.Helper()
 	base := t.TempDir()
 	f := &publishFixture{opts: PublishOptions{Home: filepath.Join(base, "custody"), Directory: filepath.Join(base, "repository"), Network: "rehearsal", Version: 1, Manifest: publicationManifest, Disposable: true}, overrides: map[string][]byte{}, codes: map[string]int{}}
@@ -59,7 +63,12 @@ func newPublishFixtureAt(t *testing.T, created time.Time) *publishFixture {
 	}))
 	t.Cleanup(f.server.Close)
 	f.opts.HTTPClient = f.server.Client()
-	_, err := initialize(context.Background(), InitOptions{Home: f.opts.Home, Network: f.opts.Network, Repository: f.server.URL, Disposable: true}, created, nil)
+	if encrypted {
+		f.opts.Disposable = false
+		f.opts.Passphrase = testKeyPassphrase
+		f.opts.codec = fastKeyCodec
+	}
+	_, err := initializeWithCodec(context.Background(), InitOptions{Home: f.opts.Home, Network: f.opts.Network, Repository: f.server.URL, Disposable: !encrypted, Encrypted: encrypted, Passphrase: testKeyPassphrase}, created, nil, fastKeyCodec)
 	must(t, err)
 	return f
 }

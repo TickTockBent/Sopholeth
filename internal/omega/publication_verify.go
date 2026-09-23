@@ -42,7 +42,10 @@ func newPublicationVerifier(ctx context.Context, state *store, bundle bootstrap.
 			return nil, func() {}, err
 		}
 	}
-	dir, err := os.MkdirTemp(state.root.Name(), ".verify-")
+	// Client scratch belongs to the invoking user, outside the service home.
+	// A killed privileged operator must not leave root-owned client state that
+	// an unprivileged renewal service has to traverse or delete.
+	dir, err := os.MkdirTemp("", "soph-omega-verify-")
 	if err != nil {
 		return nil, func() {}, err
 	}

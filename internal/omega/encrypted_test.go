@@ -10,7 +10,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -103,22 +102,6 @@ func TestEncryptedInitPublicInspectionAndBackupRestore(t *testing.T) {
 		must(t, os.WriteFile(filepath.Join(backup, opts.Network, name), data, 0600))
 	}
 	assertAbsent(t, filepath.Join(finalPath(opts), allocationName))
-	// Until the lifecycle slice lands, schema 2 cannot create any plaintext
-	// publisher state or copy private material into a service home.
-	blocked, err := Publish(context.Background(), PublishOptions{Home: opts.Home, Network: opts.Network, Directory: filepath.Join(t.TempDir(), "repository"), Manifest: publicationManifest, Version: 1, Disposable: true})
-	if err == nil || blocked.Custody != encryptedCustody || blocked.Problem == "" {
-		t.Fatal("encrypted publication was enabled before lifecycle support")
-	}
-	online := filepath.Join(t.TempDir(), "online")
-	blocked, err = ProvisionRenewal(context.Background(), ProvisionRenewalOptions{Home: opts.Home, Network: opts.Network, RenewalHome: online, Disposable: true})
-	if err == nil || blocked.Custody != encryptedCustody || blocked.Problem == "" {
-		t.Fatal("encrypted custody entered plaintext renewal provisioning")
-	}
-	assertAbsent(t, online)
-	blocked, err = Rotate(context.Background(), RotateOptions{Home: opts.Home, Network: opts.Network, RootVersion: 2, Disposable: true})
-	if err == nil || blocked.Custody != encryptedCustody || !strings.Contains(blocked.Action, "inspection/recovery") {
-		t.Fatal("encrypted rotation was enabled before lifecycle support")
-	}
 	for _, name := range keyNames {
 		private, err := fastKeyCodec.unlock(context.Background(), file(t, filepath.Join(finalPath(opts), encryptedKeyName(name))), public.binding(name), []byte("throwaway test passphrase"))
 		must(t, err)

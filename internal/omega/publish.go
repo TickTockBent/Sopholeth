@@ -22,6 +22,8 @@ type PublishOptions struct {
 	Manifest   []byte
 	Version    int64
 	Disposable bool
+	Passphrase PassphraseFunc
+	codec      keyCodec
 	HTTPClient *http.Client
 }
 
@@ -52,8 +54,8 @@ func Publish(ctx context.Context, opts PublishOptions) (Report, error) {
 }
 
 func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(string) error) (report Report, resultErr error) {
-	if !opts.Disposable || !networkID.MatchString(opts.Network) || opts.Version < 1 || opts.Version > maxReleases {
-		return report, errors.New("omega: publish requires --disposable, a valid network, and a version between 1 and 10000")
+	if !networkID.MatchString(opts.Network) || opts.Version < 1 || opts.Version > maxReleases {
+		return report, errors.New("omega: publish requires a valid network, and a version between 1 and 10000")
 	}
 	manifest, err := approvedManifest(opts.Manifest, opts.Network)
 	if err != nil {
@@ -78,8 +80,9 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
-	if report.Custody == encryptedCustody {
-		return encryptedLifecyclePending(report)
+	if err := requireCustodyMode(report.Mode, opts.Disposable); err != nil {
+		report.Problem = err.Error()
+		return report, err
 	}
 	if report.Network != opts.Network {
 		return failedReport(errors.New("omega: authority network mismatch")), errors.New("omega: authority network mismatch")
@@ -95,7 +98,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	if err != nil {
 		return report, err
 	}
-	operational, cleanup, err := operationalHome(ctx, home, bundle)
+	operational, cleanup, err := operationalHome(ctx, home, bundle, report.Mode)
 	if err != nil {
 		return report, err
 	}
@@ -165,28 +168,46 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 				return report, err
 			}
 		} else {
-			data, err := current.read("authority.json")
+			session, err := openOperatorKeys(ctx, home, current, bundle, opts.Passphrase, opts.codec)
 			if err != nil {
 				return report, err
 			}
-			var a authority
-			if err := decodeRecord(data, &a); err != nil {
-				return report, err
-			}
+			defer session.close()
+			a := authority{Keys: map[string]string{}}
 			var roots [][]byte
+			var latest release
 			if len(history) > 0 {
-				latest := history[len(history)-1]
-				keys, err := activeOnlineKeys(state, bundle, latest, a.Keys)
-				if err != nil {
-					return report, err
-				}
-				a.Keys["snapshot"], a.Keys["timestamp"] = keys["snapshot"], keys["timestamp"]
-				a.Keys["targets"], err = activeMembershipKey(home, state, bundle, latest, a.Keys["targets"])
-				if err != nil {
-					return report, err
-				}
+				latest = history[len(history)-1]
 				roots = latest.Roots
 			}
+			a.Keys["targets"], err = session.membership(state, latest)
+			if err != nil {
+				return report, err
+			}
+			var onlineKeys map[string]string
+			if operational != home {
+				custody, e := readRenewal(operational, opts.Network)
+				if e != nil {
+					return report, e
+				}
+				onlineKeys, err = custody.activeKeys(operational, state, latest)
+			} else {
+				onlineKeys = map[string]string{}
+				for _, role := range []string{"snapshot", "timestamp"} {
+					onlineKeys[role], err = session.initial(role)
+					if err != nil {
+						return report, err
+					}
+				}
+				if len(history) > 0 {
+					onlineKeys, err = activeOnlineKeys(state, bundle, latest, onlineKeys)
+				}
+			}
+			if err != nil {
+				return report, err
+			}
+			a.Keys["snapshot"], a.Keys["timestamp"] = onlineKeys["snapshot"], onlineKeys["timestamp"]
+
 			r, err = prepareRelease(a, bundle, opts.Version, previous, manifest, now, roots...)
 			if err != nil {
 				return report, err

@@ -1,13 +1,13 @@
 # Omega production custody and recovery
 
-Status: first encrypted initialization/inspection slice implemented for disposable
-rehearsals; production lifecycle remains planned. Revised 2026-09-23.
-This scopes the custody work in
+Status: encrypted initialization, publication, all rotation roles, separate renewal
+custody, and backup/reset rehearsal implemented on Linux. Revised 2026-09-23.
+This records the first-network profile for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
-[public-network plan](public-network-plan.md#1-build-the-omega-suite). The
-[implemented commands](omega-operations.md) still require disposable custody.
-See the [encrypted rehearsal](omega-operations.md#rehearse-encrypted-custody-and-backup-restoration)
-for the available commands. Production creation remains gated.
+[public-network plan](public-network-plan.md#1-build-the-omega-suite).
+See [omega operations](omega-operations.md) for commands and recovery steps.
+Production creation now selects encrypted schema 2 by default; no live authority
+has been created. Hosted publication and discovery consumer integration remain.
 
 ## Launch criteria and accepted limits
 
@@ -70,7 +70,10 @@ Store one key per encrypted payload, bound to its role, generation, and authorit
 validate the complete payload and derived public identity before use.
 
 Unlock through a non-echoing terminal prompt. One strong passphrase for the local
-key set is acceptable; keep recovery information apart from backup media. No
+key set is acceptable; keep recovery information apart from backup media. New
+passphrases must contain at least 12 Unicode characters. Existing short passwords
+remain usable for unlocking/recovery; creating new encrypted generations enforces
+the minimum. There is no password-change command in this slice. No
 secrets belong in arguments, environment variables, logs, JSON reports, or
 plaintext temporary files. Avoid retaining decrypted keys between commands;
 account for swap/dumps without promising perfect memory erasure in Go. The two
@@ -80,8 +83,9 @@ renewal; encrypt their backups. Changing a password does not revoke an old key c
 Reserve `authority.json` **schema 1** permanently for disposable authorities.
 Use **schema 2** for a public-only record of the network, repository, creation
 transaction, initial fingerprint, roles, and custody profile. Keep encrypted
-private files separate, including rotated generations. Update renewal/rotation
-records that currently embed plaintext keys too. Reject mixed identities and
+private files separate, including rotated generations. Renewal schema 2 and online-rotation schema 4 refer to separate
+service key files by digest; encrypted operator generations never enter those
+journals. Legacy inline records remain disposable-only. Reject mixed identities and
 disposable records substituted into production state; do not relabel existing
 disposable keys as a production authority. `status` must inspect public state
 without unlocking keys, including when one root key is unavailable.
@@ -134,9 +138,11 @@ is stopped or under its existing locks. Update backups after key changes and
 retain current journal history; old keys alone cannot safely resume current
 versions. One separately stored encrypted recovery set is sufficient initially.
 
-Before launch, restore it to a temporary private location with the working copy
-unavailable. Check the expected fingerprint, reopen recovered keys, and verify
-the journal. Rehearse signing and publication with throwaway keys; never run a
+Before launch, restore with the working copies unavailable. After provisioning,
+preserve the bound operational/repository absolute paths on an isolated replacement
+or with the originals safely moved aside; do not rewrite bindings. Check the
+expected fingerprint and latest versions, reopen all active keys, and verify
+the journal and served publication separately. Rehearse signing and publication with throwaway keys; never run a
 second live publisher from a backup. Record the backup and unlock-recovery
 locations, verified fingerprint, and restore date in private operator notes.
 
@@ -169,22 +175,22 @@ for out-of-band root replacement after root-quorum compromise.
 
 ## Implementation scope
 
-1. **Encrypted custody and public inspection — implemented for rehearsal.**
-   `init --encrypted --disposable` creates schema 2 and separate age-encrypted key
-   files through the atomic initialization transaction. Ordinary `status` verifies
-   public identity without passwords; `status --check-keys` verifies all recovered
-   files. Schema 1 stays disposable-only. Focused tests cover allocation recovery,
-   unlock/binding failures, and restoring a backup with working keys unavailable.
-2. **Existing lifecycle and launch rehearsal — next.** Carry the backend through
-   approval, rotation, renewal provisioning, and status. Document and test backup
-   restore and deliberate reset with throwaway keys. Require at least 12
-   characters when choosing a new passphrase, enforced by both the prompt and
-   key-creation backend before allocating encrypted keys. Count characters, not
-   bytes. Continue accepting existing passphrases for unlock and recovery so this
-   creation policy cannot lock operators out of older files. Retire the standalone
-   `omega` binary and update its consumers when the replacement is complete.
+1. **Encrypted custody and public inspection — implemented.** Schema 2 records
+   public identity; separate age-encrypted files hold operator keys. Ordinary
+   status needs no password; `status --check-keys` verifies the active recovery
+   set after rotation as well as initialization. Schema 1 stays disposable-only.
+2. **Existing lifecycle and launch rehearsal — implemented.** Publication,
+   provisioning, online/membership/root rotation, and renewal select current
+   generations without plaintext operator-key files or retired-key fallback.
+   New passphrases require 12 characters in both prompt and backend before key
+   allocation; older passwords still unlock. Separate Unix ownership keeps the
+   renewal account outside operator custody, with privileged operator writes
+   retaining service ownership. The existing alternating-rotation walkthrough
+   now exercises encrypted production mode, interruption recovery, restore, and
+   deliberate reset with throwaway keys. The standalone `omega` executable is
+   retired; only a test-local legacy DNS helper remains for burn-in consumers.
 
-These slices must demonstrate the two launch criteria above. Air gaps, independent
+These slices exercise the two launch criteria above. Air gaps, independent
 signing devices, HSMs, multiparty approvals, portable signing requests, signed
 backup attestations, and automatic reconstruction of lost journals are future
 work, not gates. Other launch work remains in the public-network plan.

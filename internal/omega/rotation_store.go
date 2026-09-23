@@ -18,17 +18,20 @@ import (
 	"sopholeth/internal/trust/bootstrap"
 )
 
-// Only online private keys enter the operational journal. The initial custody
-// record and every generation remain immutable; the release history selects
-// the active generation. These formats are disposable-only.
+// Encrypted custody keeps every private key outside the public handoff journal.
+// Legacy schema 1 embeds online secrets and remains disposable-only. The
+// immutable release history selects the active generation.
 type rotationIntent struct {
-	Schema       int               `json:"schema"`
-	Mode         string            `json:"mode"`
-	Fingerprint  string            `json:"fingerprint"`
-	RootVersion  int64             `json:"root_version"`
-	PreviousRoot string            `json:"previous_root_sha256"`
-	Created      time.Time         `json:"created"`
-	Keys         map[string]string `json:"private_keys"`
+	Schema       int                      `json:"schema"`
+	Mode         string                   `json:"mode"`
+	Fingerprint  string                   `json:"fingerprint"`
+	RootVersion  int64                    `json:"root_version"`
+	PreviousRoot string                   `json:"previous_root_sha256"`
+	Created      time.Time                `json:"created"`
+	Keys         map[string]string        `json:"private_keys"`
+	Custody      string                   `json:"custody,omitempty"`
+	OnlineKeys   map[string]*metadata.Key `json:"online_keys,omitempty"`
+	KeyDigests   map[string]string        `json:"key_file_sha256,omitempty"`
 	// Schema 2 is a public targets-key handoff. Its private key stays offline.
 	TargetsKey *metadata.Key `json:"targets_key,omitempty"`
 	// Schema 3 hands off only public root keys and the reviewed expiration.
@@ -288,7 +291,7 @@ func reserveRotationApply(state *store, bundle bootstrap.Bundle, latest release,
 // The scheduler can finish an authorized apply without the offline authority.
 // Even an expired reserved release is completed privately before a higher
 // repair; it is never served with an expired timestamp.
-func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bundle, history []release, now time.Time, initialKeys map[string]string) ([]release, bool, error) {
+func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bundle, history []release, now time.Time, custody renewalCustody, initialKeys map[string]string) ([]release, bool, error) {
 	latest := history[len(history)-1]
 	name := rotationApplyName(latest.Version + 1)
 	data, err := state.read(name)
@@ -312,6 +315,9 @@ func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bun
 	r, keys, err := readRotation(state, bundle, latest.currentRoot(bundle), intent.RootVersion)
 	if err != nil {
 		return history, false, err
+	}
+	if keys.Mode != custody.Mode || keys.Custody != custody.Custody {
+		return history, false, errors.New("omega: prepared rotation has a different renewal custody profile")
 	}
 	if intent.RootSHA256 != digest(r.Root) || intent.Created.Before(keys.Created) {
 		return history, false, errors.New("omega: rotation apply intent differs from prepared transition")
@@ -351,7 +357,11 @@ func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bun
 			next, err = prepareMembershipRelease(onlineKeys, bundle, latest, intent.Created, roots, targets, intent.TimestampDays)
 		}
 	} else {
-		next, err = prepareRenewalWithRoots(keys.Keys, bundle, latest, intent.Created, roots, intent.TimestampDays)
+		onlineKeys, keyErr := rotationOnlineKeys(state, bundle, keys)
+		if keyErr != nil {
+			return history, false, keyErr
+		}
+		next, err = prepareRenewalWithRoots(onlineKeys, bundle, latest, intent.Created, roots, intent.TimestampDays)
 	}
 	if err != nil {
 		return history, false, err
@@ -417,7 +427,7 @@ func inspectRotation(state *store, bundle bootstrap.Bundle, history []release) (
 	latest := history[len(history)-1]
 	version := latest.versions().Root
 	if version > 1 {
-		if _, err := activeOnlineKeys(state, bundle, latest, nil); err != nil {
+		if _, err := rotationHistory(state, bundle, latest.currentRoot(bundle)); err != nil {
 			return nil, err
 		}
 	}

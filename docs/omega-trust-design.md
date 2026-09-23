@@ -96,10 +96,12 @@ into a workflow with encrypted files, a tested backup, and schema-2 public
 authority records. Authenticated discovery and operator recovery are the launch
 criteria. An explicit network reset is acceptable after authority compromise or
 unrecoverable state; clients must deliberately adopt the replacement trust bundle.
-The first backend slice supports encrypted disposable initialization, public
-`status`, and restored-key verification through `status --check-keys`. Production
-creation and encrypted publication/rotation remain gated; schema 1 stays
-disposable-only. See the [rehearsal procedure](omega-operations.md#rehearse-encrypted-custody-and-backup-restoration).
+The encrypted backend now supports the full operator lifecycle and production
+initialization with schema 2. Ordinary `status` needs no password;
+`status --check-keys` verifies active restored generations. Schema 1 stays
+disposable-only. See [custody and restoration](omega-operations.md#encrypted-custody-and-backup-restoration).
+Hosted metadata, compiled bundle/release checks, and consumer integration remain
+separate launch work.
 
 Compromise confined to the renewal service account must not permit new membership
 approval or replacement of the root authority. Keep operator keys and passwords

@@ -1,14 +1,5 @@
-// Command omega signs public root lists with the operator's trust anchor.
-// It runs offline, separate from the node. See
-// docs/discovery.md and docs/omega-operations.md.
-//
-// Subcommands:
-//
-//	keygen  generate a new Ed25519 omega keypair
-//	sign    sign a root list for publication as a DNS TXT record
-//
-// The omega private key must be stored on an air-gapped signing machine.
-// Never transmit it over any network.
+// Command omega-lab preserves legacy DNS signing for disposable burn-in tests.
+// It is not a public-network operator tool; use soph omega for that lifecycle.
 package main
 
 import (
@@ -52,11 +43,11 @@ func main() {
 }
 
 func usage(w *os.File) {
-	fmt.Fprintln(w, "omega — operator tool for signed root lists")
+	fmt.Fprintln(w, "omega-lab — legacy DNS burn-in helper")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  omega keygen --out-private <path> --out-public <path>")
-	fmt.Fprintln(w, "  omega sign --key <path> --version <id> --expires-in <duration> --nodes <host:http-port,...>")
+	fmt.Fprintln(w, "  omega-lab keygen --out-private <path> --out-public <path>")
+	fmt.Fprintln(w, "  omega-lab sign --key <path> --version <id> --expires-in <duration> --nodes <host:http-port,...>")
 }
 
 func runKeygen(args []string) error {
@@ -93,8 +84,8 @@ func runKeygen(args []string) error {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Bake the public key into internal/trust/omega.go (OmegaPubkey).")
-	fmt.Printf("  2. Store %s on your offline signing machine.\n", *outPriv)
-	fmt.Println("  3. Never transmit the private key over any network.")
+	fmt.Printf("  2. Keep %s private and delete it after the burn-in.\n", *outPriv)
+	fmt.Println("  3. Never use these lab keys for the public network.")
 	return nil
 }
 

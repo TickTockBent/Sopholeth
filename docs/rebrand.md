@@ -26,7 +26,7 @@ directories are not migrated automatically.
 | Surface | Current name |
 | --- | --- |
 | Node executable and entry point | `bin/server`, `cmd/server`; `--mcp` runs the embedded MCP server |
-| Operator executables | `bin/omega`, `cmd/omega`; `bin/dashboard`, `cmd/dashboard` |
+| Operator executables | `bin/soph` (`soph omega`); `bin/dashboard`, `cmd/dashboard` |
 | Client executable | `bin/soph`, `cmd/soph`; saved networks in `$XDG_CONFIG_HOME/sopholeth/soph.json` |
 | Go module and imports | `sopholeth` |
 | Node settings | `NODE_*`, with `NODE_ID` for node identity |

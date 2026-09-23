@@ -21,6 +21,8 @@ type RotateOptions struct {
 	Apply         string // Exact root SHA-256 from a prior preparation report.
 	RenewApproval bool   // Explicitly renew the unchanged membership during root apply.
 	Disposable    bool
+	Passphrase    PassphraseFunc
+	codec         keyCodec
 	HTTPClient    *http.Client
 }
 
@@ -51,12 +53,12 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	if opts.RenewApproval && (opts.Role != "root" || opts.Apply == "") || opts.Role == "root" && opts.Apply != "" && !opts.RenewApproval {
 		return report, errors.New("omega: root apply requires --renew-approval for the unchanged membership; only root apply accepts it")
 	}
-	if !opts.Disposable || !networkID.MatchString(opts.Network) || opts.RootVersion < 2 || opts.RootVersion > maxRootVersion {
-		return report, errors.New("omega: rotate requires --disposable, a network, and --root-version between 2 and 64")
+	if !networkID.MatchString(opts.Network) || opts.RootVersion < 2 || opts.RootVersion > maxRootVersion {
+		return report, errors.New("omega: rotate requires a network, and --root-version between 2 and 64")
 	}
 	report = Report{Schema: 1, State: "invalid", Network: opts.Network, Publication: "not_checked"}
 	defer func() {
-		if resultErr != nil && report.Custody != encryptedCustody {
+		if resultErr != nil {
 			report.Problem = resultErr.Error()
 			report.Action = "Preserve both custody homes and the journal. Resolve the failure and retry the same root version and apply digest; never roll back a transition."
 			if opts.Apply != "" {
@@ -79,8 +81,8 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
-	if report.Custody == encryptedCustody {
-		return encryptedLifecyclePending(report)
+	if err := requireCustodyMode(report.Mode, opts.Disposable); err != nil {
+		return report, err
 	}
 	_, bundle, err := current.verify()
 	if err != nil {
@@ -89,7 +91,12 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	if bundle.Network != opts.Network {
 		return report, errors.New("omega: authority network mismatch")
 	}
-	online, cleanup, err := operationalHome(ctx, home, bundle)
+	session, err := openOperatorKeys(ctx, home, current, bundle, opts.Passphrase, opts.codec)
+	if err != nil {
+		return report, err
+	}
+	defer session.close()
+	online, cleanup, err := operationalHome(ctx, home, bundle, report.Mode)
 	if err != nil {
 		return report, err
 	}
@@ -132,36 +139,33 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	}
 	var rotation rotationRecord
 	if opts.Apply == "" && opts.RootVersion == latest.versions().Root+1 {
-		var a authority
-		data, err := current.read("authority.json")
-		if err != nil {
-			return report, err
-		}
-		if err := decodeRecord(data, &a); err != nil {
-			return report, err
-		}
-		// Select the current quorum, never the retired initialization keys.
-		rootKeys, err := activeRootKeys(home, state, bundle, previous, a)
-		if err != nil {
-			return report, err
-		}
-		for _, name := range keyNames[:3] {
-			a.Keys[name] = rootKeys[name]
-		}
-		if err := checkOfflineReservation(home, opts.Network, opts.RootVersion, opts.Role); err != nil {
-			return report, err
-		}
-		if opts.Role == "targets" {
-			rotation, err = prepareMembershipRotation(home, state, bundle, previous, opts.RootVersion, a, now)
-		} else if opts.Role == "root" {
-			rotation, err = prepareRootRotation(home, state, bundle, previous, opts.RootVersion, a, now)
+		if session.public != nil {
+			rotation, err = prepareEncryptedRotation(session, state, previous, opts.RootVersion, opts.Role, now)
 		} else {
-			for _, name := range []string{membershipKeyName(opts.RootVersion), membershipKeyName(opts.RootVersion) + ".pending"} {
-				if _, err := home.root.Lstat(opts.Network + ".rotations/" + name); !errors.Is(err, os.ErrNotExist) {
-					return report, errors.New("omega: offline custody already reserves this root version; retry --role targets or restore its records")
-				}
+			a := session.legacy
+			// Select the current quorum, never the retired initialization keys.
+			rootKeys, keyErr := activeRootKeys(home, state, bundle, previous, a)
+			if keyErr != nil {
+				return report, keyErr
 			}
-			rotation, err = prepareRotation(state, bundle, previous, opts.RootVersion, a, now)
+			for _, name := range keyNames[:3] {
+				a.Keys[name] = rootKeys[name]
+			}
+			if err := checkOfflineReservation(home, opts.Network, opts.RootVersion, opts.Role); err != nil {
+				return report, err
+			}
+			if opts.Role == "targets" {
+				rotation, err = prepareMembershipRotation(home, state, bundle, previous, opts.RootVersion, a, now)
+			} else if opts.Role == "root" {
+				rotation, err = prepareRootRotation(home, state, bundle, previous, opts.RootVersion, a, now)
+			} else {
+				for _, name := range []string{membershipKeyName(opts.RootVersion), membershipKeyName(opts.RootVersion) + ".pending"} {
+					if _, err := home.root.Lstat(opts.Network + ".rotations/" + name); !errors.Is(err, os.ErrNotExist) {
+						return report, errors.New("omega: offline custody already reserves this root version; retry --role targets or restore its records")
+					}
+				}
+				rotation, err = prepareRotation(state, bundle, previous, opts.RootVersion, a, now)
+			}
 		}
 		if err != nil {
 			return report, err
@@ -171,6 +175,13 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		if err != nil {
 			return report, fmt.Errorf("omega: prepare this root version before applying it, or restore its journal: %w", err)
 		}
+	}
+	_, intent, err := readRotation(state, bundle, previous, opts.RootVersion)
+	if err != nil {
+		return report, err
+	}
+	if intent.Mode != session.mode() || (session.public != nil && intent.Custody != encryptedCustody) || (session.public == nil && intent.Custody != "") {
+		return report, errors.New("omega: prepared rotation has a different custody profile")
 	}
 	report.Rotation = rotationReport(rotation, previous, "prepared")
 	if report.Rotation.Role != opts.Role {
@@ -217,7 +228,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 			return report, err
 		}
 		if opts.Role == "targets" || opts.Role == "root" {
-			if err := prepareRotationTargets(home, state, bundle, latest, rotation, now); err != nil {
+			if err := prepareRotationTargets(home, state, bundle, latest, rotation, now, session); err != nil {
 				return report, err
 			}
 		}
@@ -225,8 +236,12 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		if err != nil {
 			return report, err
 		}
+		activeKeys, err := custody.activeKeys(online, state, latest)
+		if err != nil {
+			return report, err
+		}
 		var resumed bool
-		history, resumed, err = resumeRotationApply(ctx, state, bundle, history, now, custody.Keys)
+		history, resumed, err = resumeRotationApply(ctx, state, bundle, history, now, custody, activeKeys)
 		if err != nil {
 			return report, err
 		}

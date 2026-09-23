@@ -268,7 +268,7 @@ func TestCommittedPrivateRecordCorruptionStopsRecovery(t *testing.T) {
 }
 
 func TestUnsafePathsAndInvalidOptionsDoNotGenerateKeys(t *testing.T) {
-	for _, kind := range []string{"network", "repository", "production", "home-symlink", "home-mode", "parent-mode", "slot-file", "slot-symlink", "lock-symlink", "stage-symlink"} {
+	for _, kind := range []string{"network", "repository", "production-without-prompt", "home-symlink", "home-mode", "parent-mode", "slot-file", "slot-symlink", "lock-symlink", "stage-symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			o := options(t)
 			switch kind {
@@ -276,7 +276,7 @@ func TestUnsafePathsAndInvalidOptionsDoNotGenerateKeys(t *testing.T) {
 				o.Network = "../escape"
 			case "repository":
 				o.Repository = "https://metadata.example.invalid/omega/"
-			case "production":
+			case "production-without-prompt":
 				o.Disposable = false
 			case "home-symlink":
 				must(t, os.Symlink(t.TempDir(), o.Home))

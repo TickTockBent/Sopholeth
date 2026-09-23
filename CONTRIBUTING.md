@@ -17,7 +17,7 @@ make build
 make test
 ```
 
-Build targets produce `bin/server`, `bin/omega`, `bin/dashboard`, and `bin/soph`.
+Build targets produce `bin/server`, `bin/dashboard`, and `bin/soph`.
 To build and run just the node:
 
 ```bash
@@ -80,7 +80,7 @@ last commit. The expected work is:
 | Repository documentation | Skip | Skip | Skip |
 | Marketing, docs, or devlog site | Skip | Skip | Changed site only |
 | Embedded stream viewer assets | Run | Skip | soph.stream only |
-| CLI, omega tool, or dashboard code/assets | Run | Skip | Skip |
+| CLI (including omega), or dashboard code/assets | Run | Skip | Skip |
 | Node runtime or its internal packages | Run | Run | Skip |
 | Go test files or testdata | Run | Skip | Skip |
 | Go dependency manifests/vendor | Run | Run | Skip |

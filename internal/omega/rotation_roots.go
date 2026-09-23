@@ -98,14 +98,38 @@ func roleSuccessor(previous, next *metadata.Metadata[metadata.RootType], roles [
 }
 
 func (intent rotationIntent) validate(bundle bootstrap.Bundle, previous []byte, version int64) error {
-	if (intent.Schema < 1 || intent.Schema > 3) || intent.Mode != "disposable" || intent.Fingerprint != bundle.Fingerprint() ||
+	if (intent.Schema < 1 || intent.Schema > 4) || !validCustodyMode(intent.Mode) || intent.Fingerprint != bundle.Fingerprint() ||
 		intent.RootVersion != version || version < 2 || version > maxRootVersion || intent.PreviousRoot != digest(previous) ||
 		intent.Created.IsZero() ||
 		(intent.Schema == 1 && (len(intent.Keys) != 2 || intent.TargetsKey != nil)) ||
+		(intent.Schema == 4 && (len(intent.Keys) != 0 || intent.TargetsKey != nil)) ||
 		(intent.Schema == 2 && (len(intent.Keys) != 0 || intent.TargetsKey == nil)) ||
 		(intent.Schema != 3 && (len(intent.RootKeys) != 0 || !intent.RootExpires.IsZero())) ||
 		(intent.Schema == 3 && (len(intent.Keys) != 0 || intent.TargetsKey != nil || len(intent.RootKeys) != 3)) {
 		return errors.New("omega: invalid rotation intent; preserve the journal")
+	}
+	if intent.Custody == encryptedCustody {
+		count := 2
+		names := []string{"snapshot", "timestamp"}
+		if intent.Schema == 2 {
+			count = 1
+			names = []string{"targets"}
+		} else if intent.Schema == 3 {
+			count = 3
+			names = keyNames[:3]
+		} else if intent.Schema != 4 {
+			return errors.New("omega: encrypted rotation cannot embed private keys")
+		}
+		if len(intent.Keys) != 0 || len(intent.KeyDigests) != count || (intent.Schema == 4 && len(intent.OnlineKeys) != 2) || (intent.Schema != 4 && len(intent.OnlineKeys) != 0) {
+			return errors.New("omega: invalid encrypted rotation key descriptors")
+		}
+		for _, name := range names {
+			if !validDigest(intent.KeyDigests[name]) {
+				return errors.New("omega: invalid rotation key-file digest")
+			}
+		}
+	} else if intent.Custody != "" || intent.Mode != "disposable" || intent.Schema == 4 || len(intent.OnlineKeys) != 0 || len(intent.KeyDigests) != 0 {
+		return errors.New("omega: invalid rotation custody profile")
 	}
 	root, err := metadata.Root().FromBytes(previous)
 	if err != nil {
@@ -150,6 +174,13 @@ func (intent rotationIntent) roles() []string {
 }
 
 func (intent rotationIntent) publicKey(role string) (*metadata.Key, error) {
+	if intent.Schema == 4 {
+		key := intent.OnlineKeys[role]
+		if key == nil {
+			return nil, errors.New("omega: missing public online key")
+		}
+		return key, nil
+	}
 	if intent.Schema == 2 && role == "targets" && intent.TargetsKey != nil {
 		return intent.TargetsKey, nil
 	}
@@ -238,8 +269,12 @@ func activeOnlineKeys(state *store, bundle bootstrap.Bundle, latest release, ini
 		if !bytes.Equal(r.Root, latest.Roots[i]) {
 			return nil, errors.New("omega: renewal custody differs from release history")
 		}
-		if intent.Schema == 1 {
-			return intent.Keys, verifyOnlineKeys(intent.Keys, latest.currentRoot(bundle))
+		if intent.Schema == 1 || intent.Schema == 4 {
+			keys, err := rotationOnlineKeys(state, bundle, intent)
+			if err != nil {
+				return nil, err
+			}
+			return keys, verifyOnlineKeys(keys, latest.currentRoot(bundle))
 		}
 	}
 	if initial != nil {
@@ -261,4 +296,31 @@ func rotationReport(r rotationRecord, previous []byte, state string) *RotationRe
 		}
 	}
 	return out
+}
+
+func rotationOnlineKeys(state *store, bundle bootstrap.Bundle, intent rotationIntent) (map[string]string, error) {
+	if intent.Schema == 1 {
+		return intent.Keys, nil
+	}
+	if intent.Schema != 4 {
+		return nil, errors.New("omega: rotation is not an online-key generation")
+	}
+	keys, err := readOnlineKeys(state.keyHome, bundle, intent.Mode, intent.RootVersion, intent.PreviousRoot, intent.KeyDigests)
+	if err != nil {
+		return nil, err
+	}
+	for _, role := range []string{"snapshot", "timestamp"} {
+		key, err := decodeKey(keys[role])
+		if err != nil {
+			return nil, err
+		}
+		public, err := metadata.KeyFromPublicKey(key.Public())
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(record(public), record(intent.OnlineKeys[role])) {
+			return nil, errors.New("omega: online signer differs from prepared public key")
+		}
+	}
+	return keys, nil
 }

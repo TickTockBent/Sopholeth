@@ -13,7 +13,7 @@ does not have: no delete, no TTL extension, no ownership, no history.
 Build from source with the other binaries:
 
 ```bash
-make build            # bin/server, bin/omega, bin/dashboard, bin/soph
+make build            # bin/server, bin/dashboard, bin/soph
 go build -o bin/soph ./cmd/soph
 ```
 
@@ -22,7 +22,10 @@ yet; see the [roadmap](roadmap.md#before-public-alpha).
 
 ## Authority operations
 
-`soph omega init` atomically creates a disposable TUF authority.
+`soph omega init` atomically creates an encrypted TUF authority on Linux.
+It prompts for a new passphrase of at least 12 characters. Add
+`--encrypted --disposable` for an encrypted rehearsal; subsequent mutations must
+use `--disposable` for that authority.
 `soph omega publish` publishes an approved numbered release to a local
 HTTPS-served repository and verifies it through the trust client.
 `soph omega provision-renewal` moves publication state to a separate home with
@@ -46,7 +49,10 @@ These commands use a separate private custody home and do not select or modify
 a saved client network.
 See [omega operations](omega-operations.md) for the commands, all-or-nothing
 commit/retry contract, publication journal, custody limits, and JSON status.
-Production custody, hosting, and production authority creation remain pending.
+`status --check-keys` unlocks all active keys to verify a restored backup.
+Ordinary status, completed retries, and renewal need no passphrase. The
+standalone `omega` operator binary is retired. Hosted metadata, the compiled
+trust bundle/release gate, and discovery consumers still precede public launch.
 
 ## Join a network
 
@@ -259,6 +265,10 @@ Use `soph <command> --help` (or `soph help <command>`) for the command's
 arguments and flags. Help exits 0 and does not load config or contact a node.
 
 ## Timeouts and cancellation
+
+Omega commands that unlock keys default to two minutes including terminal entry;
+use the global `--timeout` to override this. Status/verification and renewal retain
+the ordinary default unless an explicit timeout is supplied.
 
 `--timeout` bounds each request (default 15s). `list --all` applies it per
 page. Ctrl-C or SIGTERM cancels a request or a blocked input read. Cancelling

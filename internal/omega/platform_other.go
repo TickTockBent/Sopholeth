@@ -15,3 +15,5 @@ func safeAncestor(os.FileInfo) error { return supportedPlatform() }
 func tryLock(*os.File) (bool, error) { return false, supportedPlatform() }
 
 func (s *store) promote(string, string) error { return supportedPlatform() }
+
+func inheritOwnership(*os.File, os.FileInfo) error { return supportedPlatform() }

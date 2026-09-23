@@ -15,7 +15,7 @@ import (
 
 func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help")) {
-		return a.printf("Usage: soph [global flags] omega <init|provision-renewal|publish|rotate|status> [flags]\n\n  init     Atomically initialize a disposable authority, or recover the same transaction.\n  provision-renewal  Provision online keys and hand off the publication journal.\n  publish  Publish an approved release, or --renew using online keys, and verify HTTPS.\n  rotate   Prepare an online, membership, or root-key transition; --apply its reviewed root digest.\n  status   Inspect local authority and publication state; --verify checks HTTPS.\n\nUse 'soph omega <command> --help' for flags.\n")
+		return a.printf("Usage: soph [global flags] omega <init|provision-renewal|publish|rotate|status> [flags]\n\n  init     Atomically initialize an authority, or recover the same transaction.\n  provision-renewal  Provision online keys and hand off the publication journal.\n  publish  Publish an approved release, or --renew using online keys, and verify HTTPS.\n  rotate   Prepare an online, membership, or root-key transition; --apply its reviewed root digest.\n  status   Inspect local authority and publication state; --verify checks HTTPS.\n\nUse 'soph omega <command> --help' for flags.\n")
 	}
 	cmd := args[0]
 	if cmd != "init" && cmd != "status" && cmd != "publish" && cmd != "provision-renewal" && cmd != "rotate" {
@@ -35,10 +35,10 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	var rotationRole string
 	var renewApproval bool
 	if cmd == "init" || cmd == "publish" || cmd == "provision-renewal" || cmd == "rotate" {
-		fs.BoolVar(&disposable, "disposable", false, "use development/rehearsal keys; production custody is not implemented")
+		fs.BoolVar(&disposable, "disposable", false, "operate on a disposable rehearsal authority (must match its recorded mode)")
 	}
 	if cmd == "init" {
-		fs.BoolVar(&encrypted, "encrypted", false, "rehearse encrypted key files and public-only authority records (requires --disposable; init/status only)")
+		fs.BoolVar(&encrypted, "encrypted", false, "use encrypted key files (default for production; opt in with --disposable)")
 		fs.StringVar(&repository, "repository", "", "HTTPS metadata repository origin (required; base paths are planned)")
 	} else if cmd == "provision-renewal" {
 		fs.StringVar(&renewalHome, "renewal-home", "", "separate private operational home for online keys and publication state (required)")
@@ -73,26 +73,29 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	if passphrase == nil {
 		passphrase = readOmegaPassphrase
 	}
+	if cmd == "init" && !disposable {
+		encrypted = true
+	}
 	timeout := a.timeout
-	if (encrypted || checkKeys) && !a.timeoutSet {
+	if (encrypted || checkKeys || cmd == "rotate" || cmd == "provision-renewal" || (cmd == "publish" && !renew)) && !a.timeoutSet {
 		timeout = 2 * time.Minute
 	}
 	opCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var report omega.Report
 	if cmd == "init" {
-		if repository == "" || !disposable {
-			return usagef("omega init requires --repository and --disposable")
+		if repository == "" {
+			return usagef("omega init requires --repository")
 		}
 		report, err = omega.Init(opCtx, omega.InitOptions{Home: *home, Network: *network, Repository: repository, Disposable: disposable, Encrypted: encrypted, Passphrase: passphrase})
 	} else if cmd == "provision-renewal" {
-		if !disposable || renewalHome == "" {
-			return usagef("omega provision-renewal requires --renewal-home and --disposable")
+		if renewalHome == "" {
+			return usagef("omega provision-renewal requires --renewal-home")
 		}
-		report, err = omega.ProvisionRenewal(opCtx, omega.ProvisionRenewalOptions{Home: *home, Network: *network, RenewalHome: renewalHome, Disposable: disposable})
+		report, err = omega.ProvisionRenewal(opCtx, omega.ProvisionRenewalOptions{Home: *home, Network: *network, RenewalHome: renewalHome, Disposable: disposable, Passphrase: passphrase})
 	} else if cmd == "rotate" {
-		if !disposable || rootVersion < 2 {
-			return usagef("omega rotate requires --root-version (at least 2) and --disposable")
+		if rootVersion < 2 {
+			return usagef("omega rotate requires --root-version (at least 2)")
 		}
 		if rotationRole != "online" && rotationRole != "targets" && rotationRole != "root" {
 			return usagef("omega rotate --role must be online, targets, or root")
@@ -100,15 +103,15 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 		if renewApproval && (rotationRole != "root" || apply == "") || rotationRole == "root" && apply != "" && !renewApproval {
 			return usagef("omega rotate --role root --apply requires --renew-approval; other operations do not accept it")
 		}
-		report, err = omega.Rotate(opCtx, omega.RotateOptions{Home: *home, Network: *network, RootVersion: rootVersion, Role: rotationRole, Apply: apply, RenewApproval: renewApproval, Disposable: disposable, HTTPClient: a.newHTTPClient()})
+		report, err = omega.Rotate(opCtx, omega.RotateOptions{Home: *home, Network: *network, RootVersion: rootVersion, Role: rotationRole, Apply: apply, RenewApproval: renewApproval, Disposable: disposable, Passphrase: passphrase, HTTPClient: a.newHTTPClient()})
 	} else if cmd == "publish" && renew {
-		if !disposable || manifestPath != "" || directory != "" || version != 0 {
-			return usagef("omega publish --renew requires --disposable and accepts no manifest, repository-dir, or version; the operational journal supplies them")
+		if manifestPath != "" || directory != "" || version != 0 {
+			return usagef("omega publish --renew accepts no manifest, repository-dir, or version; the operational journal supplies them")
 		}
 		report, err = omega.Renew(opCtx, omega.RenewOptions{Home: *home, Network: *network, Disposable: disposable, HTTPClient: a.newHTTPClient()})
 	} else if cmd == "publish" {
-		if !disposable || manifestPath == "" || directory == "" || version < 1 {
-			return usagef("omega publish requires --manifest, --repository-dir, --version, and --disposable")
+		if manifestPath == "" || directory == "" || version < 1 {
+			return usagef("omega publish requires --manifest, --repository-dir, and --version")
 		}
 		file, readErr := os.Open(manifestPath)
 		if readErr != nil {
@@ -122,7 +125,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 		if closeErr != nil {
 			return closeErr
 		}
-		report, err = omega.Publish(opCtx, omega.PublishOptions{Home: *home, Network: *network, Directory: directory, Manifest: manifest, Version: version, Disposable: disposable, HTTPClient: a.newHTTPClient()})
+		report, err = omega.Publish(opCtx, omega.PublishOptions{Home: *home, Network: *network, Directory: directory, Manifest: manifest, Version: version, Disposable: disposable, Passphrase: passphrase, HTTPClient: a.newHTTPClient()})
 	} else if checkKeys {
 		report, err = omega.CheckKeys(opCtx, *home, *network, passphrase)
 	} else if verify {

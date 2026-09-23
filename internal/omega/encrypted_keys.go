@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"unicode/utf8"
 
 	"filippo.io/age"
 )
@@ -22,6 +23,15 @@ const maxKeyPayload = 4 << 10
 type keyCodec struct{ workFactor int }
 
 func defaultKeyCodec() keyCodec { return keyCodec{workFactor: keyWorkFactor} }
+
+// ValidateNewPassphrase applies only to new encryption, never to unlocking
+// existing files. Count Unicode characters rather than UTF-8 bytes.
+func ValidateNewPassphrase(password []byte) error {
+	if !utf8.Valid(password) || utf8.RuneCount(password) < 12 {
+		return errors.New("omega: new key passphrases must contain at least 12 characters")
+	}
+	return nil
+}
 
 type keyBinding struct {
 	Transaction string `json:"transaction"`
@@ -39,6 +49,9 @@ type keyPayload struct {
 }
 
 func (c keyCodec) create(ctx context.Context, binding keyBinding, password []byte) ([]byte, error) {
+	if err := ValidateNewPassphrase(password); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

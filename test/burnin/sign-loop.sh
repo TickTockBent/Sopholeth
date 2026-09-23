@@ -30,11 +30,11 @@ bootstrap_name="${BOOTSTRAP_NAME:-_bootstrap.sopholeth.io}"
 bootstrap_target="${BOOTSTRAP_TARGET:-_omega.sopholeth.io}"
 
 repo_root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
-omega_bin="$repo_root/bin/omega"
+omega_bin="$repo_root/bin/omega-lab"
 
 if [[ ! -x "$omega_bin" ]]; then
     echo "$(date -Is) building $omega_bin" >&2
-    (cd "$repo_root" && make build-omega)
+    (cd "$repo_root" && go build -o bin/omega-lab ./test/burnin/legacy-omega)
 fi
 
 trap 'echo "$(date -Is) sign-loop stopped"; exit 0' INT TERM

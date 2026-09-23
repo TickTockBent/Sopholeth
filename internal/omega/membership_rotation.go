@@ -37,7 +37,7 @@ func rotationTargetsName(version int64) string {
 func membershipStore(home *store, network string, create bool) (*store, error) {
 	name := network + ".rotations"
 	if create {
-		if err := home.root.Mkdir(name, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+		if err := home.mkdir(name, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
 		if err := home.syncDir(); err != nil {
@@ -201,7 +201,7 @@ func activeMembershipKey(home, state *store, bundle bootstrap.Bundle, latest rel
 // The apply reservation fixes the release and signing clock before offline
 // signing. Once these public bytes are durable, the scheduler can finish the
 // transition without opening the offline home or extending membership approval.
-func prepareRotationTargets(home, state *store, bundle bootstrap.Bundle, latest release, r rotationRecord, now time.Time) error {
+func prepareRotationTargets(home, state *store, bundle bootstrap.Bundle, latest release, r rotationRecord, now time.Time, session *operatorKeys) error {
 	name := rotationApplyName(latest.Version + 1)
 	data, err := state.read(name)
 	if errors.Is(err, os.ErrNotExist) {
@@ -250,7 +250,13 @@ func prepareRotationTargets(home, state *store, bundle bootstrap.Bundle, latest 
 		return state.install(name, data)
 	}
 	var private string
-	if preparation.Schema == 3 {
+	if session.public != nil {
+		if preparation.Schema == 3 {
+			private, err = session.membership(state, latest)
+		} else {
+			private, err = session.generationKey(preparation, "targets")
+		}
+	} else if preparation.Schema == 3 {
 		// Root application explicitly reapproves the unchanged membership using
 		// its current offline signer. Root expiry cannot renew it implicitly.
 		current, openErr := home.subdir(bundle.Network)

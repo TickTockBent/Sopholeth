@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
+	"sopholeth/internal/omega"
 )
 
 // The controlling terminal keeps passphrases out of stdin pipelines and JSON
@@ -36,6 +37,9 @@ func readOmegaPassphrase(ctx context.Context, confirm bool) ([]byte, error) {
 		return nil, errors.New("omega key passphrase cannot be empty")
 	}
 	if confirm {
+		if err := omega.ValidateNewPassphrase([]byte(password)); err != nil {
+			return nil, err
+		}
 		again, err := terminal.ReadPassword("Confirm passphrase: ")
 		if err != nil {
 			return nil, err

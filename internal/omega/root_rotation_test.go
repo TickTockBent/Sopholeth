@@ -30,8 +30,9 @@ func applyRoot(t *testing.T, opts RotateOptions) Report {
 func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 	// One end-to-end chain covers retries, active-key selection across repeated
 	// generations of every role, and fresh/returning clients. Role-specific tests
-	// below and in the other rotation files cover their distinct approval rules.
-	f, online, opts := rotationFixture(t)
+	// below and in the other rotation files retain legacy plaintext coverage.
+	// Use encrypted production custody here instead of duplicating the walkthrough.
+	f, online, opts := encryptedLifecycleFixture(t)
 	ctx := context.Background()
 	bundle := fixtureBundle(t, f)
 	returning := fixtureClient(t, bundle, opts.HTTPClient)
@@ -39,12 +40,46 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 	must(t, err)
 	initial := file(t, filepath.Join(f.opts.Home, opts.Network, "authority.json"))
 	first := recordedRelease(t, online, 1)
+	must(t, os.Remove(filepath.Join(f.opts.Home, opts.Network, encryptedKeyName("root-1"))))
 	for _, role := range []string{"root", "online", "targets", "root", "targets", "online"} {
 		opts.Role, opts.Apply, opts.RenewApproval = role, "", false
+		if role == "root" && opts.RootVersion > 2 {
+			must(t, os.Remove(filepath.Join(f.opts.Home, opts.Network+".rotations", encryptedGenerationName(2, "root-2"))))
+		}
+		// Exercise only the new allocation boundaries here; shared publication
+		// and process-death matrices remain in their existing suites.
+		var allocatedPath string
+		var allocated []byte
+		if opts.RootVersion == 2 || opts.RootVersion == 3 {
+			phase := "rotation:encrypted-keys-durable"
+			allocatedPath = filepath.Join(f.opts.Home, opts.Network+".rotations", encryptedGenerationName(2, "root-1"))
+			if opts.RootVersion == 3 {
+				phase = onlineKeyName(3, "snapshot") + ":written"
+				allocatedPath = filepath.Join(online.Home, opts.Network+".online-keys", onlineKeyName(3, "snapshot")+".pending")
+			}
+			_, err := rotate(ctx, opts, time.Time{}, func(at string) error {
+				if at == phase {
+					return errors.New("interrupted allocation")
+				}
+				return nil
+			})
+			if err == nil {
+				t.Fatal("missed allocation interruption")
+			}
+			allocated = file(t, allocatedPath)
+		}
 		prepared, err := Rotate(ctx, opts)
 		must(t, err)
+		if allocatedPath != "" && !bytes.Equal(allocated, file(t, strings.TrimSuffix(allocatedPath, ".pending"))) {
+			t.Fatal("retry replaced a fixed allocation")
+		}
 		before := file(t, filepath.Join(f.opts.Directory, "timestamp.json"))
-		again, err := Rotate(ctx, opts)
+		retry := opts
+		retry.Passphrase = func(context.Context, bool) ([]byte, error) {
+			t.Fatal("prepared transition prompted again")
+			return nil, nil
+		}
+		again, err := Rotate(ctx, retry)
 		must(t, err)
 		if !bytes.Equal(record(prepared.Rotation), record(again.Rotation)) || !bytes.Equal(before, file(t, filepath.Join(f.opts.Directory, "timestamp.json"))) {
 			t.Fatal("preparation changed keys or publication")
@@ -55,6 +90,38 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 				t.Fatal("root apply omitted approval consent")
 			}
 			opts.RenewApproval = true
+		}
+		if opts.RootVersion == 4 {
+			_, err := rotate(ctx, opts, time.Time{}, func(at string) error {
+				if at == "rotation:targets-durable" {
+					return errors.New("interrupted signed handoff")
+				}
+				return nil
+			})
+			if err == nil {
+				t.Fatal("missed signed handoff interruption")
+			}
+			must(t, os.Rename(f.opts.Home, f.opts.Home+"-unavailable"))
+			// Coherently changing public handoff checksums cannot relabel custody.
+			intentPath := filepath.Join(onlineState(online), rotationIntentName(4))
+			rotationPath := filepath.Join(onlineState(online), rotationName(4))
+			intentBytes, rotationBytes := file(t, intentPath), file(t, rotationPath)
+			var mixed rotationIntent
+			var changed rotationRecord
+			must(t, decodeRecord(intentBytes, &mixed))
+			must(t, decodeRecord(rotationBytes, &changed))
+			mixed.Mode = "disposable"
+			changed.Intent = digest(record(mixed))
+			must(t, os.WriteFile(intentPath, record(mixed), 0600))
+			must(t, os.WriteFile(rotationPath, record(changed), 0600))
+			if _, err := Renew(ctx, online); err == nil || !strings.Contains(err.Error(), "custody profile") {
+				t.Fatalf("renewal accepted mixed custody: %v", err)
+			}
+			must(t, os.WriteFile(intentPath, intentBytes, 0600))
+			must(t, os.WriteFile(rotationPath, rotationBytes, 0600))
+			_, err = Renew(ctx, online)
+			must(t, err)
+			must(t, os.Rename(f.opts.Home+"-unavailable", f.opts.Home))
 		}
 		applied, err := Rotate(ctx, opts)
 		must(t, err)
@@ -90,6 +157,8 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 	f.changeRoot()
 	_, err = Publish(ctx, f.opts)
 	must(t, err)
+	// Verify and rehearse a complete backup using only the copied homes.
+	rehearsalBackupRestore(t, f, online, opts)
 	must(t, os.Rename(f.opts.Home, f.opts.Home+"-offline"))
 	_, err = renew(ctx, online, time.Now().UTC().Add(renewalInterval+time.Hour), nil)
 	must(t, err)
@@ -98,24 +167,24 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 func TestRootRotationExpiredAuthorityRecovery(t *testing.T) {
 	ctx := context.Background()
 	created := time.Now().UTC().Truncate(time.Second).Add(-366 * 24 * time.Hour)
-	f := newPublishFixtureAt(t, created)
+	f := newCustodyPublishFixture(t, created, true)
 	// The historical release is valid at its recorded clock but never served now.
 	_, err := publish(ctx, f.opts, created.Add(time.Hour), nil)
 	if err == nil {
 		t.Fatal("expired history was published")
 	}
-	_, err = ProvisionRenewal(ctx, ProvisionRenewalOptions{Home: f.opts.Home, Network: f.opts.Network, RenewalHome: filepath.Join(filepath.Dir(f.opts.Home), "online"), Disposable: true})
+	_, err = ProvisionRenewal(ctx, ProvisionRenewalOptions{Home: f.opts.Home, Network: f.opts.Network, RenewalHome: filepath.Join(filepath.Dir(f.opts.Home), "online"), Passphrase: testKeyPassphrase, codec: fastKeyCodec})
 	must(t, err)
-	online := RenewOptions{Home: filepath.Join(filepath.Dir(f.opts.Home), "online"), Network: f.opts.Network, Disposable: true, HTTPClient: f.opts.HTTPClient}
+	online := RenewOptions{Home: filepath.Join(filepath.Dir(f.opts.Home), "online"), Network: f.opts.Network, HTTPClient: f.opts.HTTPClient}
 	if _, err := Renew(ctx, online); err == nil {
 		t.Fatal("scheduler revived an expired authority")
 	}
-	opts := RotateOptions{Home: f.opts.Home, Network: f.opts.Network, RootVersion: 2, Disposable: true, HTTPClient: f.opts.HTTPClient}
+	opts := RotateOptions{Home: f.opts.Home, Network: f.opts.Network, RootVersion: 2, Passphrase: testKeyPassphrase, codec: fastKeyCodec, HTTPClient: f.opts.HTTPClient}
 	applied := applyRoot(t, opts)
 	if applied.State != "initialized" || applied.Problem != "" || applied.RootExpires.Before(time.Now().Add(364*24*time.Hour)) {
 		t.Fatalf("expiry recovery failed: %+v", applied)
 	}
-	provisioned, err := ProvisionRenewal(ctx, ProvisionRenewalOptions{Home: f.opts.Home, Network: f.opts.Network, RenewalHome: online.Home, Disposable: true})
+	provisioned, err := ProvisionRenewal(ctx, ProvisionRenewalOptions{Home: f.opts.Home, Network: f.opts.Network, RenewalHome: online.Home, Passphrase: testKeyPassphrase, codec: fastKeyCodec})
 	must(t, err)
 	if provisioned.State != "initialized" || provisioned.Problem != "" || provisioned.RootVersion != 2 {
 		t.Fatal("repeated provisioning reported the expired initial anchor")

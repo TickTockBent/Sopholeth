@@ -25,11 +25,11 @@ application**, and a **probe simulation**.
 Public launch is pending: the discovery trust anchor is deliberately unset,
 so public discovery fails closed. Use a private network for development.
 
-The service executables are `server`, `omega`, and `dashboard`. Internal names
+The service executables are `server` and `dashboard`. Internal names
 follow their roles: `NODE_*` configuration, plain MCP tool names, and component
 metrics. See the [migration guide](docs/rebrand.md) when updating an older
 checkout or deployment. The `soph` client talks to any node over HTTP and includes
-disposable authority initialization, publication, unattended renewal, online, membership, and root-key
+encrypted authority initialization, publication, unattended renewal, online, membership, and root-key
 rotation, and verification under `soph omega`; see
 [omega operations](docs/omega-operations.md).
 

@@ -103,6 +103,9 @@ func openRepository(ctx context.Context, path, home string) (*repositoryStore, e
 	if err != nil {
 		return fail(err)
 	}
+	if err := s.inherit(s.lock); err != nil {
+		return fail(err)
+	}
 	if err := waitForLock(ctx, s.lock); err != nil {
 		return fail(err)
 	}
@@ -165,7 +168,7 @@ func (r *repositoryStore) empty() (bool, error) {
 	return true, nil
 }
 func (r *repositoryStore) targetsDir() error {
-	if err := r.root.Mkdir("targets", 0755); err == nil {
+	if err := r.mkdir("targets", 0755); err == nil {
 		if err := r.root.Chmod("targets", 0755); err != nil {
 			return err
 		}
@@ -223,6 +226,9 @@ func (r *repositoryStore) writeObject(obj publicObject, mutable bool) error {
 		return err
 	}
 	defer f.Close()
+	if err := r.inherit(f); err != nil {
+		return err
+	}
 	if _, err := f.Write(obj.data); err != nil {
 		return err
 	}
@@ -268,7 +274,7 @@ func (r *repositoryStore) writeObject(obj publicObject, mutable bool) error {
 func openPublication(home *store, bundle bootstrap.Bundle, repo *repositoryStore, create bool) (*store, publicationBinding, error) {
 	name := bundle.Network + ".publication"
 	if create {
-		if err := home.root.Mkdir(name, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+		if err := home.mkdir(name, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 			return nil, publicationBinding{}, err
 		}
 		if err := home.syncDir(); err != nil {
@@ -279,6 +285,7 @@ func openPublication(home *store, bundle bootstrap.Bundle, repo *repositoryStore
 	if err != nil {
 		return nil, publicationBinding{}, err
 	}
+	state.keyHome = home
 	fail := func(err error) (*store, publicationBinding, error) {
 		state.close()
 		return nil, publicationBinding{}, err
@@ -458,6 +465,9 @@ func (s *store) replaceRecord(name string, data []byte) error {
 		return err
 	}
 	defer f.Close()
+	if err := s.inherit(f); err != nil {
+		return err
+	}
 	if _, err := f.Write(data); err != nil {
 		return err
 	}

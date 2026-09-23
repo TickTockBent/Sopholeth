@@ -5,9 +5,11 @@ release fingerprint gate, durable trust client, and atomic disposable
 `soph omega init`, local-directory `publish`, unattended online renewal, and
 HTTPS verification in `status`, and online/membership/root-key `rotate` are implemented for
 disposable authorities, including root-expiry recovery and replacement with one
-rotated root signer unavailable. Encrypted disposable initialization, public
-inspection, and restored-key verification are also implemented. Consumer integration, production custody/hosting,
-and deployment remain pending. The peer-plane
+rotated root signer unavailable. Encrypted custody now covers initialization, publication, all rotations, renewal
+provisioning, public status, and active-key backup verification. Production mode
+uses schema 2 by default, with throwaway backup/reset rehearsals. No live authority
+has been created. Hosted metadata, compiled trust-bundle/release integration,
+discovery consumers, and deployment remain pending. The peer-plane
 audit adds three launch blockers: unauthenticated peer mutations (#211),
 serial write broadcast (#212), and identity-blind liveness (#213). These must
 be resolved before the remote three-root rehearsal and public exposure.
@@ -68,13 +70,12 @@ v2.4.2 as the proposed integration baseline, with separate offline approval
 and online renewal roles. The application now uses Go 1.27.1 and includes the
 [durable TUF client](../internal/trust/bootstrap/README.md), with bundle/manifest
 validation, bounded HTTPS, locked state checkpoints, and expiring accepted
-views. Atomic disposable authority initialization, journaled local-directory
-publication, unattended renewal with separate online custody, online/membership-key rotation,
-and HTTPS verification now run through `soph omega`. The remaining
-operator work, compiled bundle/release gate, and discovery consumer/transport
-integration remain pending.
+views. Atomic encrypted authority initialization, journaled local-directory
+publication, unattended renewal with separate online custody, all three rotation
+roles, and HTTPS verification run through `soph omega`. Hosted publication, the
+compiled bundle/release gate, and discovery consumer/transport integration remain.
 
-The proposed command surface is:
+The command surface is:
 
 | Command | Required outcome |
 | --- | --- |
@@ -85,7 +86,7 @@ The proposed command surface is:
 | `soph omega rotate` | Prepare and carry out an authenticated successor-key transition with defined overlap, retained transition metadata, adoption checks, and retirement criteria. |
 
 `init`, `provision-renewal`, `publish` (including `--renew`), online/membership/root-key `rotate`,
-and `status --verify` are implemented for disposable Linux authorities; see
+and `status --verify` are implemented for encrypted and disposable Linux authorities; see
 [omega operations](omega-operations.md). Publication currently
 uses a local directory served by separately configured HTTPS, with immutable
 release history, timestamp-last writes, and verification of the exact served
@@ -96,23 +97,33 @@ The operator guide includes scheduler examples, monitoring fields, and the
 prepare/review/apply procedures for all three rotation roles, including offline
 custody, root-expiry recovery, and recoverable signed handoff. Root application
 requires explicit renewal of the unchanged membership approval. Encrypted custody
-now has an initialization and public-inspection foundation. The
+now supports the complete operator lifecycle. The
 [custody proposal](omega-production-custody.md) targets one operator's connected
 workstation, encrypted key files, a tested backup, and a new authority schema.
 Its launch criteria are authenticated discovery and a usable operator recovery
 path. Air gaps and independent signing machines are not requirements. Authority
 compromise or unrecoverable state may lead to an explicit experimental-network
 reset, with a new trust bundle that clients must deliberately adopt.
-The first slice implements `init --encrypted --disposable` with schema-2 public
-authority records, separate encrypted key files, and atomic recovery. Ordinary
-`status` needs no password; `status --check-keys` verifies a restored backup against
-the public identity. Encrypted publication/rotation and production creation remain
-gated. The next slice carries this backend through the existing lifecycle and
-rehearses signing, backup recovery, and deliberate reset. Hosted publication also remains
-pending. Fold the standalone `omega` tool into `soph` and retire that binary,
-updating builds, releases, and documentation. Node hosts receive public trust material, not the ultimate
-private authority key. Routine freshness renewal must run unattended without
-requiring repeated use of that ultimate key.
+Both custody slices are implemented. Production initialization uses encrypted
+schema 2 by default; new passphrases require at least 12 characters, while older
+files remain unlockable for recovery. Publication and all rotations select the
+active encrypted operator keys; unattended renewal uses separate service-owned
+snapshot/timestamp files. Public inspection needs no password. The existing
+alternating-rotation test covers encrypted interruption recovery, backup restore
+with working copies unavailable, and an explicit new-identity reset. The standalone
+`omega` binary is retired from normal builds; the old DNS signer remains only as
+a burn-in helper until consumers migrate.
+
+**Next operator/hosting slice:** support the `https://sopholeth.io/omega/` base
+path through bundle validation, fetching, and publication verification; then add
+the Vercel publication/deployment adapter with explicit success verification.
+Serve `timestamp.json` with no-cache/short freshness, and numbered root/snapshot/
+targets plus content-addressed manifests as immutable. Exempt metadata paths from
+the site's fallback 404 routing. Keep daily refresh, seven-day expiry, and hourly
+retries. Deployment credentials remain separate from authority keys. The current
+local-directory publisher does not deploy Vercel. Consumer integration must still
+follow the peer-identity decision below; compiled trust bundles and #223 remain
+release gates. Node hosts receive public trust material only.
 
 Reserve `authority.json` schema 1 permanently for disposable authorities.
 Schema 2 now separates public identity from encrypted key storage. Production

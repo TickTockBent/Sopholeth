@@ -27,8 +27,8 @@ func Renew(ctx context.Context, opts RenewOptions) (Report, error) {
 }
 
 func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(string) error) (report Report, resultErr error) {
-	if !opts.Disposable || !networkID.MatchString(opts.Network) {
-		return report, errors.New("omega: renewal requires a network and --disposable")
+	if !networkID.MatchString(opts.Network) {
+		return report, errors.New("omega: renewal requires a network")
 	}
 	report = Report{Schema: 1, State: "invalid", Network: opts.Network, OperationalHome: opts.Home, Publication: "failed",
 		Action: "Check --home, ownership, and private-directory permissions; retry when the operational home is accessible."}
@@ -58,11 +58,16 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		report.Problem = err.Error()
 		return report, err
 	}
+	if err := requireCustodyMode(custody.Mode, opts.Disposable); err != nil {
+		report.Problem = err.Error()
+		return report, err
+	}
 	bundle := custody.Bundle
 	report, err = inspectBundle(bundle, now)
 	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
+	report.Mode = custody.Mode
 	report.State = "renewal_ready"
 	report.OperationalHome = home.root.Name()
 	defer func() {
@@ -116,7 +121,11 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	if err := checkRecordedDestination(repo, history); err != nil {
 		return report, err
 	}
-	history, resumed, err := resumeRotationApply(ctx, state, bundle, history, now, custody.Keys)
+	keys, err := custody.activeKeys(home, state, latest)
+	if err != nil {
+		return report, err
+	}
+	history, resumed, err := resumeRotationApply(ctx, state, bundle, history, now, custody, keys)
 	if err != nil {
 		return report, err
 	}
@@ -128,10 +137,6 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 		if _, err := state.root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
 			return report, errors.New("omega: targets handoff has no apply reservation; restore its journal before renewal")
 		}
-	}
-	keys, err := activeOnlineKeys(state, bundle, latest, custody.Keys)
-	if err != nil {
-		return report, err
 	}
 
 	name := releaseName(latest.Version + 1)

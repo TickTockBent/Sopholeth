@@ -126,7 +126,7 @@ func TestOmegaHelpAndUsage(t *testing.T) {
 			t.Fatalf("missing help for %v", args)
 		}
 	}
-	for _, args := range [][]string{{"omega", "publish"}, {"omega", "init"}, {"omega", "status"}, {"omega", "init", "--home", "/unused", "--network", "test", "--repository", "https://example.invalid"}, {"--network", "client-profile", "omega", "status", "--home", "/unused", "--network", "test"}} {
+	for _, args := range [][]string{{"omega", "publish"}, {"omega", "init"}, {"omega", "status"}, {"omega", "init", "--home", "/unused", "--network", "test"}, {"--network", "client-profile", "omega", "status", "--home", "/unused", "--network", "test"}} {
 		if code, _, _ := ta.run("", args...); code != exitUsage {
 			t.Fatalf("usage: %v got %d", args, code)
 		}
@@ -374,7 +374,7 @@ func TestOmegaRotationCLI(t *testing.T) {
 	}
 }
 
-func TestOmegaEncryptedPromptAndProductionGate(t *testing.T) {
+func TestOmegaEncryptedPromptAndProductionDefault(t *testing.T) {
 	ta := newTestApp(t)
 	home := filepath.Join(t.TempDir(), "encrypted")
 	calls := 0
@@ -391,26 +391,26 @@ func TestOmegaEncryptedPromptAndProductionGate(t *testing.T) {
 		return nil, errors.New("test terminal cancelled")
 	}
 	args := []string{"--json", "omega", "init", "--encrypted", "--home", home, "--network", "rehearsal", "--repository", "https://metadata.example.invalid"}
-	code, _, _ := ta.run("", args...)
-	if code != exitUsage || calls != 0 {
-		t.Fatal("production gate requested a password or initialized authority")
+	code, first, _ := ta.run("", args...)
+	if code != exitError || calls != 1 || decodeJSON(t, first)["mode"] != "production" {
+		t.Fatal("production init did not use encrypted custody")
 	}
 	code, out, _ := ta.run("", append(args, "--disposable")...)
 	r := decodeJSON(t, out)
-	if code != exitError || calls != 1 || r["state"] != "pending" || r["custody"] != "age-scrypt" || r["problem"] == nil {
+	if code != exitError || calls != 2 || r["state"] != "pending" || r["custody"] != "age-scrypt" || r["problem"] == nil {
 		t.Fatalf("cancelled prompt did not report recoverable staging: %d %s", code, out)
 	}
 	ta.run("", "omega", "status", "--home", home, "--network", "rehearsal")
-	if calls != 1 {
+	if calls != 2 {
 		t.Fatal("public status requested a passphrase")
 	}
 	code, _, _ = ta.run("", "omega", "status", "--home", home, "--network", "rehearsal", "--verify", "--check-keys")
-	if code != exitUsage || calls != 1 {
+	if code != exitUsage || calls != 2 {
 		t.Fatal("conflicting status operations were accepted")
 	}
 	wantTimeout = 5 * time.Second
 	code, _, _ = ta.run("", append([]string{"--timeout", "5s"}, append(args, "--disposable")...)...)
-	if code != exitError || calls != 2 {
+	if code != exitError || calls != 3 {
 		t.Fatal("explicit prompt timeout was not exercised")
 	}
 }

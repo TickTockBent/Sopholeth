@@ -180,7 +180,7 @@ class WorkflowFilterTests(unittest.TestCase):
             "sites/soph.stream/config.json": (True, False),
             "sites/stream.go": (True, False),
             "cmd/soph/serve.go": (True, False),
-            "cmd/omega/main.go": (True, False),
+            "test/burnin/legacy-omega/main.go": (True, False),
             "cmd/dashboard/web/index.html": (True, False),
             "internal/client/client.go": (True, False),
             "internal/dashboard/poller.go": (True, False),

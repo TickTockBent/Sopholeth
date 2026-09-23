@@ -19,12 +19,12 @@ out_dir="${BURNIN_STATE_DIR:-$HOME/.local/state/sopholeth/burnin}"
 mkdir -p "$out_dir"
 chmod 700 "$out_dir"
 
-if [[ ! -x "$repo_root/bin/omega" ]]; then
-    echo "==> building bin/omega"
-    (cd "$repo_root" && make build-omega)
+if [[ ! -x "$repo_root/bin/omega-lab" ]]; then
+    echo "==> building bin/omega-lab"
+    (cd "$repo_root" && go build -o bin/omega-lab ./test/burnin/legacy-omega)
 fi
 
-"$repo_root/bin/omega" keygen \
+"$repo_root/bin/omega-lab" keygen \
     --out-private "$out_dir/omega.priv" \
     --out-public "$out_dir/omega.pub"
 

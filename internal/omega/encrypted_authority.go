@@ -68,7 +68,7 @@ func (p publicAuthority) validate() error {
 	if err := validatePublicIdentity(p.Network, p.Repository, p.Transaction, p.Created, p.Expires); err != nil {
 		return err
 	}
-	if p.Schema != 2 || p.Mode != "disposable" || p.Custody != encryptedCustody || !validDigest(p.Fingerprint) || len(p.Keys) != len(keyNames) || len(p.KeyDigests) != len(keyNames) {
+	if p.Schema != 2 || !validCustodyMode(p.Mode) || p.Custody != encryptedCustody || !validDigest(p.Fingerprint) || len(p.Keys) != len(keyNames) || len(p.KeyDigests) != len(keyNames) {
 		return errors.New("omega: invalid public authority record")
 	}
 	seen := map[string]bool{}
@@ -94,7 +94,7 @@ func (p encryptedAllocation) validate() error {
 	if err := validatePublicIdentity(p.Network, p.Repository, p.Transaction, p.Created, p.Expires); err != nil {
 		return err
 	}
-	if p.Schema != 1 || p.Type != "encrypted-authority-allocation" || p.Mode != "disposable" || len(p.Keys) != len(keyNames) {
+	if p.Schema != 1 || p.Type != "encrypted-authority-allocation" || !validCustodyMode(p.Mode) || len(p.Keys) != len(keyNames) {
 		return errors.New("omega: invalid encrypted initialization allocation")
 	}
 	for _, name := range keyNames {
@@ -131,7 +131,7 @@ func (s *store) prepareEncrypted(ctx context.Context, opts InitOptions, now time
 			if inspectErr != nil {
 				return inspectErr
 			}
-			if report.Custody != encryptedCustody || report.Network != opts.Network || report.Repository != opts.Repository {
+			if report.Custody != encryptedCustody || report.Mode != custodyMode(opts.Disposable) || report.Network != opts.Network || report.Repository != opts.Repository {
 				return errors.New("omega: completed staging has different custody or configuration")
 			}
 			return requireKeyFiles(report)
@@ -146,7 +146,7 @@ func (s *store) prepareEncrypted(ctx context.Context, opts InitOptions, now time
 		if err := allocation.validate(); err != nil {
 			return err
 		}
-		if allocation.Network != opts.Network || allocation.Repository != opts.Repository {
+		if allocation.Mode != custodyMode(opts.Disposable) || allocation.Network != opts.Network || allocation.Repository != opts.Repository {
 			return errors.New("omega: encrypted initialization already began with different configuration")
 		}
 	} else {
@@ -186,7 +186,7 @@ func (s *store) prepareEncrypted(ctx context.Context, opts InitOptions, now time
 		if _, err := rand.Read(transaction[:]); err != nil {
 			return err
 		}
-		allocation = encryptedAllocation{Schema: 1, Type: "encrypted-authority-allocation", Mode: "disposable", Transaction: hex.EncodeToString(transaction[:]),
+		allocation = encryptedAllocation{Schema: 1, Type: "encrypted-authority-allocation", Mode: custodyMode(opts.Disposable), Transaction: hex.EncodeToString(transaction[:]),
 			Network: opts.Network, Repository: opts.Repository, Created: now, Expires: now.Add(rootLifetime), Keys: map[string][]byte{}}
 		for _, name := range keyNames {
 			binding := keyBinding{Transaction: allocation.Transaction, Network: allocation.Network, Repository: allocation.Repository, Name: name, Generation: 1}
@@ -203,7 +203,7 @@ func (s *store) prepareEncrypted(ctx context.Context, opts InitOptions, now time
 	if err := s.syncDir(); err != nil {
 		return err
 	}
-	p := publicAuthority{Schema: 2, Mode: "disposable", Custody: encryptedCustody, Transaction: allocation.Transaction, Network: allocation.Network,
+	p := publicAuthority{Schema: 2, Mode: allocation.Mode, Custody: encryptedCustody, Transaction: allocation.Transaction, Network: allocation.Network,
 		Repository: allocation.Repository, Created: allocation.Created, Expires: allocation.Expires, Keys: map[string]string{}, KeyDigests: map[string]string{}}
 	keys := map[string]ed25519.PrivateKey{}
 	defer func() {
@@ -324,13 +324,6 @@ func requireKeyFiles(report Report) error {
 	return nil
 }
 
-func encryptedLifecyclePending(report Report) (Report, error) {
-	err := errors.New("omega: encrypted custody currently supports init and status only; publication and rotation are the next slice")
-	report.Problem = err.Error()
-	report.Action = "Preserve this disposable encrypted authority for inspection/recovery tests; use a separate plaintext disposable authority for lifecycle rehearsal."
-	return report, err
-}
-
 // CheckKeys verifies a restored encrypted home without signing or changing its
 // authority. Ordinary Status never asks for passwords or requires key files.
 func CheckKeys(ctx context.Context, homePath, network string, passphrase func(context.Context, bool) ([]byte, error)) (Report, error) {
@@ -364,38 +357,26 @@ func checkKeys(ctx context.Context, homePath, network string, passphrase func(co
 	if report.Network != network || report.Custody != encryptedCustody {
 		return report, errors.New("omega: key verification requires this network's encrypted authority")
 	}
-	if err := requireKeyFiles(report); err != nil {
-		return report, err
-	}
-	if passphrase == nil {
-		return report, errors.New("omega: encrypted key verification needs an interactive passphrase")
-	}
-	password, err := passphrase(ctx, false)
+	_, bundle, err := current.verify()
 	if err != nil {
 		return report, err
 	}
-	defer clear(password)
-	p, err := current.readPublicAuthority()
+	online, cleanup, err := operationalHome(ctx, home, bundle, report.Mode)
 	if err != nil {
 		return report, err
 	}
-	for _, name := range keyNames {
-		data, err := current.read(encryptedKeyName(name))
-		if err != nil {
-			return report, err
-		}
-		key, err := codec.unlock(ctx, data, p.binding(name), password)
-		if err != nil {
-			return report, fmt.Errorf("%s: %w", name, err)
-		}
-		matches := base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) == p.Keys[name]
-		clear(key)
-		if !matches {
-			return report, errors.New("omega: restored private key does not match public authority")
-		}
-		report.KeyFiles[name] = "verified"
+	defer cleanup()
+	report.OperationalHome = online.root.Name()
+	session, err := openOperatorKeys(ctx, home, current, bundle, passphrase, codec)
+	if err != nil {
+		return report, err
 	}
-	report.Action = "All six encrypted keys match the public authority. Keep this verified backup separate from the working copy and retain its unlock information."
+	defer session.close()
+	report, err = inspectEncryptedKeys(home, current, online, bundle, report, session)
+	if err != nil {
+		return report, err
+	}
+	report.Action = "All six active keys match the public authority. Retain this verified recovery set, complete journals, and unlock information separately from the working copies."
 	if report.State == "expired" {
 		report.Action = "Recovered keys match, but the public root is expired. Preserve this authority for explicit recovery; never reinitialize it."
 		return report, errRootExpired

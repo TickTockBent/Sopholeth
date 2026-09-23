@@ -1,4 +1,5 @@
-# Disposable Linux rehearsal only. Adjust paths and install soph before enabling.
+# Linux encrypted custody. Provision the separate service account before enabling.
+# For a disposable rehearsal authority, append --disposable to ExecStart.
 [Unit]
 Description=Verify and renew Sopholeth metadata for %i
 Wants=network-online.target
@@ -9,7 +10,7 @@ Type=oneshot
 User=soph-omega
 Group=soph-omega
 UMask=0077
-ExecStart=/usr/local/bin/soph --json --timeout 2m omega publish --home /srv/omega-online --network %i --renew --disposable
+ExecStart=/usr/local/bin/soph --json --timeout 2m omega publish --home /srv/omega-online --network %i --renew
 TimeoutStartSec=150
 NoNewPrivileges=yes
 ProtectSystem=strict
