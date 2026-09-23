@@ -66,6 +66,58 @@ The filter checks have their own small CI workflow and do not require Go or
 Docker. If a site gains shared asset inputs, extend its filter before relying
 on changes outside its folder to trigger a deployment.
 
+## Omega metadata hosting
+
+`sopholeth.io` reserves `/omega/` for the public metadata repository. The config
+is committed in `sites/sopholeth.io/vercel.json`; this slice needs no new Vercel
+project, environment variables, cron job, or dashboard rule. The existing project
+keeps Root Directory `sites/sopholeth.io` and deploys the configuration through its
+normal Git integration. There are no authority keys or signed metadata in this
+checkout; `/omega/` remains a real 404 until the publisher is integrated.
+
+| Request | Response and caching |
+| --- | --- |
+| Existing `/omega/timestamp.json` | Exact JSON file; `Cache-Control: no-store` and `Vercel-CDN-Cache-Control: no-store` |
+| Existing `/omega/N.root.json`, `N.snapshot.json`, `N.targets.json` | Exact file; public one-year immutable caching |
+| Existing `/omega/targets/<sha256>.bootstrap.json` | Exact file; public one-year immutable caching |
+| Missing metadata, including the next numbered root | JSON 404; `no-store` for clients and Vercel's CDN |
+| Other paths under `/omega/`, including `.pending`, lock files, and custody filenames | Uncached JSON 404 even if such a file accidentally reaches static output |
+
+Immutable headers run only in the filesystem **hit** phase. Applying them to
+all matching filenames before checking existence would cache future-version 404s.
+Metadata misses use `omega-not-found.json` with status 404; normal docs pages and
+the site's HTML 404 retain their existing behavior. These rules use Vercel's
+[route phases](https://vercel.com/docs/build-output-api/configuration#routes) and
+[cache header controls](https://vercel.com/docs/caching/cache-control-headers).
+
+Run the actual local Vercel router with throwaway files:
+
+```bash
+python3 test/hosting/omega_routes.py
+# Or use an already installed CLI:
+python3 test/hosting/omega_routes.py vercel
+```
+
+The default uses `npx --yes vercel@59.7.0 dev --local`, creates a temporary site,
+checks exact bytes, CDN cache directives, true 404s, blocked filenames, and docs
+routing, then removes it. It does not link or deploy a Vercel project. Vercel dev
+overrides browser `Cache-Control` to `max-age=0`; the check exercises the CDN
+header and verifies the matching browser directive in the config. Confirm both
+on a deployed preview and again at the public endpoint during publication rehearsal.
+
+**Deployment integration remains next.** The current Git deployment has no
+metadata source. A later ordinary docs deployment would remove manually uploaded
+metadata; a website rollback could restore stale metadata. Before activating a
+live authority, give metadata publication an independent deployment path or make
+every docs deployment preserve the current authoritative repository. Keep the
+full retained history and verify the served release after every publication.
+
+The public endpoint must be reachable by unauthenticated clients with ordinary
+TLS: no login redirect or interactive challenge. Preview deployment protection
+can remain enabled; any preview-only verification access must not become a public
+client dependency. Deployment credentials and project/team configuration will be
+needed for the publisher integration, not for this configuration-only hosting slice.
+
 ## Local preview
 
 From the repository root, serve any one site with Python 3:

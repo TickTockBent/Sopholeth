@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -66,6 +67,7 @@ type repository struct {
 	roleKeys             map[string][]ed25519.PrivateKey
 	root                 *metadata.Metadata[metadata.RootType]
 	initialRoot, targets []byte
+	basePath             string
 	targetPath           string
 	targetVersion        int64
 	onlineVersion        int64
@@ -73,10 +75,16 @@ type repository struct {
 
 func newRepository(t *testing.T) *repository {
 	t.Helper()
-	r := &repository{t: t, files: map[string][]byte{}, roleKeys: map[string][]ed25519.PrivateKey{}}
+	return newRepositoryAtPath(t, "")
+}
+
+func newRepositoryAtPath(t *testing.T, basePath string) *repository {
+	t.Helper()
+	r := &repository{t: t, basePath: basePath, files: map[string][]byte{}, roleKeys: map[string][]ed25519.PrivateKey{}}
 	r.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.mu.RLock()
-		data, ok := r.files[req.URL.Path]
+		data, ok := r.files[strings.TrimPrefix(req.URL.Path, basePath)]
+		ok = ok && strings.HasPrefix(req.URL.Path, basePath+"/")
 		r.mu.RUnlock()
 		if !ok {
 			http.NotFound(w, req)

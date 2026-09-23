@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/theupdateframework/go-tuf/v2/metadata"
@@ -72,7 +72,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	dir = filepath.Join(parent, filepath.Base(dir))
 	bundle := cfg.Bundle
 	bundle.Root = bytes.Clone(bundle.Root)
-	bundle.Repository, _ = httpsOrigin(bundle.Repository)
+	bundle.Repository, _ = httpsRepository(bundle.Repository)
 	hc := &http.Client{}
 	if cfg.HTTPClient != nil {
 		*hc = *cfg.HTTPClient
@@ -208,7 +208,7 @@ func (c *Client) Refresh(ctx context.Context) (view View, resultErr error) {
 	cfg.RootMaxLength = metadataLimit
 	cfg.SnapshotMaxLength = metadataLimit
 	cfg.TargetsMaxLength = metadataLimit
-	cfg.Fetcher = &boundedFetcher{ctx: ctx, client: c.http, origin: c.bundle.Repository, checkpoint: checkpoint}
+	cfg.Fetcher = &boundedFetcher{ctx: ctx, client: c.http, repository: c.bundle.Repository, checkpoint: checkpoint}
 	u, err := updater.New(cfg)
 	if err != nil {
 		return View{}, err
@@ -330,7 +330,7 @@ func verifyAccepted(a *accepted, network string, now time.Time) (View, error) {
 type boundedFetcher struct {
 	ctx        context.Context
 	client     *http.Client
-	origin     string
+	repository string
 	checkpoint func() error
 }
 
@@ -338,8 +338,8 @@ func (f *boundedFetcher) DownloadFile(rawURL string, maxLength int64, _ time.Dur
 	if err := f.checkpoint(); err != nil {
 		return nil, err
 	}
-	u, err := url.Parse(rawURL)
-	if err != nil || u.Scheme+"://"+u.Host != f.origin || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	location, err := httpsRepository(rawURL)
+	if err != nil || location != rawURL || !strings.HasPrefix(location, f.repository+"/") {
 		return nil, errors.New("bootstrap: download escaped the configured HTTPS repository")
 	}
 	if maxLength < 1 || maxLength > metadataLimit {

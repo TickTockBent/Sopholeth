@@ -4,6 +4,13 @@
 
 ### Public discovery
 
+- Support HTTPS metadata base paths such as `sopholeth.io/omega/` throughout
+  authority initialization, TUF downloads, and publisher verification. Confine
+  downloads to the configured directory and retain origin-only node endpoints.
+  Add Vercel metadata routes with uncached timestamp/error responses and immutable
+  caching only for existing numbered/hash-addressed objects. Hosted publication
+  automation remains separate; no live authority or metadata is created.
+
 - Complete encrypted `soph omega` publication, provisioning, and all three
   rotation roles. Production init defaults to schema 2; new passphrases require
   12 characters while existing copies still unlock for recovery. Keep online

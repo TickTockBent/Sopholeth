@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ import (
 )
 
 func (r *repository) bundle() Bundle {
-	return Bundle{Schema: 1, Network: "disposable", Repository: r.server.URL, Root: r.initialRoot}
+	return Bundle{Schema: 1, Network: "disposable", Repository: r.server.URL + r.basePath, Root: r.initialRoot}
 }
 
 func (r *repository) client(dir string) *Client {
@@ -45,15 +46,22 @@ func (r *repository) accept(c *Client) View {
 }
 
 func TestFreshRestartRenewalAndOfflineExpiry(t *testing.T) {
-	r := newRepository(t)
+	r := newRepositoryAtPath(t, "/omega")
 	dir := filepath.Join(t.TempDir(), "state")
 	c := r.client(dir)
 	first := r.accept(c)
 	if first.Versions != (Versions{1, 1, 1, 1}) {
 		t.Fatalf("unexpected versions: %+v", first.Versions)
 	}
-	c = r.client(dir)
+	bundle := r.bundle()
+	bundle.Repository += "/" // Equivalent spelling must reopen the same checkpoint.
+	c, err := New(context.Background(), Config{Bundle: bundle, StateDir: dir, HTTPClient: r.server.Client()})
+	check(t, err)
 	r.accept(c) // An identical timestamp is idempotent.
+	bundle.Repository = r.server.URL + "/other"
+	if _, err := New(context.Background(), Config{Bundle: bundle, StateDir: dir, HTTPClient: r.server.Client()}); !errors.Is(err, ErrState) {
+		t.Fatalf("changed base path must not reuse accepted state: %v", err)
+	}
 	delete(r.roleKeys, metadata.ROOT)
 	delete(r.roleKeys, metadata.TARGETS)
 	r.renew(epoch.Add(time.Hour))
@@ -63,7 +71,7 @@ func TestFreshRestartRenewalAndOfflineExpiry(t *testing.T) {
 	}
 	r.server.Close()
 	c = r.client(dir)
-	_, err := c.Current(context.Background())
+	_, err = c.Current(context.Background())
 	check(t, err) // Complete cached state can be verified without any fetch.
 	c.now = func() time.Time { return latest.Expires }
 	_, err = c.Current(context.Background())
@@ -451,7 +459,7 @@ func TestFetcherRedirectLengthTLSAndCancellation(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
-			f := boundedFetcher{ctx: ctx, client: hc, origin: server.URL, checkpoint: func() error { return nil }}
+			f := boundedFetcher{ctx: ctx, client: hc, repository: server.URL, checkpoint: func() error { return nil }}
 			_, err := f.DownloadFile(server.URL+"/timestamp.json", 16, 0)
 			if err == nil {
 				t.Fatal("unsafe download accepted")
@@ -508,4 +516,36 @@ func TestStateParentCannotBeReplacedByOtherUsers(t *testing.T) {
 		t.Fatalf("parent symlink was not resolved: %s", c.dir)
 	}
 	r.accept(c)
+}
+
+func TestRepositoryDownloadBoundary(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte("public metadata"))
+	}))
+	defer server.Close()
+	f := boundedFetcher{ctx: context.Background(), client: server.Client(), repository: server.URL + "/omega", checkpoint: func() error { return nil }}
+	for _, path := range []string{"/omega/timestamp.json", "/omega/2.root.json", "/omega/targets/" + strings.Repeat("a", 64) + ".bootstrap.json"} {
+		_, err := f.DownloadFile(server.URL+path, 1024, time.Second)
+		check(t, err)
+	}
+	// Rejected URLs must never reach any server, including a sibling path on the same origin.
+	before := requests.Load()
+	for _, raw := range []string{
+		server.URL + "/timestamp.json", server.URL + "/omega-other/timestamp.json", server.URL + "/omega",
+		server.URL + "/omega/../timestamp.json", server.URL + "/omega/./timestamp.json", server.URL + "/omega//timestamp.json",
+		server.URL + "/omega/%2e%2e/timestamp.json", server.URL + "/omega/%252e%252e/timestamp.json", server.URL + "/omega%2ftimestamp.json",
+		server.URL + "/omega/timestamp.json?", server.URL + "/omega/timestamp.json#", server.URL + "/omega/timestamp.json?x=1",
+		server.URL + "/omega/timestamp.json/", server.URL + "/omega/timestamp.json\\other",
+		"https://elsewhere.invalid/omega/timestamp.json", "http://" + strings.TrimPrefix(server.URL, "https://") + "/omega/timestamp.json",
+		"/omega/timestamp.json", server.URL + "/omega/%74imestamp.json",
+	} {
+		if _, err := f.DownloadFile(raw, 1024, time.Second); err == nil {
+			t.Errorf("accepted escaped or ambiguous download %q", raw)
+		}
+	}
+	if requests.Load() != before {
+		t.Fatal("rejected URL reached the network")
+	}
 }

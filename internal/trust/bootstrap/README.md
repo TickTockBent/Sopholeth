@@ -9,8 +9,8 @@ go test -race ./internal/trust/bootstrap
 ```
 
 The node, CLI, and dashboard still use the interim discovery path. Connecting
-this package to those consumers, completing the `soph omega` lifecycle, and
-replacing the legacy public-release anchor are subsequent changes. Public
+this package to those consumers and replacing the legacy public-release anchor
+are subsequent changes. The `soph omega` operator lifecycle is implemented. Public
 discovery remains disabled in ordinary builds; this package creates no production authority.
 
 ## API and formats
@@ -36,7 +36,7 @@ The public bundle schema is:
 {
   "schema": 1,
   "network": "example-public",
-  "repository": "https://metadata.example.invalid",
+  "repository": "https://metadata.example.invalid/omega/",
   "root": { "signed": "a complete signed TUF root object goes here", "signatures": [] }
 }
 ```
@@ -47,6 +47,14 @@ version, expiry, and consistent snapshots. Empty and zero keys are rejected.
 `Bundle.Fingerprint()` hashes go-tuf's normalized serialization of the complete
 initial root; it is distinct from the legacy single-key fingerprint. Verify
 the initial bundle independently, never by trusting its download location.
+
+Repository URLs may include a base path, such as `/omega/` or `/networks/public/`.
+Host case and default ports are normalized, and the stored URL has no trailing
+slash. Paths contain literal ASCII letters, digits, and `-._~` within nonempty
+segments. Dot traversal, doubled slashes, percent escapes, credentials, queries,
+fragments, and backslashes are rejected rather than repaired. Node origins in
+the manifest remain origin-only URLs. Downloads must stay below the configured
+base path; `/omega-other/` is not inside `/omega/`.
 
 The initial bundle identity is retained across client restarts and software
 updates. Numbered root transitions advance the stored root. Replacing the
@@ -85,8 +93,8 @@ authenticate those connections.
 populated from established state. The library performs root transitions,
 signature/threshold verification, ordering, expiry, and target hash checks.
 Only the fixed top-level `bootstrap.json` target is activated. Downloads stay
-on the configured HTTPS origin, reject redirects, use a ten-second request
-timeout and a two-minute overall refresh limit, and honor earlier caller
+on the configured HTTPS origin and beneath its base path, reject redirects, use
+a ten-second request timeout and a two-minute overall refresh limit, and honor earlier caller
 cancellation. Root/snapshot/targets metadata are limited to 512 KiB, timestamps
 to 16 KiB, and the manifest to 64 KiB. Response reads enforce limits even when
 Content-Length is absent or dishonest.

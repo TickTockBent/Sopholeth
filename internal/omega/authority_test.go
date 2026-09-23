@@ -275,7 +275,7 @@ func TestUnsafePathsAndInvalidOptionsDoNotGenerateKeys(t *testing.T) {
 			case "network":
 				o.Network = "../escape"
 			case "repository":
-				o.Repository = "https://metadata.example.invalid/omega/"
+				o.Repository = "https://metadata.example.invalid/omega/../other"
 			case "production-without-prompt":
 				o.Disposable = false
 			case "home-symlink":

@@ -60,16 +60,17 @@ func (b Bundle) Validate() error {
 }
 
 // ValidateLocation checks the network identity and normalizes the repository
-// before an operator creates keys. Repository base paths are not supported yet.
+// before an operator creates keys. Metadata may live at an HTTPS base path;
+// node API endpoints remain origins only.
 func ValidateLocation(network, repository string) (string, error) {
 	if !identifier.MatchString(network) {
 		return "", errors.New("bootstrap: invalid network identity")
 	}
-	origin, err := httpsOrigin(repository)
+	location, err := httpsRepository(repository)
 	if err != nil {
 		return "", fmt.Errorf("bootstrap: repository: %w", err)
 	}
-	return origin, nil
+	return location, nil
 }
 
 // Fingerprint identifies the library's normalized serialization of the
@@ -125,6 +126,38 @@ func ParseManifest(data []byte, network string) (Manifest, error) {
 		m.Roots[i].Origin = origin
 	}
 	return m, nil
+}
+
+// httpsRepository permits only literal, unreserved path segments. Reject rather
+// than clean dot segments, repeated separators, or escaped characters: proxies
+// and clients must agree on the exact directory that bounds every download.
+// Store no trailing slash, preserving existing origin-only authority bindings.
+func httpsRepository(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.Opaque != "" || strings.ContainsAny(raw, "?#\\%") {
+		return "", errors.New("expected an HTTPS repository without credentials, query, fragment, or escapes")
+	}
+	origin, err := httpsOrigin(u.Scheme + "://" + u.Host)
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimSuffix(u.Path, "/")
+	if path != "" {
+		if !strings.HasPrefix(path, "/") {
+			return "", errors.New("repository path must be absolute")
+		}
+		for _, segment := range strings.Split(path[1:], "/") {
+			if segment == "" || segment == "." || segment == ".." {
+				return "", errors.New("repository path must have nonempty, non-traversing segments")
+			}
+			for _, ch := range segment {
+				if !(ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || strings.ContainsRune("-._~", ch)) {
+					return "", errors.New("repository path must use ASCII letters, digits, or -._~")
+				}
+			}
+		}
+	}
+	return origin + path, nil
 }
 
 // httpsOrigin rejects URL ambiguity and normalizes equivalent origins for

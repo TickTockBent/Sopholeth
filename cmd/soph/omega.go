@@ -39,7 +39,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	}
 	if cmd == "init" {
 		fs.BoolVar(&encrypted, "encrypted", false, "use encrypted key files (default for production; opt in with --disposable)")
-		fs.StringVar(&repository, "repository", "", "HTTPS metadata repository origin (required; base paths are planned)")
+		fs.StringVar(&repository, "repository", "", "HTTPS metadata repository URL, optionally with a base path (required)")
 	} else if cmd == "provision-renewal" {
 		fs.StringVar(&renewalHome, "renewal-home", "", "separate private operational home for online keys and publication state (required)")
 	} else if cmd == "rotate" {
@@ -50,7 +50,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	} else if cmd == "publish" {
 		fs.BoolVar(&renew, "renew", false, "renew due freshness or recover/verify the current release using only online custody")
 		fs.StringVar(&manifestPath, "manifest", "", "approved three-root manifest JSON file (required)")
-		fs.StringVar(&directory, "repository-dir", "", "dedicated public directory served at the authority's HTTPS origin (required)")
+		fs.StringVar(&directory, "repository-dir", "", "dedicated public directory served at the authority's HTTPS repository URL (required)")
 		fs.Int64Var(&version, "version", 0, "release number: latest for retry, next for new approval (required; starts at 1)")
 	} else {
 		fs.BoolVar(&verify, "verify", false, "verify the latest prepared release through HTTPS, recording the result")

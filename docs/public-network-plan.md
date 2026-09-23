@@ -114,16 +114,24 @@ with working copies unavailable, and an explicit new-identity reset. The standal
 `omega` binary is retired from normal builds; the old DNS signer remains only as
 a burn-in helper until consumers migrate.
 
-**Next operator/hosting slice:** support the `https://sopholeth.io/omega/` base
-path through bundle validation, fetching, and publication verification; then add
-the Vercel publication/deployment adapter with explicit success verification.
-Serve `timestamp.json` with no-cache/short freshness, and numbered root/snapshot/
-targets plus content-addressed manifests as immutable. Exempt metadata paths from
-the site's fallback 404 routing. Keep daily refresh, seven-day expiry, and hourly
-retries. Deployment credentials remain separate from authority keys. The current
-local-directory publisher does not deploy Vercel. Consumer integration must still
-follow the peer-identity decision below; compiled trust bundles and #223 remain
-release gates. Node hosts receive public trust material only.
+**HTTPS base paths and serving configuration — implemented:** bundles,
+initialization, fetching, and publication verification support `/omega/` with
+strict directory confinement. The `sopholeth.io` configuration serves existing
+numbered metadata and hash-addressed targets with immutable caching; timestamp
+and missing-object responses are uncached. Missing metadata gets a JSON 404 and
+internal/pending names cannot be served. The existing encrypted lifecycle runs
+against a path-prefixed HTTPS fixture; a Vercel local-router smoke test checks
+headers, misses, and docs routing.
+
+**Next operator/hosting slice:** add the Vercel publication/deployment adapter
+with explicit served-byte verification. Resolve publication ownership so normal
+docs deployments and website rollbacks cannot drop or revert metadata; preserve
+the complete retained public history. No live authority or hosted metadata is
+created by the serving configuration alone. Keep daily refresh, seven-day expiry,
+and hourly retries. Deployment credentials remain separate from authority keys.
+Consumer integration must still follow the peer-identity decision below;
+compiled trust bundles and #223 remain release gates. Node hosts receive public
+trust material only.
 
 Reserve `authority.json` schema 1 permanently for disposable authorities.
 Schema 2 now separates public identity from encrypted key storage. Production
@@ -378,7 +386,7 @@ short/no caching for fixed-name `timestamp.json`, immutable caching for
 numbered metadata, and uncached 404s for missing future versions. Verify actual
 HTTP status and cache headers alongside the signed publication. The
 [hosting design](omega-trust-design.md#repository-and-bootstrap-manifest)
-records this future work; no Vercel routing/cache change is part of the plan update.
+records the implemented URL/routing rules and remaining deployment integration.
 
 The runbook must record the following, in execution order:
 

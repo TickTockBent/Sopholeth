@@ -4,8 +4,8 @@
 encrypted TUF authorities, unattended renewal, online/membership/root-key
 rotation, root-expiry recovery, and verified publication to a local HTTPS-served
 repository on Linux. Production initialization uses encrypted custody by default.
-No live authority is created by this implementation. HTTPS hosting, the compiled
-trust bundle/release gate, and discovery consumers remain in the
+No live authority is created by this implementation. Automated hosted publication,
+the compiled trust bundle/release gate, and discovery consumers remain in the
 [public-network plan](public-network-plan.md).
 
 The launch profile uses one secured connected operator workstation and a tested
@@ -28,7 +28,7 @@ make build-soph
 sudo ./bin/soph omega init \
   --home /path/to/private/omega-home \
   --network sopholeth \
-  --repository https://metadata.example.invalid
+  --repository https://metadata.example.invalid/omega/
 sudo ./bin/soph --json omega status \
   --home /path/to/private/omega-home --network sopholeth
 ```
@@ -36,8 +36,14 @@ sudo ./bin/soph --json omega status \
 `--network` here identifies the authority, not a saved client profile. It goes
 after `omega init` or `omega status`. IDs contain 1–64 ASCII letters, digits,
 underscores or hyphens, beginning with a letter or digit, and are case-sensitive.
-The repository currently accepts HTTPS origins only. The planned
-`sopholeth.io/omega/` base-path and hosting support is separate future work.
+The repository accepts HTTPS origins or base paths, including
+`https://sopholeth.io/omega/`. The stored URL has no trailing slash; equivalent
+host/default-port spellings normalize before keys are allocated. Path segments
+use literal ASCII letters, digits, or `-._~`. Traversal, doubled slashes, percent
+escapes, credentials, queries, fragments, and backslashes are rejected. The
+repository URL is part of authority/key bindings: do not edit an existing
+origin-only authority to move it under a path. Hosting/deployment automation is
+still separate work.
 `init` and local `status` do not contact the repository. Operator commands
 do not read or change client profiles.
 
@@ -221,8 +227,8 @@ recovery path accepts loss of continuity; it is not a normal rotation.
 ## Publish a three-root manifest
 
 Prepare a dedicated directory to be served at the authority bundle's exact
-HTTPS repository origin. Its parent must exist, and it must be outside the
-custody home; neither directory tree may contain the other. The publisher
+HTTPS repository URL, including its base path. Its parent must exist, and it must
+be outside the custody home; neither directory tree may contain the other. The publisher
 creates the final directory if absent. A first publication requires an empty
 directory. Existing site files cannot be adopted as a repository.
 
@@ -232,7 +238,9 @@ upload through an HTTP API, configure Vercel, or deploy root nodes. Verification
 uses normal TLS certificate/hostname checks and refuses redirects. A private
 rehearsal CA can be supplied through the platform's trusted CA configuration
 (for example `SSL_CERT_FILE` on Linux); there is no insecure TLS flag. Hosting
-at `sopholeth.io/omega/` still needs the planned base-path and serving work.
+at `sopholeth.io/omega/` has base-path support and committed Vercel routing/cache
+rules; the deployment adapter is still pending. See the
+[hosting notes](../sites/README.md#omega-metadata-hosting).
 
 Create the approved manifest, for example `bootstrap.json`:
 

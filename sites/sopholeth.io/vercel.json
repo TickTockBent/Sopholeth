@@ -8,12 +8,49 @@
   "outputDirectory": ".",
   "routes": [
     {
+      "src": "^/omega/timestamp\\.json$",
+      "headers": {
+        "Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store"
+      },
+      "continue": true
+    },
+    {
+      "src": "^/omega(?:/(?!(?:timestamp\\.json|[1-9][0-9]*\\.(?:root|snapshot|targets)\\.json|targets/[a-f0-9]{64}\\.bootstrap\\.json)$).*)?$",
+      "status": 404,
+      "dest": "/omega-not-found.json",
+      "headers": {
+        "Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store"
+      }
+    },
+    {
       "handle": "filesystem"
+    },
+    {
+      "src": "^/omega(?:/.*)?$",
+      "status": 404,
+      "dest": "/omega-not-found.json",
+      "headers": {
+        "Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store"
+      }
     },
     {
       "src": "/(.*)",
       "status": 404,
       "dest": "/404.html"
+    },
+    {
+      "handle": "hit"
+    },
+    {
+      "src": "^/omega/(?:[1-9][0-9]*\\.(?:root|snapshot|targets)\\.json|targets/[a-f0-9]{64}\\.bootstrap\\.json)$",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Vercel-CDN-Cache-Control": "public, max-age=31536000, immutable"
+      },
+      "continue": true
     }
   ]
 }

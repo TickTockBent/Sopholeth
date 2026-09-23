@@ -141,21 +141,27 @@ not carry trust metadata or choose an arbitrary download URL. If alternate
 locators are added later, they need an explicit policy for allowed origins,
 redirects, and local/private address access.
 
-The planned public home is `https://sopholeth.io/omega/`. Before adopting it,
-extend the client's origin-only repository validation to support a base path
-and confine downloads to that origin and path. Keep node endpoint validation
-as HTTPS origins. Publication should remain independent of docs deployments
-so routine renewal and website rollback cannot inadvertently revert metadata.
+The public home is planned at `https://sopholeth.io/omega/`. Repository
+validation, client fetching, and publisher verification now support HTTPS base
+paths and confine downloads to that origin and directory. Node endpoint
+validation still requires HTTPS origins. URL normalization preserves existing
+origin-only authorities; changing a bound repository path requires an explicit
+migration, not editing authority or client state.
 
-When configuring that endpoint, preserve real 404 responses for missing files
-under the site's existing filesystem/404 routing. Serve fixed-name
-`timestamp.json` with `no-cache` or a very short `max-age`; serve numbered root,
-snapshot, and targets metadata with long-lived immutable caching. Never replace
-the contents of an already-published numbered file. Missing future versions
-must not acquire the immutable cache policy: a cached 404 must not delay a
-later root transition. Verify the response headers at the public endpoint as
-part of publication rehearsal. These routing/cache changes are planned;
-the site's Vercel configuration has not been changed for omega hosting yet.
+The docs site's Vercel configuration now reserves `/omega/` for fixed-name
+`timestamp.json`, numbered root/snapshot/targets metadata, and hash-addressed
+manifests. Timestamp responses use `no-store`; existing immutable objects use
+a one-year immutable cache policy. Missing objects return uncached JSON 404s,
+including future root versions. Internal/pending filenames are denied even if
+present in the site output. Other docs pages retain their existing routing.
+See [hosting configuration and checks](../sites/README.md#omega-metadata-hosting).
+
+Deployment automation remains pending. Publication must be independent of docs
+deployments so a website rebuild or rollback cannot erase or revert metadata.
+Do not activate a live authority by manually dropping metadata into the current
+Git-deployed docs site. The deployment integration must preserve authoritative
+history across both metadata and website changes, then verify served bytes and
+cache headers. No public keys or signed metadata are created by these route rules.
 
 Use consistent snapshots, a fixed target name `bootstrap.json`, numbered
 root/targets/snapshot files, and content-hashed target objects. Upload immutable

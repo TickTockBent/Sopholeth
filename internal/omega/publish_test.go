@@ -44,8 +44,18 @@ func newCustodyPublishFixture(t *testing.T, created time.Time, encrypted bool) *
 	t.Helper()
 	base := t.TempDir()
 	f := &publishFixture{opts: PublishOptions{Home: filepath.Join(base, "custody"), Directory: filepath.Join(base, "repository"), Network: "rehearsal", Version: 1, Manifest: publicationManifest, Disposable: true}, overrides: map[string][]byte{}, codes: map[string]int{}}
+	basePath := ""
+	// Reuse the encrypted lifecycle for hosted-path coverage.
+	if encrypted {
+		basePath = "/omega"
+	}
 	files := http.FileServer(http.Dir(f.opts.Directory))
 	f.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, basePath+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, basePath)
 		f.mu.Lock()
 		f.requests = append(f.requests, r.URL.Path)
 		data, override := f.overrides[r.URL.Path]
@@ -68,7 +78,7 @@ func newCustodyPublishFixture(t *testing.T, created time.Time, encrypted bool) *
 		f.opts.Passphrase = testKeyPassphrase
 		f.opts.codec = fastKeyCodec
 	}
-	_, err := initializeWithCodec(context.Background(), InitOptions{Home: f.opts.Home, Network: f.opts.Network, Repository: f.server.URL, Disposable: !encrypted, Encrypted: encrypted, Passphrase: testKeyPassphrase}, created, nil, fastKeyCodec)
+	_, err := initializeWithCodec(context.Background(), InitOptions{Home: f.opts.Home, Network: f.opts.Network, Repository: f.server.URL + basePath + "/", Disposable: !encrypted, Encrypted: encrypted, Passphrase: testKeyPassphrase}, created, nil, fastKeyCodec)
 	must(t, err)
 	return f
 }
