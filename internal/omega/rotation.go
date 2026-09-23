@@ -17,8 +17,9 @@ const maxRootVersion = 64
 type RotateOptions struct {
 	Home, Network string
 	RootVersion   int64
-	Role          string // online (default) or targets; fixed for a prepared version.
+	Role          string // online (default), targets, or root; fixed per version.
 	Apply         string // Exact root SHA-256 from a prior preparation report.
+	RenewApproval bool   // Explicitly renew the unchanged membership during root apply.
 	Disposable    bool
 	HTTPClient    *http.Client
 }
@@ -30,6 +31,7 @@ type RotationReport struct {
 	RootSHA256  string              `json:"root_sha256"`
 	Replaces    map[string][]string `json:"replaces"`
 	Keys        map[string][]string `json:"keys"`
+	RootExpires time.Time           `json:"root_expires,omitzero"`
 }
 
 // Rotate prepares by default. Applying requires an already prepared root's
@@ -43,8 +45,11 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	if opts.Role == "" {
 		opts.Role = "online"
 	}
-	if opts.Role != "online" && opts.Role != "targets" {
-		return report, errors.New("omega: rotate --role must be online or targets")
+	if opts.Role != "online" && opts.Role != "targets" && opts.Role != "root" {
+		return report, errors.New("omega: rotate --role must be online, targets, or root")
+	}
+	if opts.RenewApproval && (opts.Role != "root" || opts.Apply == "") || opts.Role == "root" && opts.Apply != "" && !opts.RenewApproval {
+		return report, errors.New("omega: root apply requires --renew-approval for the unchanged membership; only root apply accepts it")
 	}
 	if !opts.Disposable || !networkID.MatchString(opts.Network) || opts.RootVersion < 2 || opts.RootVersion > maxRootVersion {
 		return report, errors.New("omega: rotate requires --disposable, a network, and --root-version between 2 and 64")
@@ -71,7 +76,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	}
 	defer current.close()
 	report, err = current.inspect(time.Now().UTC())
-	if err != nil {
+	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
 	_, bundle, err := current.verify()
@@ -109,6 +114,9 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	if err := applyReleaseRoot(&report, bundle, latest); err != nil {
 		return report, err
 	}
+	if opts.Role != "root" && !now.Before(report.RootExpires) {
+		return report, errors.New("omega: root expired; recover with rotate --role root first")
+	}
 	if now.Before(latest.Created) {
 		return report, errors.New("omega: rotation clock predates publication history")
 	}
@@ -129,8 +137,21 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		if err := decodeRecord(data, &a); err != nil {
 			return report, err
 		}
+		// Select the current quorum, never the retired initialization keys.
+		rootKeys, err := activeRootKeys(home, state, bundle, previous, a)
+		if err != nil {
+			return report, err
+		}
+		for _, name := range keyNames[:3] {
+			a.Keys[name] = rootKeys[name]
+		}
+		if err := checkOfflineReservation(home, opts.Network, opts.RootVersion, opts.Role); err != nil {
+			return report, err
+		}
 		if opts.Role == "targets" {
 			rotation, err = prepareMembershipRotation(home, state, bundle, previous, opts.RootVersion, a, now)
+		} else if opts.Role == "root" {
+			rotation, err = prepareRootRotation(home, state, bundle, previous, opts.RootVersion, a, now)
 		} else {
 			for _, name := range []string{membershipKeyName(opts.RootVersion), membershipKeyName(opts.RootVersion) + ".pending"} {
 				if _, err := home.root.Lstat(opts.Network + ".rotations/" + name); !errors.Is(err, os.ErrNotExist) {
@@ -165,9 +186,17 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		}
 	}
 	if opts.Apply == "" {
+		manifest, expires, err := latest.validate(bundle)
+		if err != nil {
+			return report, err
+		}
+		report.Release = publicationReport(latest, manifest, expires, now)
 		report.Action = "Review rotation.root_sha256 and replacement key IDs. Apply with --role " + opts.Role + " and the same --root-version and --apply <root_sha256>; retain both custody homes."
 		if report.Rotation.State == "applied" {
 			report.Action = "This rotation was applied and verified. Check live publication with status --verify and confirm client adoption before retiring old key copies."
+		}
+		if opts.Role == "root" && report.Rotation.State != "applied" {
+			report.Action = "Review successor root keys, root_expires, and the current membership. Apply the same root digest with --role root --renew-approval to authorize a new lifetime for that unchanged membership."
 		}
 		return report, nil
 	}
@@ -184,7 +213,7 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 		if err := reserveRotationApply(state, bundle, latest, rotation, now); err != nil {
 			return report, err
 		}
-		if opts.Role == "targets" {
+		if opts.Role == "targets" || opts.Role == "root" {
 			if err := prepareRotationTargets(home, state, bundle, latest, rotation, now); err != nil {
 				return report, err
 			}

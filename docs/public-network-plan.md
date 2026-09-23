@@ -3,9 +3,10 @@
 Status: agreed delivery path, 2026-09-22. Placeholder rejection and the public
 release fingerprint gate, durable trust client, and atomic disposable
 `soph omega init`, local-directory `publish`, unattended online renewal, and
-HTTPS verification in `status`, and online/membership-key `rotate` are implemented for
-disposable authorities. Root-key rotation, consumer integration,
-production custody/hosting, and deployment remain pending. The peer-plane
+HTTPS verification in `status`, and online/membership/root-key `rotate` are implemented for
+disposable authorities, including root-expiry recovery and replacement with one
+rotated root signer unavailable. Consumer integration, production custody/hosting,
+and deployment remain pending. The peer-plane
 audit adds three launch blockers: unauthenticated peer mutations (#211),
 serial write broadcast (#212), and identity-blind liveness (#213). These must
 be resolved before the remote three-root rehearsal and public exposure.
@@ -82,7 +83,7 @@ The proposed command surface is:
 | `soph omega status` | Report accepted versions, authority fingerprints, roots, expiration, renewal/publication health, and actionable failures, with script-friendly output. |
 | `soph omega rotate` | Prepare and carry out an authenticated successor-key transition with defined overlap, retained transition metadata, adoption checks, and retirement criteria. |
 
-`init`, `provision-renewal`, `publish` (including `--renew`), online/membership-key `rotate`,
+`init`, `provision-renewal`, `publish` (including `--renew`), online/membership/root-key `rotate`,
 and `status --verify` are implemented for disposable Linux authorities; see
 [omega operations](omega-operations.md). Publication currently
 uses a local directory served by separately configured HTTPS, with immutable
@@ -90,10 +91,11 @@ release history, timestamp-last writes, and verification of the exact served
 release through the real client. Renewal preserves the exact approved membership,
 uses only online keys, and caps freshness at the offline approval deadlines.
 The operator guide includes scheduler examples, monitoring fields, and the
-prepare/review/apply procedures for online and membership-key rotation, including
-offline custody and recoverable signed handoff. The next operator slice is
-root-quorum rotation, root-expiry recovery, and independent key-loss recovery, followed by
-production custody; hosted publication also remains pending. Fold the existing
+prepare/review/apply procedures for all three rotation roles, including offline
+custody, root-expiry recovery, and recoverable signed handoff. Root application
+requires explicit renewal of the unchanged membership approval. The next operator
+slice is production custody and independent backup/loss/compromise recovery;
+hosted publication also remains pending. Fold the existing
 standalone `omega` tool into `soph` and retire that binary, updating builds, releases, and
 documentation. Node hosts receive public trust material, not the ultimate
 private authority key. Routine freshness renewal must run unattended without

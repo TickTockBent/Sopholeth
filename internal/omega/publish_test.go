@@ -33,6 +33,10 @@ type publishFixture struct {
 }
 
 func newPublishFixture(t *testing.T) *publishFixture {
+	return newPublishFixtureAt(t, time.Now().UTC().Truncate(time.Second))
+}
+
+func newPublishFixtureAt(t *testing.T, created time.Time) *publishFixture {
 	t.Helper()
 	base := t.TempDir()
 	f := &publishFixture{opts: PublishOptions{Home: filepath.Join(base, "custody"), Directory: filepath.Join(base, "repository"), Network: "rehearsal", Version: 1, Manifest: publicationManifest, Disposable: true}, overrides: map[string][]byte{}, codes: map[string]int{}}
@@ -55,7 +59,7 @@ func newPublishFixture(t *testing.T) *publishFixture {
 	}))
 	t.Cleanup(f.server.Close)
 	f.opts.HTTPClient = f.server.Client()
-	_, err := Init(context.Background(), InitOptions{Home: f.opts.Home, Network: f.opts.Network, Repository: f.server.URL, Disposable: true})
+	_, err := initialize(context.Background(), InitOptions{Home: f.opts.Home, Network: f.opts.Network, Repository: f.server.URL, Disposable: true}, created, nil)
 	must(t, err)
 	return f
 }

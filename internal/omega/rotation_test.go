@@ -500,6 +500,7 @@ func TestRotationProcessDeathRecovery(t *testing.T) {
 	if os.Getenv("SOPH_ROTATION_TEST_CHILD") == "1" {
 		home := os.Getenv("SOPH_ROTATION_TEST_HOME")
 		opts := RotateOptions{Home: home, Network: "rehearsal", Role: os.Getenv("SOPH_ROTATION_TEST_ROLE"), RootVersion: 2, Apply: os.Getenv("SOPH_ROTATION_TEST_DIGEST"), Disposable: true}
+		opts.RenewApproval = opts.Role == "root" && opts.Apply != ""
 		_, err := rotate(context.Background(), opts, time.Time{}, func(at string) error {
 			if at == os.Getenv("SOPH_ROTATION_TEST_PHASE") {
 				if err := os.WriteFile(filepath.Join(home, "ready"), []byte("ready"), 0600); err != nil {
@@ -514,10 +515,13 @@ func TestRotationProcessDeathRecovery(t *testing.T) {
 		must(t, err)
 		return
 	}
-	for _, phase := range []string{"rotation:apply-durable", "rotation:targets-durable", "public:2.root.json:visible"} {
+	for _, phase := range []string{"rotation:apply-durable", "rotation:targets-durable", "public:2.root.json:visible", "root:rotation:targets-durable", "root:public:2.root.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
-			if phase == "rotation:targets-durable" {
+			if strings.HasPrefix(phase, "root:") {
+				opts.Role, phase = "root", strings.TrimPrefix(phase, "root:")
+			}
+			if phase == "rotation:targets-durable" && opts.Role != "root" {
 				opts.Role = "targets"
 			}
 			prepared, err := Rotate(context.Background(), opts)

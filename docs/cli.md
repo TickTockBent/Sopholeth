@@ -35,13 +35,18 @@ Add `--role targets` to both commands to rotate the offline membership key
 instead. Its private generation stays offline; application preserves the latest
 approved root list and its expiry, and hands only signed public metadata to the
 scheduler for recovery. `--role online` is the default.
+Use `--role root` to replace the 2-of-3 authority and extend root validity.
+Root application additionally requires `--renew-approval`: it explicitly renews
+the unchanged current membership using its offline signer. The report shows
+successor expiry, old/new root key IDs, and the current membership to review.
+This also recovers an expired root when its signing quorum and custody remain
+available.
 `soph omega status` inspects local material; `--verify` checks the served release.
 These commands use a separate private custody home and do not select or modify
 a saved client network.
 See [omega operations](omega-operations.md) for the commands, all-or-nothing
 commit/retry contract, publication journal, custody limits, and JSON status.
-Root-key rotation, production hosting, and production authority
-creation remain pending.
+Production custody, hosting, and production authority creation remain pending.
 
 ## Join a network
 

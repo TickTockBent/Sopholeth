@@ -76,6 +76,11 @@ func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previou
 	if len(roots) > 0 {
 		r.Schema = 3
 	}
+	tm, err := trustedRoots(bundle, roots)
+	if err != nil {
+		return r, err
+	}
+	a.Expires = tm.Root.Signed.Expires
 	if a.Expires.Sub(now) < 24*time.Hour {
 		return r, errors.New("omega: publication requires at least 24 hours of root validity; arrange a root ceremony")
 	}
@@ -114,7 +119,7 @@ func prepareRelease(a authority, bundle bootstrap.Bundle, version int64, previou
 func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[string]time.Time, error) {
 	var empty bootstrap.Manifest
 	fail := func(err error) (bootstrap.Manifest, map[string]time.Time, error) { return empty, nil, err }
-	if r.Schema < 1 || r.Schema > 5 || (r.Schema > 2) != (len(r.Roots) > 0) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
+	if r.Schema < 1 || r.Schema > 6 || (r.Schema > 2) != (len(r.Roots) > 0) || r.Version < 1 || r.Version > maxReleases || r.Fingerprint != bundle.Fingerprint() || r.Created.IsZero() {
 		return fail(errors.New("omega: invalid release identity or schema"))
 	}
 	canonical, err := approvedManifest(r.Manifest, bundle.Network)
@@ -128,7 +133,7 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 	if err != nil {
 		return fail(err)
 	}
-	if r.Schema == 5 {
+	if r.Schema == 5 || r.Schema == 6 {
 		previous := bundle.Root
 		if len(r.Roots) > 1 {
 			previous = r.Roots[len(r.Roots)-2]
@@ -137,7 +142,11 @@ func (r release) validate(bundle bootstrap.Bundle) (bootstrap.Manifest, map[stri
 		if err != nil {
 			return fail(err)
 		}
-		if err := roleSuccessor(root, tm.Root, []string{"targets"}); err != nil {
+		if r.Schema == 6 {
+			if err := rootSuccessor(root, tm.Root); err != nil {
+				return fail(err)
+			}
+		} else if err := roleSuccessor(root, tm.Root, []string{"targets"}); err != nil {
 			return fail(err)
 		}
 	}
@@ -256,12 +265,33 @@ func prepareContinuedRelease(keys map[string]string, bundle bootstrap.Bundle, pr
 	}
 	if rotatedTargets != nil {
 		r.Schema, r.TargetsVersion, r.Targets = 5, 0, rotatedTargets
+		previousRoot, err := metadata.Root().FromBytes(previous.currentRoot(bundle))
+		if err != nil {
+			return r, err
+		}
+		tm, err := trustedRoots(bundle, roots)
+		if err != nil {
+			return r, err
+		}
+		if rootSuccessor(previousRoot, tm.Root) == nil {
+			r.Schema, r.ApprovedAt = 6, time.Time{}
+		}
 	}
 	_, expires, err := previous.validate(bundle)
 	if err != nil {
 		return r, err
 	}
 	deadline := minTime(expires["root"], expires["targets"])
+	if r.Schema == 6 {
+		root, err := metadata.Root().FromBytes(r.currentRoot(bundle))
+		if err != nil {
+			return r, err
+		}
+		if err := continuedTargetsApproval(previous.Targets, r.Targets, r.Version, r.Created, root); err != nil {
+			return r, err
+		}
+		deadline = root.Signed.Expires
+	}
 	if now.Before(previous.Created) || !now.Before(deadline) {
 		return r, errors.New("omega: clock predates history or offline approval expired; renewal cannot change offline approval")
 	}
@@ -288,7 +318,7 @@ func (r release) follows(previous release) error {
 		return errors.New("omega: release clock moved backward")
 	}
 	if len(r.Roots) < len(previous.Roots) || len(r.Roots) > len(previous.Roots)+1 ||
-		(len(r.Roots) > len(previous.Roots) && !r.isRenewal() && r.Schema != 5) {
+		(len(r.Roots) > len(previous.Roots) && !r.isRenewal() && r.Schema != 5 && r.Schema != 6) {
 		return errors.New("omega: release root chain rolled back or skipped a transition")
 	}
 	for i := range previous.Roots {
@@ -306,5 +336,45 @@ func (r release) follows(previous release) error {
 		}
 		return sameTargetsApproval(previous.Targets, r.Targets, r.Version)
 	}
+	if r.Schema == 6 {
+		if len(r.Roots) != len(previous.Roots)+1 || !bytes.Equal(r.Manifest, previous.Manifest) {
+			return errors.New("omega: root transition changed membership or did not advance the root")
+		}
+		root, err := metadata.Root().FromBytes(r.Roots[len(r.Roots)-1])
+		if err != nil {
+			return err
+		}
+		return renewedTargetsApproval(previous.Targets, r.Targets, r.Version, r.Created, root.Signed.Expires)
+	}
 	return nil
+}
+
+// Only an explicit root application may renew the unchanged targets approval.
+func renewedTargetsApproval(previous, next []byte, version int64, created, expires time.Time) error {
+	old, err := metadata.Targets().FromBytes(previous)
+	if err != nil {
+		return err
+	}
+	targets, err := metadata.Targets().FromBytes(next)
+	if err != nil {
+		return err
+	}
+	if !targets.Signed.Expires.Equal(minTime(created.Add(90*24*time.Hour), expires)) {
+		return errors.New("omega: root transition has invalid renewed approval lifetime")
+	}
+	targets.Signed.Expires = old.Signed.Expires
+	raw, err := targets.ToBytes(false)
+	if err != nil {
+		return err
+	}
+	return sameTargetsApproval(previous, raw, version)
+}
+
+func continuedTargetsApproval(previous, next []byte, version int64, created time.Time, root *metadata.Metadata[metadata.RootType]) error {
+	// A membership-key handoff preserves expiry; a root handoff can extend it.
+	// The caller also enforces the transition role and release schema.
+	if sameTargetsApproval(previous, next, version) == nil {
+		return nil
+	}
+	return renewedTargetsApproval(previous, next, version, created, root.Signed.Expires)
 }

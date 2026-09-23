@@ -4,6 +4,14 @@
 
 ### Public discovery
 
+- Add `soph omega rotate --role root` for disposable Linux authorities, with
+  old/new 2-of-3 signatures, offline signer generations, reviewed root expiry,
+  and explicit `--renew-approval` of the unchanged membership. Recover expired
+  roots, one missing rotated signer, and interrupted publication using retained
+  history and a signed public handoff. Operator status and later approvals use
+  the active root instead of rejecting an expired initial bundle. Production
+  custody and independent backup/compromise recovery remain pending.
+
 - Add `soph omega rotate --role targets` for disposable Linux membership-key
   rotation. Keep replacement private keys offline, preserve the approved root
   list and expiry, recover publication from a signed public handoff, and select

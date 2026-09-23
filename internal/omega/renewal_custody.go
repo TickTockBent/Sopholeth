@@ -146,7 +146,7 @@ func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook fu
 	}
 	defer current.close()
 	report, err = current.inspect(time.Now().UTC())
-	if err != nil {
+	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
 	defer func() {
@@ -259,7 +259,27 @@ func provisionRenewal(ctx context.Context, opts ProvisionRenewalOptions, hook fu
 		return report, err
 	}
 	report.OperationalHome = path
+	// A completed handoff can be retried after the initial root expires. Report
+	// the active root from authenticated history rather than that old anchor.
+	state, _, err := openPublication(online, bundle, nil, false)
+	if err == nil {
+		defer state.close()
+		history, err := loadReleases(state, bundle)
+		if err != nil {
+			return report, err
+		}
+		if len(history) > 0 {
+			if err := applyReleaseRoot(&report, bundle, history[len(history)-1]); err != nil {
+				return report, err
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return report, err
+	}
 	report.Action = "Renewal custody is ready. Keep the authority home offline between membership approvals; schedule soph omega publish --renew using the operational home."
+	if report.State == "expired" {
+		report.Action = "Custody handoff is complete. Use rotate --role root to recover the expired authority before scheduling renewal; provisioning does not extend its validity."
+	}
 	return report, nil
 }
 

@@ -60,7 +60,7 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 	}
 	bundle := custody.Bundle
 	report, err = inspectBundle(bundle, now)
-	if err != nil {
+	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
 	report.State = "renewal_ready"
@@ -70,8 +70,8 @@ func renew(ctx context.Context, opts RenewOptions, now time.Time, hook func(stri
 			report.Publication = "failed"
 			report.Problem = resultErr.Error()
 			report.Action = "Preserve the operational journal and retry publish --renew. Expired root or membership approval requires the offline authority; never reset versions."
-			if errors.Is(resultErr, errMembershipHandoff) {
-				report.Action = "Mount the offline home and rerun the original soph omega rotate --role targets with the same --root-version and --apply digest. Preserve the journal; restore corrupt committed handoff records instead of replacing them."
+			if errors.Is(resultErr, errOfflineHandoff) {
+				report.Action = "Mount the offline home and rerun the original soph omega rotate with its original --role, --root-version and --apply digest (and --renew-approval for root). Preserve the journal; restore corrupt committed handoff records instead of replacing them."
 			}
 		}
 	}()

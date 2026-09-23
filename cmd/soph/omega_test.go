@@ -295,7 +295,7 @@ func TestOmegaRenewalUnavailableReports(t *testing.T) {
 }
 
 func TestOmegaRotationCLI(t *testing.T) {
-	for _, role := range []string{"online", "targets"} {
+	for _, role := range []string{"online", "targets", "root"} {
 		t.Run(role, func(t *testing.T) {
 			ta := newTestApp(t)
 			base := t.TempDir()
@@ -319,7 +319,7 @@ func TestOmegaRotationCLI(t *testing.T) {
 			}
 			digest := rotation["root_sha256"].(string)
 			out, _ = ta.mustRun(t, "", args...)
-			if !strings.Contains(out, "Rotation: prepared") || !strings.Contains(out, digest) || !strings.Contains(out, map[string]string{"online": "snapshot key IDs:", "targets": "targets key IDs:"}[role]) {
+			if !strings.Contains(out, "Rotation: prepared") || !strings.Contains(out, digest) || !strings.Contains(out, map[string]string{"online": "snapshot key IDs:", "targets": "targets key IDs:", "root": "root key IDs:"}[role]) {
 				t.Fatalf("text report omitted review details: %s", out)
 			}
 			out, _ = ta.mustRun(t, "", "--json", "omega", "status", "--home", online, "--network", "rehearsal")
@@ -327,11 +327,20 @@ func TestOmegaRotationCLI(t *testing.T) {
 				t.Fatalf("status lost prepared rotation: %s", out)
 			}
 			bad := append(append([]string{"--json"}, args...), "--apply", strings.Repeat("0", 64))
+			if role == "root" {
+				bad = append(bad, "--renew-approval")
+			}
 			code, out, errOut := ta.run("", bad...)
 			if code != exitError || decodeJSON(t, out)["problem"] == nil || !strings.Contains(errOut, "--apply") {
 				t.Fatalf("bad digest did not fail clearly: %d %s %s", code, out, errOut)
 			}
 			apply := append(append([]string{"--json"}, args...), "--apply", digest)
+			if role == "root" {
+				if code, _, _ := ta.run("", apply...); code != exitUsage {
+					t.Fatal("root apply accepted missing approval consent")
+				}
+				apply = append(apply, "--renew-approval")
+			}
 			for i := 0; i < 2; i++ {
 				out, _ = ta.mustRun(t, "", apply...)
 				result := decodeJSON(t, out)
@@ -350,7 +359,7 @@ func TestOmegaRotationCLI(t *testing.T) {
 			if decodeJSON(t, out)["rotation"].(map[string]any)["state"] != "applied" {
 				t.Fatalf("status lost applied rotation: %s", out)
 			}
-			for _, extra := range [][]string{{"--manifest", manifest}, {"--version", "3"}, {"--verify"}, {"--renew"}, {"--role", "root"}} {
+			for _, extra := range [][]string{{"--manifest", manifest}, {"--version", "3"}, {"--verify"}, {"--renew"}, {"--role", "unknown"}, {"--renew-approval"}} {
 				if code, _, _ := ta.run("", append(append([]string{}, args...), extra...)...); code != exitUsage {
 					t.Fatal("rotation accepted unrelated flags")
 				}

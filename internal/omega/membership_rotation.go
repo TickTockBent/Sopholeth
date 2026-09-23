@@ -15,7 +15,7 @@ import (
 	"sopholeth/internal/trust/bootstrap"
 )
 
-var errMembershipHandoff = errors.New("omega: finish the targets handoff with the original rotate --role targets --apply command and offline home")
+var errOfflineHandoff = errors.New("omega: offline targets handoff incomplete")
 
 // Immutable disposable generations live beside the original offline authority,
 // never in the publication journal or the scheduler's custody home.
@@ -78,7 +78,7 @@ func prepareMembershipRotation(home, state *store, bundle bootstrap.Bundle, prev
 				return empty, err
 			}
 			if existing.Schema != 2 {
-				return empty, errors.New("omega: root version is reserved for online rotation; retry --role online")
+				return empty, errors.New("omega: root version is reserved for another rotation role; retry its original --role")
 			}
 		}
 	}
@@ -244,12 +244,32 @@ func prepareRotationTargets(home, state *store, bundle bootstrap.Bundle, latest 
 		if candidate != name && !json.Valid(data) {
 			continue
 		}
-		if err := validateRotationTargets(data, latest, r, intent.Version); err != nil {
+		if err := validateRotationTargets(data, latest, r, intent.Version, intent.Created); err != nil {
 			return err
 		}
 		return state.install(name, data)
 	}
-	private, err := membershipPrivateKey(home, state, bundle, latest.currentRoot(bundle), r.RootVersion)
+	var private string
+	if preparation.Schema == 3 {
+		// Root application explicitly reapproves the unchanged membership using
+		// its current offline signer. Root expiry cannot renew it implicitly.
+		current, openErr := home.subdir(bundle.Network)
+		if openErr != nil {
+			return openErr
+		}
+		defer current.close()
+		data, readErr := current.read("authority.json")
+		if readErr != nil {
+			return readErr
+		}
+		var a authority
+		if err := decodeRecord(data, &a); err != nil {
+			return err
+		}
+		private, err = activeMembershipKey(home, state, bundle, latest, a.Keys["targets"])
+	} else {
+		private, err = membershipPrivateKey(home, state, bundle, latest.currentRoot(bundle), r.RootVersion)
+	}
 	if err != nil {
 		return err
 	}
@@ -259,11 +279,14 @@ func prepareRotationTargets(home, state *store, bundle bootstrap.Bundle, latest 
 	}
 	targets.Signatures = nil
 	targets.Signed.Version = intent.Version
+	if preparation.Schema == 3 {
+		targets.Signed.Expires = minTime(intent.Created.Add(90*24*time.Hour), preparation.RootExpires)
+	}
 	raw, err := signMetadata(targets, private)
 	if err != nil {
 		return err
 	}
-	if err := validateRotationTargets(raw, latest, r, intent.Version); err != nil {
+	if err := validateRotationTargets(raw, latest, r, intent.Version, intent.Created); err != nil {
 		return err
 	}
 	if err := state.install(name, raw); err != nil {
@@ -294,10 +317,7 @@ func sameTargetsApproval(previous, next []byte, version int64) error {
 	return nil
 }
 
-func validateRotationTargets(data []byte, latest release, r rotationRecord, version int64) error {
-	if err := sameTargetsApproval(latest.Targets, data, version); err != nil {
-		return err
-	}
+func validateRotationTargets(data []byte, latest release, r rotationRecord, version int64, created time.Time) error {
 	root, err := metadata.Root().FromBytes(r.Root)
 	if err != nil {
 		return err
@@ -306,10 +326,13 @@ func validateRotationTargets(data []byte, latest release, r rotationRecord, vers
 	if err != nil {
 		return err
 	}
+	if err := continuedTargetsApproval(latest.Targets, data, version, created, root); err != nil {
+		return err
+	}
 	return root.VerifyDelegate(metadata.TARGETS, targets)
 }
 
-func readRotationTargets(state *store, latest release, r rotationRecord, version int64) ([]byte, error) {
+func readRotationTargets(state *store, latest release, r rotationRecord, version int64, created time.Time) ([]byte, error) {
 	name := rotationTargetsName(version)
 	data, err := state.read(name)
 	if errors.Is(err, os.ErrNotExist) {
@@ -318,7 +341,7 @@ func readRotationTargets(state *store, latest release, r rotationRecord, version
 	if err != nil {
 		return nil, err
 	}
-	if err := validateRotationTargets(data, latest, r, version); err != nil {
+	if err := validateRotationTargets(data, latest, r, version, created); err != nil {
 		return nil, err
 	}
 	if err := state.install(name, data); err != nil {

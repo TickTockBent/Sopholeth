@@ -27,6 +27,7 @@ const rootLifetime = 365 * 24 * time.Hour
 var networkID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 var keyNames = []string{"root-1", "root-2", "root-3", "targets", "snapshot", "timestamp"}
 var authorityFiles = []string{"authority.json", "1.root.json", "bundle.json", "complete.json"}
+var errRootExpired = errors.New("omega: root metadata has expired")
 
 type InitOptions struct {
 	Home       string
@@ -280,7 +281,7 @@ func status(ctx context.Context, homePath, network string, verify bool, httpClie
 	if c, err := readRenewal(home, network); err == nil {
 		report, err := inspectBundle(c.Bundle, time.Now().UTC())
 		report.OperationalHome = home.root.Name()
-		if err != nil {
+		if err != nil && !errors.Is(err, errRootExpired) {
 			return report, err
 		}
 		report.State = "renewal_ready"
@@ -307,11 +308,11 @@ func status(ctx context.Context, homePath, network string, verify bool, httpClie
 	}
 	defer current.close()
 	report, err := current.inspect(time.Now().UTC())
-	if err == nil && report.Network != network {
+	if (err == nil || errors.Is(err, errRootExpired)) && report.Network != network {
 		err = errors.New("omega: authority belongs to a different network")
 		return failedReport(err), err
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
 	_, bundle, err := current.verify()
@@ -371,7 +372,7 @@ func inspectBundle(bundle bootstrap.Bundle, now time.Time) (Report, error) {
 	if !now.Before(root.Signed.Expires) {
 		report.State = "expired"
 		report.Action = "Root approval has expired; preserve the existing authority for a root ceremony."
-		err := errors.New("omega: root metadata has expired")
+		err := errRootExpired
 		report.Problem = err.Error()
 		return report, err
 	}

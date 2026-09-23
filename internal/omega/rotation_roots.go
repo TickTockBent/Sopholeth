@@ -16,7 +16,7 @@ func rotationIntentName(n int64) string { return fmt.Sprintf("%d.rotation-intent
 func rotationApplyName(n int64) string  { return fmt.Sprintf("%d.rotation-apply.json", n) }
 
 // Validate the full chain with TUF's old-and-new threshold checks, then enforce
-// our narrower policy: either the two online assignments or targets may change.
+// our narrower policy: online keys, targets, or the root quorum and expiry.
 func trustedRoots(bundle bootstrap.Bundle, roots [][]byte) (*trustedmetadata.TrustedMetadata, error) {
 	if len(roots) >= maxRootVersion {
 		return nil, errors.New("omega: disposable root transition limit reached")
@@ -45,7 +45,10 @@ func successorRole(previous, next *metadata.Metadata[metadata.RootType]) (string
 	if err := roleSuccessor(previous, next, []string{"targets"}); err == nil {
 		return "targets", nil
 	}
-	return "", errors.New("omega: successor must rotate online or targets keys without changing root authority, expiry, or policy")
+	if err := rootSuccessor(previous, next); err == nil {
+		return "root", nil
+	}
+	return "", errors.New("omega: successor must rotate one role without changing unrelated assignments or policy")
 }
 
 func roleSuccessor(previous, next *metadata.Metadata[metadata.RootType], roles []string) error {
@@ -95,16 +98,24 @@ func roleSuccessor(previous, next *metadata.Metadata[metadata.RootType], roles [
 }
 
 func (intent rotationIntent) validate(bundle bootstrap.Bundle, previous []byte, version int64) error {
-	if (intent.Schema != 1 && intent.Schema != 2) || intent.Mode != "disposable" || intent.Fingerprint != bundle.Fingerprint() ||
+	if (intent.Schema < 1 || intent.Schema > 3) || intent.Mode != "disposable" || intent.Fingerprint != bundle.Fingerprint() ||
 		intent.RootVersion != version || version < 2 || version > maxRootVersion || intent.PreviousRoot != digest(previous) ||
 		intent.Created.IsZero() ||
 		(intent.Schema == 1 && (len(intent.Keys) != 2 || intent.TargetsKey != nil)) ||
-		(intent.Schema == 2 && (len(intent.Keys) != 0 || intent.TargetsKey == nil)) {
+		(intent.Schema == 2 && (len(intent.Keys) != 0 || intent.TargetsKey == nil)) ||
+		(intent.Schema != 3 && (len(intent.RootKeys) != 0 || !intent.RootExpires.IsZero())) ||
+		(intent.Schema == 3 && (len(intent.Keys) != 0 || intent.TargetsKey != nil || len(intent.RootKeys) != 3)) {
 		return errors.New("omega: invalid rotation intent; preserve the journal")
 	}
 	root, err := metadata.Root().FromBytes(previous)
 	if err != nil {
 		return err
+	}
+	if intent.Schema == 3 {
+		if !intent.RootExpires.Equal(rootExpiry(root.Signed.Expires, intent.Created)) {
+			return errors.New("omega: invalid prepared root lifetime")
+		}
+		return validateRootKeys(intent.RootKeys, root)
 	}
 	seen := map[string]bool{}
 	for _, role := range intent.roles() {
@@ -129,6 +140,9 @@ func (intent rotationIntent) validate(bundle bootstrap.Bundle, previous []byte, 
 }
 
 func (intent rotationIntent) roles() []string {
+	if intent.Schema == 3 {
+		return nil
+	} // Root's multi-key assignment is handled separately.
 	if intent.Schema == 2 {
 		return []string{"targets"}
 	}
@@ -182,7 +196,20 @@ func (r rotationRecord) validate(bundle bootstrap.Bundle, previous []byte, inten
 	if err != nil {
 		return err
 	}
-	if err := roleSuccessor(old, next, intent.roles()); err != nil {
+	if intent.Schema == 3 {
+		if err := rootSuccessor(old, next); err != nil {
+			return err
+		}
+		if !next.Signed.Expires.Equal(intent.RootExpires) {
+			return errors.New("omega: root expiry differs from preparation")
+		}
+		for _, key := range intent.RootKeys {
+			id, _ := key.ID()
+			if !bytes.Equal(record(next.Signed.Keys[id]), record(key)) {
+				return errors.New("omega: root differs from prepared quorum")
+			}
+		}
+	} else if err := roleSuccessor(old, next, intent.roles()); err != nil {
 		return err
 	}
 	for _, role := range intent.roles() {
@@ -226,8 +253,8 @@ func rotationReport(r rotationRecord, previous []byte, state string) *RotationRe
 	next, _ := metadata.Root().FromBytes(r.Root)
 	role, _ := successorRole(old, next)
 	out := &RotationReport{State: state, Role: role, RootVersion: r.RootVersion, RootSHA256: digest(r.Root),
-		Replaces: map[string][]string{}, Keys: map[string][]string{}}
-	for _, name := range []string{"targets", "snapshot", "timestamp"} {
+		Replaces: map[string][]string{}, Keys: map[string][]string{}, RootExpires: next.Signed.Expires}
+	for _, name := range []string{"root", "targets", "snapshot", "timestamp"} {
 		if !bytes.Equal(record(old.Signed.Roles[name]), record(next.Signed.Roles[name])) {
 			out.Replaces[name] = old.Signed.Roles[name].KeyIDs
 			out.Keys[name] = next.Signed.Roles[name].KeyIDs

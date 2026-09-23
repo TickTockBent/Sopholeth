@@ -14,7 +14,7 @@ import (
 
 func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help")) {
-		return a.printf("Usage: soph [global flags] omega <init|provision-renewal|publish|rotate|status> [flags]\n\n  init     Atomically initialize a disposable authority, or recover the same transaction.\n  provision-renewal  Provision online keys and hand off the publication journal.\n  publish  Publish an approved release, or --renew using online keys, and verify HTTPS.\n  rotate   Prepare an online or membership-key transition; --apply its reviewed root digest.\n  status   Inspect local authority and publication state; --verify checks HTTPS.\n\nUse 'soph omega <command> --help' for flags.\n")
+		return a.printf("Usage: soph [global flags] omega <init|provision-renewal|publish|rotate|status> [flags]\n\n  init     Atomically initialize a disposable authority, or recover the same transaction.\n  provision-renewal  Provision online keys and hand off the publication journal.\n  publish  Publish an approved release, or --renew using online keys, and verify HTTPS.\n  rotate   Prepare an online, membership, or root-key transition; --apply its reviewed root digest.\n  status   Inspect local authority and publication state; --verify checks HTTPS.\n\nUse 'soph omega <command> --help' for flags.\n")
 	}
 	cmd := args[0]
 	if cmd != "init" && cmd != "status" && cmd != "publish" && cmd != "provision-renewal" && cmd != "rotate" {
@@ -32,6 +32,7 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	var rootVersion int64
 	var apply string
 	var rotationRole string
+	var renewApproval bool
 	if cmd == "init" || cmd == "publish" || cmd == "provision-renewal" || cmd == "rotate" {
 		fs.BoolVar(&disposable, "disposable", false, "use development/rehearsal keys; production custody is not implemented")
 	}
@@ -40,7 +41,8 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 	} else if cmd == "provision-renewal" {
 		fs.StringVar(&renewalHome, "renewal-home", "", "separate private operational home for online keys and publication state (required)")
 	} else if cmd == "rotate" {
-		fs.StringVar(&rotationRole, "role", "online", "keys to replace: online (snapshot and timestamp) or targets (offline membership key)")
+		fs.StringVar(&rotationRole, "role", "online", "keys to replace: online (snapshot/timestamp), targets (membership), or root (2-of-3 authority)")
+		fs.BoolVar(&renewApproval, "renew-approval", false, "explicitly renew unchanged membership approval (required with --role root --apply)")
 		fs.Int64Var(&rootVersion, "root-version", 0, "successor root number, or the same number for retry (required; starts at 2)")
 		fs.StringVar(&apply, "apply", "", "apply a previously prepared transition by its exact root_sha256; omit to prepare/review")
 	} else if cmd == "publish" {
@@ -78,10 +80,13 @@ func (a *app) cmdOmega(ctx context.Context, args []string) error {
 		if !disposable || rootVersion < 2 {
 			return usagef("omega rotate requires --root-version (at least 2) and --disposable")
 		}
-		if rotationRole != "online" && rotationRole != "targets" {
-			return usagef("omega rotate --role must be online or targets")
+		if rotationRole != "online" && rotationRole != "targets" && rotationRole != "root" {
+			return usagef("omega rotate --role must be online, targets, or root")
 		}
-		report, err = omega.Rotate(opCtx, omega.RotateOptions{Home: *home, Network: *network, RootVersion: rootVersion, Role: rotationRole, Apply: apply, Disposable: disposable, HTTPClient: a.newHTTPClient()})
+		if renewApproval && (rotationRole != "root" || apply == "") || rotationRole == "root" && apply != "" && !renewApproval {
+			return usagef("omega rotate --role root --apply requires --renew-approval; other operations do not accept it")
+		}
+		report, err = omega.Rotate(opCtx, omega.RotateOptions{Home: *home, Network: *network, RootVersion: rootVersion, Role: rotationRole, Apply: apply, RenewApproval: renewApproval, Disposable: disposable, HTTPClient: a.newHTTPClient()})
 	} else if cmd == "publish" && renew {
 		if !disposable || manifestPath != "" || directory != "" || version != 0 {
 			return usagef("omega publish --renew requires --disposable and accepts no manifest, repository-dir, or version; the operational journal supplies them")
@@ -141,7 +146,10 @@ func (a *app) printOmegaReport(r omega.Report) error {
 	}
 	if rotation := r.Rotation; rotation != nil {
 		fmt.Fprintf(&out, "Rotation: %s (root %d, role %s)\nSuccessor root SHA-256: %s\n", rotation.State, rotation.RootVersion, rotation.Role, rotation.RootSHA256)
-		for _, role := range []string{"targets", "snapshot", "timestamp"} {
+		if !rotation.RootExpires.IsZero() {
+			fmt.Fprintf(&out, "Successor root expires: %s\n", rotation.RootExpires.Format("2006-01-02T15:04:05Z07:00"))
+		}
+		for _, role := range []string{"root", "targets", "snapshot", "timestamp"} {
 			if len(rotation.Keys[role]) == 0 {
 				continue
 			}

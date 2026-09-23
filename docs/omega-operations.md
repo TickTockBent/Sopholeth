@@ -1,9 +1,9 @@
 # Sopholeth omega operations
 
 `soph omega init`, `provision-renewal`, `publish`, `rotate`, and `status` support
-disposable TUF authorities, unattended renewal, online and membership-key
-rotation, and verified publication to a local HTTPS-served repository on Linux. Root-key
-rotation, production custody/hosting, and migration of discovery consumers remain
+disposable TUF authorities, unattended renewal, online/membership/root-key
+rotation, root-expiry recovery, and verified publication to a local HTTPS-served
+repository on Linux. Production custody/hosting and discovery consumer integration remain
 the next steps in the
 [public-network plan](public-network-plan.md). No production authority exists.
 
@@ -187,16 +187,19 @@ provisioning, the authority home also serves as the operational home:
   form the durable version history. They contain no private keys.
 - `R.rotation-intent.json` contains preparation identity for root version `R`.
   Schema 1 contains **private** replacement online keys; schema 2 contains only
-  the replacement membership **public** key. `R.rotation.json` binds the intent
+  the replacement membership **public** key; schema 3 contains the three successor
+  root **public** keys and reviewed expiration. `R.rotation.json` binds the intent
   to the exact signed public successor root. Membership private generations
   stay at `<offline-home>/<network>.rotations/R.targets-key.json` (mode `0600`
   in a `0700` directory), outside this journal and the immutable authority slot.
 - `N.rotation-apply.json` records the reviewed root digest, next release version,
   predecessor, and signing time before the transition release is signed.
 - `N.rotation-targets.json` is the public, offline-signed targets handoff for
-  a membership-key transition. The scheduler can finish that transition only
+  a membership-key or root transition. The scheduler can finish either only
   after this handoff is complete and verifies. Release schema 5 records the
   new targets version while preserving the original approval time and expiry.
+  Schema 6 records an explicit root transition with freshly approved lifetime
+  for the unchanged membership.
 - `N.renewal-intent.json` fixes the next renewal's version, predecessor, and
   signing time before signing, allowing recovery of torn writes.
 - `N.verification.json` records the last check/attempt, its failure if any,
@@ -416,8 +419,8 @@ and prior successful verification time. With `--json`, missing or unprovisioned
 operational homes also produce a report with `problem` and `action`, identifying
 when to provision custody or restore existing state. Expired membership requires
 bringing the offline authority back for a new approval at the next available release
-version. Root expiry requires the planned root rotation/recovery workflow, which
-is not implemented yet. Do not claim healthy discovery from expired metadata.
+version. Root expiry requires `rotate --role root` and an explicit membership
+approval as described below. Do not claim healthy discovery from expired metadata.
 
 ## Rotate the online keys
 
@@ -429,7 +432,7 @@ clients learn new assignments through the retained, authenticated root chain.
 The [TUF update protocol](https://theupdateframework.github.io/specification/latest/#update-root-metadata)
 checks the old and successor root thresholds. Both use the same root quorum in
 this mode. Use `--role targets` for membership-key rotation as described below;
-root-key rotation and extension of root validity remain subsequent work.
+use `--role root` for authority rotation and extension of root validity.
 
 Provision the separate operational home and publish membership first. Mount
 the offline authority for preparation and application. The service and operator
@@ -523,8 +526,8 @@ to perform physical key destruction. Production custody must separate retention
 of public history from independently protected key generations, with a new
 authority schema and a verified destruction/recovery workflow. Loss of the
 whole online custody record or journal still requires restoration; automated
-root-quorum recovery and root-key rotation remain pending. The next section
-describes the narrower recovery available for a lost rotated membership key.
+recovery of lost operational journals still requires backups. Later sections
+describe recovery of lost rotated membership and root signers.
 Root quorum compromise requires an independently distributed trust anchor;
 an unsigned replacement from the compromised repository is not recovery.
 
@@ -593,10 +596,91 @@ The last case is a limited recovery path, not production custody. Loss of the
 initial `authority.json`, an expired approval combined with a lost active
 membership key, or damage to the journal still requires verified restoration.
 The initial disposable record contains all six keys and must remain intact.
-Independent root-key loss/compromise recovery, root expiry, and production
-custody require the next operator slices and a new production authority schema.
+Production custody and independent backup/compromise recovery require a new
+authority schema. The next section covers the narrower disposable root workflow.
 Keep every public numbered root and preserve custody/journal backups; this
 command does not delete old private generations.
+
+## Rotate the root authority and recover expiration
+
+`soph omega rotate --role root` replaces all three root signing keys, retaining
+the 2-of-3 threshold and all other role assignments. The successor carries two
+signatures from the current quorum and two from the new quorum. Preparation fixes
+its expiry at 365 days after preparation, or one second beyond the previous
+expiry if that is later. The initial bundle and authority fingerprint remain
+unchanged; clients authenticate the retained numbered transition chain.
+
+Root application explicitly reapproves the **unchanged current membership**.
+This is necessary when root expiration has also expired its capped targets
+approval. The command requires `--renew-approval` with `--apply`; it is rejected
+on preparation and on other roles. Review `release.roots`, the current approval
+deadlines, `rotation.root_expires`, and the old/new root key IDs before applying.
+If another operator publishes a new membership while preparation is pending,
+review the latest report again: application reapproves the latest membership
+under the shared lock, not the list that happened to exist at preparation time.
+
+```bash
+# Use the next consecutive root version; this follows the preceding examples.
+soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network rehearsal \
+  --role root --root-version 4 --disposable
+
+# Approve the reviewed root digest and renew the unchanged current membership.
+soph --json --timeout 2m omega rotate \
+  --home /srv/omega-offline --network rehearsal \
+  --role root --root-version 4 --apply '<root_sha256>' \
+  --renew-approval --disposable
+
+soph --json --timeout 2m omega status \
+  --home /srv/omega-online --network rehearsal --verify
+```
+
+New root signers live in separate `R.root-1-key.json`, `R.root-2-key.json`, and
+`R.root-3-key.json` files under `<offline-home>/<network>.rotations/`, with the
+same private permissions as membership keys. `R.root-plan.json` fixes the
+preparation identity and clock before creating keys. Preserve complete pending
+writes and all committed files; retries never generate replacement material for
+a handed-off identity. Only public root keys, metadata, and signed approvals
+enter the operational home or HTTPS repository.
+
+Application reserves the next release number and signing time, then uses the
+current offline membership key to sign a new targets version. Its approval lasts
+90 days from that reserved time, capped by the successor root expiry. The root
+must have at least 24 hours of validity when reserving application. Online roles
+keep their current keys and normal snapshot/timestamp lifetimes. Once the signed
+handoff is complete, `publish --renew` can finish with the entire offline home
+unmounted. Before that boundary, the scheduler reports the missing handoff and
+requires the original offline apply command. A retry cannot move the reserved
+approval clock forward.
+
+| Observed state | Recovery |
+| --- | --- |
+| Preparation interrupted | Rerun the same root preparation. Each complete key write is recovered exactly; another role cannot reuse the version. |
+| Current root and membership expired | With custody and the journal intact, prepare the next root and apply with `--renew-approval`. Old metadata remains unusable until the successor and fresh approval verify. |
+| Root apply interrupted before signed handoff | Rerun the same offline apply with its digest and `--renew-approval`; do not reset the reservation. |
+| Signed handoff complete, publication interrupted | Retry apply or run `publish --renew` without offline custody. Retain all numbered root files. |
+| Reserved timestamp expired | Complete the reserved release privately, then retry renewal at a higher version while its membership/root approval remains valid. If targets expired too, issue a new offline approval at the next release version. Expired timestamps are never published. |
+| One signer in the current rotated generation unavailable | The other two can authorize the next complete root generation. Never fabricate the missing key or fall back to retired initialization keys. |
+| Two current root signers unavailable | Restore protected backups. This command cannot reconstruct a lost quorum. |
+| Committed plan, signer, or journal corrupted | Preserve the evidence and restore matching records; corruption is not treated as an absent signer. |
+
+Fresh and returning clients can traverse an expired initial or intermediate root
+only through its authenticated successor chain, ending in currently valid metadata.
+An expired chain with no valid successor still fails. Verify adoption by all three
+nodes and representative clients before retiring keys; `applied` confirms served
+publication, not adoption by every node. Rotation cannot instantly revoke a
+disconnected client's existing lease.
+
+These are disposable Linux recovery mechanics. The original six-key
+`authority.json` and its completion receipt must still remain intact, even after
+rotation; loss of that file needs restoration. Separate files in one offline home
+do not constitute independent production custody. Production keys require a new
+authority schema, independently protected signers, and rehearsed backups. A
+compromised root quorum requires an independently distributed replacement trust
+anchor. Keep all public transition history and protected recovery material; this
+command does not physically destroy old keys. A prepared successor that itself
+expires before apply cannot be refreshed in place or overwritten; preserve its
+records for a separately reviewed recovery procedure.
 
 ## Legacy DNS tooling reference
 

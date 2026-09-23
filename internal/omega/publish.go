@@ -75,7 +75,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 		now = time.Now().UTC().Truncate(time.Second)
 	}
 	report, err = current.inspect(now)
-	if err != nil {
+	if err != nil && !errors.Is(err, errRootExpired) {
 		return report, err
 	}
 	if report.Network != opts.Network {
@@ -133,7 +133,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 	var r release
 	if opts.Version == latest {
 		r = history[len(history)-1]
-		if r.isRenewal() || r.Schema == 5 || !bytes.Equal(r.Manifest, manifest) {
+		if r.isRenewal() || r.Schema == 5 || r.Schema == 6 || !bytes.Equal(r.Manifest, manifest) {
 			return report, errors.New("omega: version already has a different approved manifest; choose the next version")
 		}
 	} else {
@@ -155,7 +155,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 			if err := decodeRecord(pending, &r); err != nil {
 				return report, errors.New("omega: invalid pending release; preserve the journal for recovery")
 			}
-			if r.isRenewal() || r.Schema == 5 || r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
+			if r.isRenewal() || r.Schema == 5 || r.Schema == 6 || r.Version != opts.Version || r.Previous != previous || !bytes.Equal(r.Manifest, manifest) {
 				return report, errors.New("omega: pending version has different approval; retry its original manifest")
 			}
 			if _, _, err := r.validate(bundle); err != nil {
@@ -405,6 +405,9 @@ func saveVerification(state *store, r release, result error, now time.Time) erro
 func inspectPublication(ctx context.Context, home *store, bundle bootstrap.Bundle, report Report, verify bool, hc *http.Client) (Report, error) {
 	state, _, err := openPublication(home, bundle, nil, false)
 	if errors.Is(err, os.ErrNotExist) {
+		if report.Problem == errRootExpired.Error() {
+			return report, errRootExpired
+		}
 		if !verify {
 			return report, nil
 		}
@@ -423,6 +426,9 @@ func inspectPublication(ctx context.Context, home *store, bundle bootstrap.Bundl
 		return publicationFailure(report, err)
 	}
 	if len(history) == 0 {
+		if report.Problem == errRootExpired.Error() {
+			return report, errRootExpired
+		}
 		report.Publication = "unpublished"
 		report.Action = "Use soph omega publish to approve and publish the first release."
 		if verify {

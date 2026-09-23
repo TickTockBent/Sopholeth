@@ -1,15 +1,15 @@
 # Omega trust lifecycle: integration spike and proposed design
 
 Status: trust client, atomic disposable authority initialization, local-directory
-publication, unattended online renewal, online/membership-key rotation, and served-release
-verification implemented. Root-key rotation, production custody/hosting,
+publication, unattended online renewal, online/membership/root-key rotation, and served-release
+verification and root-expiry recovery implemented. Production custody/hosting,
 and consumer integration remain pending.
 The completed [spike](../test/omega-tuf/README.md) established the design for
 [#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
 [public-network plan](public-network-plan.md). Its scenarios now exercise the
 [durable client](../internal/trust/bootstrap/README.md) in the main Go suite.
 `soph omega init`, `provision-renewal`, local-directory `publish` with online
-renewal, online/membership-key `rotate`, and `status --verify` implement the current operator slices.
+renewal, online/membership/root-key `rotate`, and `status --verify` implement the current operator slices.
 This does not switch node discovery or establish a production authority.
 The [audit](omega-signing-audit.md) remains the record of the interim protocol.
 
@@ -215,7 +215,7 @@ do not turn on the library's `UnsafeLocalMode` as an unexplained fallback.
 ## One operator workflow
 
 `soph omega init`, `provision-renewal`, local-directory `publish` (including
-`--renew`), online/membership-key `rotate`, and `status --verify` are
+`--renew`), online/membership/root-key `rotate`, and `status --verify` are
 implemented for disposable authorities on Linux; see the
 [operator guide](omega-operations.md). Initialization prepares
 and verifies the entire authority privately, then commits it with a single
@@ -250,8 +250,12 @@ subsequent planned work:
   digest for application, retain numbered roots, and recover publication through
   the online journal. Membership private generations stay offline; their signed
   targets handoff preserves approval and expiry and enables scheduler recovery
-  only after it is complete. Root-key rotation and automated deployment adoption
-  tracking remain later slices; do not overwrite keys in place.
+  only after it is complete. Root mode replaces all three authority keys and
+  extends root validity, satisfying both old and new 2-of-3 thresholds. Its
+  explicit `--renew-approval` apply renews the unchanged membership through an
+  offline signature, including after the previous root expires. The scheduler
+  can complete only a fully signed public handoff. Automated deployment adoption
+  tracking and production custody remain later slices; never overwrite keys.
 
 Signing and publication need a single-writer lock, durable monotonic counters,
 immutable prepared releases, and an idempotent retry journal. If timestamp N
@@ -296,9 +300,9 @@ unsigned replacement from the same compromised delivery channel.
 The toolchain upgrade, explicit bundle/manifest types, and durable client from
 steps 1–2 are implemented. Step 3 now includes atomic disposable `init`,
 journaled local-directory `publish`, restricted online custody provisioning,
-unattended renewal, online/membership-key rotation, and local/HTTPS-verified
-`status`. Root-key rotation, production
-custody/hosting, and standalone-tool
+unattended renewal, online/membership/root-key rotation, and local/HTTPS-verified
+`status`, root-expiry recovery, and replacement with one rotated root signer
+unavailable. Production custody/hosting and standalone-tool
 retirement remain pending. The compiled public bundle/release-gate migration,
 node/CLI/dashboard adoption, runtime callbacks, and transport checks remain
 pending. The [client reference](../internal/trust/bootstrap/README.md)

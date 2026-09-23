@@ -31,6 +31,9 @@ type rotationIntent struct {
 	Keys         map[string]string `json:"private_keys"`
 	// Schema 2 is a public targets-key handoff. Its private key stays offline.
 	TargetsKey *metadata.Key `json:"targets_key,omitempty"`
+	// Schema 3 hands off only public root keys and the reviewed expiration.
+	RootKeys    map[string]*metadata.Key `json:"root_keys,omitempty"`
+	RootExpires time.Time                `json:"root_expires,omitzero"`
 }
 
 type rotationRecord struct {
@@ -89,12 +92,12 @@ func prepareRotation(state *store, bundle bootstrap.Bundle, previous []byte, ver
 		return r, err
 	}
 	if intent.Schema != 1 {
-		return r, errors.New("omega: root version is reserved for targets rotation; retry --role targets")
+		return r, errors.New("omega: root version is reserved for another rotation role; retry its original --role")
 	}
 	return finishRotation(state, bundle, previous, version, a, now, intent)
 }
 
-func finishRotation(state *store, bundle bootstrap.Bundle, previous []byte, version int64, a authority, now time.Time, intent rotationIntent) (rotationRecord, error) {
+func finishRotation(state *store, bundle bootstrap.Bundle, previous []byte, version int64, a authority, now time.Time, intent rotationIntent, successorKeys ...string) (rotationRecord, error) {
 	var r rotationRecord
 	if now.Before(intent.Created) {
 		return r, errors.New("omega: clock predates rotation preparation")
@@ -141,6 +144,19 @@ func finishRotation(state *store, bundle bootstrap.Bundle, previous []byte, vers
 	}
 	root.Signed.Version = version
 	root.Signatures = nil
+	if intent.Schema == 3 {
+		for _, id := range append([]string(nil), root.Signed.Roles[metadata.ROOT].KeyIDs...) {
+			if err := root.Signed.RevokeKey(id, metadata.ROOT); err != nil {
+				return r, err
+			}
+		}
+		for _, name := range keyNames[:3] {
+			if err := root.Signed.AddKey(intent.RootKeys[name], metadata.ROOT); err != nil {
+				return r, err
+			}
+		}
+		root.Signed.Expires = intent.RootExpires
+	}
 	for _, role := range intent.roles() {
 		if err := root.Signed.RevokeKey(root.Signed.Roles[role].KeyIDs[0], role); err != nil {
 			return r, err
@@ -153,8 +169,23 @@ func finishRotation(state *store, bundle bootstrap.Bundle, previous []byte, vers
 			return r, err
 		}
 	}
-	for _, role := range keyNames[:2] {
-		private, err := decodeKey(a.Keys[role])
+	var signers []string
+	for _, name := range keyNames[:3] {
+		if a.Keys[name] != "" && len(signers) < 2 {
+			signers = append(signers, a.Keys[name])
+		}
+	}
+	if len(signers) != 2 {
+		return r, errors.New("omega: current root quorum unavailable; restore protected backups")
+	}
+	if intent.Schema == 3 {
+		if len(successorKeys) < 2 {
+			return r, errors.New("omega: successor root quorum unavailable")
+		}
+		signers = append(signers, successorKeys[:2]...)
+	}
+	for _, encoded := range signers {
+		private, err := decodeKey(encoded)
 		if err != nil {
 			return r, err
 		}
@@ -171,6 +202,9 @@ func finishRotation(state *store, bundle bootstrap.Bundle, previous []byte, vers
 		return r, err
 	}
 	r = rotationRecord{Schema: 1, Fingerprint: bundle.Fingerprint(), RootVersion: version, Intent: digest(record(intent)), Root: raw}
+	if err := r.validate(bundle, previous, intent); err != nil {
+		return r, err
+	}
 	if err := state.install(rotationName(version), record(r)); err != nil {
 		return r, err
 	}
@@ -221,7 +255,11 @@ func reserveRotationApply(state *store, bundle bootstrap.Bundle, latest release,
 	if err != nil {
 		return err
 	}
-	if !now.Before(expires["targets"]) || !now.Before(expires["root"]) {
+	if preparation.Schema == 3 {
+		if preparation.RootExpires.Sub(now) < 24*time.Hour {
+			return errors.New("omega: prepared successor needs at least 24 hours of root validity")
+		}
+	} else if !now.Before(expires["targets"]) || !now.Before(expires["root"]) {
 		// No signed release can follow a torn, uncommitted apply reservation.
 		// Release that empty reservation so a new offline approval can proceed.
 		if hadPending {
@@ -293,16 +331,24 @@ func resumeRotationApply(ctx context.Context, state *store, bundle bootstrap.Bun
 	}
 	roots := append(append([][]byte(nil), latest.Roots...), r.Root)
 	var next release
-	if keys.Schema == 2 {
+	if keys.Schema == 2 || keys.Schema == 3 {
 		onlineKeys, keyErr := activeOnlineKeys(state, bundle, latest, initialKeys)
 		if keyErr != nil {
 			return history, false, keyErr
 		}
-		targets, targetErr := readRotationTargets(state, latest, r, intent.Version)
+		targets, targetErr := readRotationTargets(state, latest, r, intent.Version, intent.Created)
 		if targetErr != nil {
-			return history, false, fmt.Errorf("%w: %w", errMembershipHandoff, targetErr)
+			role := "targets"
+			if keys.Schema == 3 {
+				role = "root"
+			}
+			return history, false, fmt.Errorf("%w: finish with the original rotate --role %s --apply command and offline home (--renew-approval for root): %w", errOfflineHandoff, role, targetErr)
 		}
-		next, err = prepareMembershipRelease(onlineKeys, bundle, latest, intent.Created, roots, targets)
+		if keys.Schema == 3 {
+			next, err = prepareContinuedRelease(onlineKeys, bundle, latest, intent.Created, roots, targets)
+		} else {
+			next, err = prepareMembershipRelease(onlineKeys, bundle, latest, intent.Created, roots, targets)
+		}
 	} else {
 		next, err = prepareRenewalWithRoots(keys.Keys, bundle, latest, intent.Created, roots)
 	}
@@ -333,6 +379,12 @@ func applyReleaseRoot(report *Report, bundle bootstrap.Bundle, r release) error 
 	}
 	report.RootVersion = root.Signed.Version
 	report.RootExpires = root.Signed.Expires
+	if report.Problem == errRootExpired.Error() && time.Now().Before(report.RootExpires) {
+		report.Problem = ""
+		if report.State == "expired" {
+			report.State = "initialized"
+		}
+	}
 	if report.Roles == nil {
 		report.Roles = map[string]RoleStatus{}
 	}
