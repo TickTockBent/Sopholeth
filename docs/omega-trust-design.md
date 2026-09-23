@@ -89,6 +89,12 @@ separate from signing keys. Keeping all three authority keys on one ordinary
 host would defeat the intended custody separation, even if a threshold were
 configured. Rehearsal must verify custody and recovery before activation.
 
+The [production custody proposal](omega-production-custody.md) develops this
+into an operator workflow using the selected encrypted offline file backend,
+independent recovery verification, schema-2 public authority records, and
+portable signing requests. It remains implementation work; schema 1 stays
+disposable-only.
+
 Compromise of the online service must not permit new membership approval or
 replacement of the root authority. It can still deny updates or replay an
 older, still-valid approved manifest to a client without newer state. Expiry

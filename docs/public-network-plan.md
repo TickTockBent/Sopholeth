@@ -95,7 +95,12 @@ prepare/review/apply procedures for all three rotation roles, including offline
 custody, root-expiry recovery, and recoverable signed handoff. Root application
 requires explicit renewal of the unchanged membership approval. The next operator
 slice is production custody and independent backup/loss/compromise recovery;
-hosted publication also remains pending. Fold the existing
+the [custody proposal](omega-production-custody.md) specifies encrypted offline
+key files, verified recovery copies, public signing handoffs, and a new authority
+schema. Its first implementation slice separates public authority inspection
+from private-key access and adds the encrypted single-key backend. The complete
+production lifecycle and recovery rehearsal must precede real authority
+activation. Hosted publication also remains pending. Fold the existing
 standalone `omega` tool into `soph` and retire that binary, updating builds, releases, and
 documentation. Node hosts receive public trust material, not the ultimate
 private authority key. Routine freshness renewal must run unattended without

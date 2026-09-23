@@ -103,6 +103,9 @@ custody or create independent recovery copies. Production initialization must
 wait for the custody/recovery workflow and rehearsal. `authority.json` schema 1
 is permanently reserved for disposable authorities: production custody requires
 a new schema, not an extension that enables production use of schema 1.
+The [production custody proposal](omega-production-custody.md) describes the
+selected encrypted-file backend and the planned creation/recovery workflow;
+its command extensions are not implemented yet.
 Windows public-client support remains a
 [separate required gate](public-network-plan.md#windows-public-client-gate).
 
