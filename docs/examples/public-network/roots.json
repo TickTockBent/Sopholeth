@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "network": "sopholeth",
+  "enclave": "default",
+  "roots": [
+    {"id": "kraid", "origin": "https://kraid.sopholeth.io"},
+    {"id": "ridley", "origin": "https://ridley.sopholeth.io"},
+    {"id": "motherbrain", "origin": "https://motherbrain.sopholeth.io"}
+  ]
+}

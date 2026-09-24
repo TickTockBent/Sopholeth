@@ -11,6 +11,10 @@
 
 ### Public discovery
 
+- Prepare the three-root bring-up runbook and unprivileged container/ingress
+  configuration for Kraid, Ridley, and Motherbrain. Record the approved public
+  origins and Cloudflare Tunnel setup; intended authority activation remains
+  an operator step.
 - Connect nodes and `soph join` to omega HTTPS/TUF discovery, durable rollback
   state, and an embedded public bundle checked by the release fingerprint gate.
   Preserve HTTPS origins through bootstrap/gossip and refuse redirects. Expire

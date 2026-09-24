@@ -1,0 +1,74 @@
+# Run from an operator-owned directory containing .env, nginx.conf, and state/.
+# Images are built/pinned in the runbook; this never pulls a floating node build.
+services:
+  node:
+    image: ${SOPH_NODE_IMAGE:?Set the reviewed local node image ID}
+    pull_policy: never
+    user: "${SOPH_UID:?Set the state directory owner}:${SOPH_GID:?Set the state directory group}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    stop_grace_period: 20s
+    environment:
+      NODE_ID: ${SOPH_ROOT_ID:?Set kraid, ridley, or motherbrain}
+      NODE_HTTP_ORIGIN: https://${SOPH_ROOT_ID}.sopholeth.io
+      NODE_HTTP_PORT: 8080
+      NODE_ADDRESS: ${SOPH_ROOT_ID}.sopholeth.io
+      NODE_NETWORK: public
+      NODE_PEERS: ""
+      NODE_ENCLAVE: default
+      NODE_REPLICATION: 3
+      NODE_WRITE_TIMEOUT: 5
+      NODE_MAX_STORAGE_MB: 64
+      NODE_MIN_TTL: 300
+      NODE_MAX_TTL: 86400
+      NODE_STATE_DIR: /var/lib/soph
+      NODE_CLUSTER_SECRET: ""
+      NODE_TRUST_PROXY: "true"
+      NODE_LOG_LEVEL: info
+      NODE_INBOUND: "false"
+      NODE_MAX_CHILDREN: 0
+      NODE_STREAM: "off"
+      NODE_PPROF_ENABLED: "false"
+      GOMEMLIMIT: 384MiB
+    volumes:
+      - ./state:/var/lib/soph
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    # No host port: every incoming request must pass through ingress.
+    healthcheck:
+      test: [CMD, wget, -q, -T, "3", -O, /dev/null, http://127.0.0.1:8080/v1/health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  ingress:
+    image: ${SOPH_INGRESS_IMAGE:?Set the verified nginx image digest}
+    pull_policy: never
+    user: "${SOPH_UID}:${SOPH_GID}"
+    entrypoint: [nginx, -g, "daemon off;"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 96m
+    cpus: 0.5
+    pids_limit: 32
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    tmpfs:
+      - /tmp:size=48m,mode=1777
+    depends_on: [node]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}

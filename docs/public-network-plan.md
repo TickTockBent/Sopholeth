@@ -125,11 +125,13 @@ an acceptable reset procedure. Never silently replace a saved network's trust.
 
 ### 3. Put the three roots on the available hosts
 
-Write one copyable runbook for the actual setup, using normal login users and
-explicit `sudo` for host administration. Inventory the two offered hosts and
-choose the third root's placement. Three distinct reachable root endpoints are
-required; a third provider or three separate machines are not prerequisites.
-Record shared hosts/failure domains so results do not imply independence.
+The [bring-up runbook](public-network-bringup.md) uses Kraid (DigitalOcean),
+Ridley (Hetzner), and Motherbrain (the operator workstation), with the approved
+`kraid.sopholeth.io`, `ridley.sopholeth.io`, and `motherbrain.sopholeth.io`
+origins. Each host has its own public tunnel and root. Cloudflare is a shared
+ingress dependency; Motherbrain also depends on workstation uptime. Normal
+login users run the commands, with explicit `sudo` for host administration.
+The runbook/configuration do not activate the intended authority or roots.
 
 The runbook must contain:
 
