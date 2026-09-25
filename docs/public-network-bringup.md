@@ -277,5 +277,14 @@ listing, `no-store`, excluded-route 404s, and known-length/chunked 413s passed.
 An unlisted fourth node joined and replicated both ways, while its bootstrap
 endpoint correctly returned 403. Test containers were removed afterward.
 
+On 2026-09-25, source `9d38944` repeated that fixture with #245's node and
+ingress limits. A 102400-byte value with a 1024-byte key, written through each
+root with both known-length and chunked uploads, replicated to both others.
+Client and peer writes with 102401-byte values or 1025-byte keys returned 413
+and remained absent. The 128/192 KiB ingress boundaries were checked separately
+from node rejection, including chunked bodies. Ten-year peer TTLs stored as
+86400 seconds, and negative peer TTLs as 300 seconds, on all three roots.
+The fourth-node join/replication check also passed; test containers were removed.
+
 This does not validate Cloudflare routing, host firewalls, live TLS, TTL expiry,
 or the daily renewal timer on these hosts. Those checks remain part of activation.

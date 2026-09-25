@@ -49,6 +49,8 @@ These size caps are node settings, not protocol constants. Keep a network's
 limits aligned so peers can accept each other's writes. When raising them,
 also raise the ingress body limits: gossip carries base64 values and needs
 about 1.4 times the value limit plus room for keys and JSON metadata.
+The node also retains a 10 MiB HTTP envelope ceiling; raising value caps into
+that range needs additional transport work (#214).
 
 Capacity counts payload bytes, not total process memory. Keys, entry metadata,
 connections, and runtime overhead require additional memory. Plan capacity
