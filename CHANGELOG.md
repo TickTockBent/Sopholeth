@@ -4,6 +4,11 @@
 
 ### Replication
 
+- Apply shared, configurable key/value limits to client and peer writes
+  (defaults: 1 KiB keys, 100 KiB values), rejecting oversized writes before
+  storage, ACKs, or forwarding. Clamp peer TTLs to the node's configured bounds
+  and forward the accepted TTL. Give the testnet separate 128 KiB client and
+  192 KiB gossip ingress limits so full-size values can replicate (#245).
 - Stop under-peered nodes from exchanging peer lists indefinitely (#150).
   `SYNC_REQUEST` explicitly requests topology; `SYNC` remains a one-way peer
   announcement. HTTP and WebSocket paths carry the request type. Upgrade nodes

@@ -35,7 +35,7 @@ func newTestServer(t *testing.T) (*cluster.ClusterNode, *Server, *io.PipeReader,
 
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
-	srv := NewServer(cn, inR, outW, 60, 86400)
+	srv := NewServer(cn, inR, outW, 300, 86400)
 	return cn, srv, inR, inW, outR, outW
 }
 
@@ -324,11 +324,15 @@ func TestStoreClampsTTL(t *testing.T) {
 	s := openStream(t)
 	defer s.close()
 
-	// minTTL=60 in newTestServer; below-floor request should be clamped up.
+	// The MCP and cluster policies match the node's five-minute floor.
 	resp := s.call("tools/call", `{"name":"store","arguments":{"data":"x","ttl_seconds":1,"key":"clamped"}}`)
 	got := toolContent(t, resp)
-	if got["ttl_seconds"].(float64) != 60 {
-		t.Errorf("ttl_seconds = %v, want 60 (clamped)", got["ttl_seconds"])
+	if got["ttl_seconds"].(float64) != 300 {
+		t.Errorf("ttl_seconds = %v, want 300 (clamped)", got["ttl_seconds"])
+	}
+	_, _, ttl, _ := s.cn.GetWithMetadata("clamped")
+	if ttl != 300*time.Second {
+		t.Fatalf("stored TTL = %s, want 5m", ttl)
 	}
 }
 

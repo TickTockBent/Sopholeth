@@ -23,6 +23,11 @@ func newTestServer(t *testing.T) (*HTTPServer, func()) {
 
 func newTestServerWithSecret(t *testing.T, secret string) (*HTTPServer, func()) {
 	t.Helper()
+	return newTestServerWithLimits(t, secret, cluster.DefaultWriteLimits())
+}
+
+func newTestServerWithLimits(t *testing.T, secret string, limits cluster.WriteLimits) (*HTTPServer, func()) {
+	t.Helper()
 
 	cn := cluster.NewClusterNode(
 		"test-node", "localhost", 0, 8080, // Valid advertised route; HTTPTransport does not bind it.
@@ -32,6 +37,9 @@ func newTestServerWithSecret(t *testing.T, secret string) (*HTTPServer, func()) 
 		secret,
 		"default",
 	)
+	if err := cn.SetWriteLimits(limits); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := cn.Start(ctx, nil); err != nil {
@@ -44,8 +52,8 @@ func newTestServerWithSecret(t *testing.T, secret string) (*HTTPServer, func()) 
 		clusterNode: cn,
 		nodeID:      "test-node",
 		network:     "private",
-		minTTL:      300,
-		maxTTL:      86400,
+		minTTL:      cn.WriteLimits().MinTTLSeconds,
+		maxTTL:      cn.WriteLimits().MaxTTLSeconds,
 		startTime:   time.Now(),
 		securityMW:  securityMW,
 	}

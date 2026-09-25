@@ -43,7 +43,7 @@ import (
 
 const (
 	defaultTTLSeconds = 30 * 60
-	minimumTTLSeconds = 5 * 60
+	minimumTTLSeconds = cluster.MinTTLSeconds
 )
 
 // omegaLastRefreshGauge records the unix timestamp of the most recent
@@ -114,7 +114,7 @@ func main() {
 	gossipPort := envInt("NODE_GOSSIP_PORT", defaultGossipPort)
 	replicationFactor := envInt("NODE_REPLICATION", 3)
 	minTTL := envInt("NODE_MIN_TTL", 300)
-	maxTTL := envInt("NODE_MAX_TTL", 86400)
+	maxTTL := envInt("NODE_MAX_TTL", cluster.DefaultMaxTTLSeconds)
 	// Five minutes is the protocol floor: callers may request less, but the
 	// accepted value is normalized upward so it has time to propagate. An
 	// operator may configure a stricter floor, never a looser one.
@@ -170,6 +170,13 @@ func main() {
 		logging.Warn("NODE_PEERS supplies unverified bootstrap seeds; this node cannot claim an official root role")
 	}
 	clusterNode := cluster.NewClusterNode(nodeID, address, gossipPort, httpPort, replicationFactor, int64(maxStorageMB)*1024*1024, time.Duration(writeTimeout)*time.Second, clusterSecret, enclave)
+	limits := cluster.DefaultWriteLimits()
+	limits.MaxValueBytes = envInt("NODE_MAX_VALUE_BYTES", limits.MaxValueBytes)
+	limits.MaxKeyBytes = envInt("NODE_MAX_KEY_BYTES", limits.MaxKeyBytes)
+	limits.MinTTLSeconds, limits.MaxTTLSeconds = minTTL, maxTTL
+	if err := clusterNode.SetWriteLimits(limits); err != nil {
+		log.Fatalf("Invalid write limits: %v", err)
+	}
 	clusterNode.SetHTTPOrigin(httpOrigin)
 	if enclave == "" {
 		enclave = "default"
@@ -621,9 +628,20 @@ func (s *HTTPServer) topologyHandler(w http.ResponseWriter, r *http.Request) {
 func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	key := vars["key"]
+	if err := s.clusterNode.ValidateKey(key); err != nil {
+		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+		return
+	}
 
-	body, err := io.ReadAll(r.Body)
+	// Bound reads as well as storage, including uploads without Content-Length.
+	maxValueBytes := s.clusterNode.WriteLimits().MaxValueBytes
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(maxValueBytes)))
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, fmt.Sprintf("%s: limit is %d bytes", cluster.ErrValueTooLarge, maxValueBytes), http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
@@ -652,6 +670,10 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := s.clusterNode.Put(ctx, key, body, time.Duration(ttl)*time.Second); err != nil {
+		if errors.Is(err, cluster.ErrValueTooLarge) || errors.Is(err, cluster.ErrKeyTooLong) {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
 		if errors.Is(err, storage.ErrStoreFull) {
 			http.Error(w, "Node storage capacity exceeded", http.StatusInsufficientStorage)
 			return
@@ -809,6 +831,10 @@ func (s *HTTPServer) gossipHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.clusterNode.HandleGossipMessage(gossipMsg); err != nil {
+		if errors.Is(err, cluster.ErrValueTooLarge) || errors.Is(err, cluster.ErrKeyTooLong) {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, fmt.Sprintf("Gossip error: %v", err), http.StatusInternalServerError)
 		return
 	}

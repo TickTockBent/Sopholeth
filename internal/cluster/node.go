@@ -26,6 +26,7 @@ type ClusterNode struct {
 	writeTimeout      time.Duration
 	clusterSecret     string
 	httpClient        *http.Client
+	writeLimits       WriteLimits // Configured before Start; applies to all stored writes.
 
 	pendingWrites map[string]*WriteOperation
 	writesMutex   sync.RWMutex
@@ -124,6 +125,7 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 		replicationFactor: replicationFactor,
 		writeTimeout:      writeTimeout,
 		clusterSecret:     clusterSecret,
+		writeLimits:       DefaultWriteLimits(),
 		pendingWrites:     make(map[string]*WriteOperation),
 	}
 }
@@ -275,6 +277,10 @@ func (cn *ClusterNode) SetRoot(v bool) {
 }
 
 func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl time.Duration) error {
+	if err := cn.validateWrite(key, data); err != nil {
+		return err
+	}
+	ttl = cn.clampTTL(int64(ttl / time.Second))
 	quorum := cn.quorumSize()
 
 	msg := &gossip.Message{
@@ -378,6 +384,16 @@ func (cn *ClusterNode) handleGossipMessage(msg *gossip.Message) error {
 }
 
 func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
+	if err := cn.validateWrite(msg.Key, msg.Data); err != nil {
+		return err
+	}
+	ttl := cn.clampTTL(int64(msg.TTL))
+	// Forward the accepted TTL to gossip peers and attached children. Do not
+	// mutate the caller's message, which may also be used by another consumer.
+	accepted := *msg
+	accepted.TTL = int(ttl / time.Second)
+	msg = &accepted
+
 	// Dedup: if we've already processed this message, skip it.
 	// MarkSeen returns true if it was already seen.
 	if cn.protocol.MarkSeen(msg.MessageID) {
@@ -386,7 +402,6 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 	}
 
 	logging.Debug("[%s] Received PUT message for key %s from %s", cn.localNode.ID, msg.Key, msg.From)
-	ttl := time.Duration(msg.TTL) * time.Second
 	if err := cn.store.Put(msg.Key, msg.Data, ttl); err != nil {
 		return fmt.Errorf("failed to store replicated data: %w", err)
 	}

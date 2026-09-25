@@ -18,10 +18,17 @@ Keys occupy one URL path segment. Use `:` or `-` for namespaces, avoid
 `/`, and URL-encode keys in clients. Any writer can silently replace an
 existing value.
 
+The default node policy allows values up to **100 KiB (102400 bytes)** and
+decoded keys up to **1 KiB (1024 bytes)**, measured in bytes rather than
+characters. Empty values remain valid. Operators can change these limits with
+`NODE_MAX_VALUE_BYTES` and `NODE_MAX_KEY_BYTES`; they apply to both client and
+peer writes. Oversized writes are rejected before storage or replication.
+
 | Response | Meaning |
 | --- | --- |
 | `201 Created` | Stored locally; the node observed its dynamic quorum. |
 | `202 Accepted` | Stored locally; quorum was not confirmed within the write timeout. |
+| `413 Request Entity Too Large` | The value, key, or ingress request body exceeds its configured limit. |
 | `507 Insufficient Storage` | The local payload capacity limit prevented the write. |
 
 Quorum is an acknowledgement threshold, not proof of global agreement.
@@ -42,6 +49,9 @@ precedence over the `X-TTL` header.
 - In the current HTTP handler, malformed, zero, or negative input falls back
   to the default before clamping. An invalid nonempty query value does not
   fall through to the header.
+
+Peer PUTs are also clamped to the receiving node's minimum and maximum,
+including zero and negative TTLs. Gossip forwarding carries the clamped TTL.
 
 Each replica starts its own TTL when storing the value. Overwrites reset it.
 Expired values are excluded on access; a background sweep every 30 seconds

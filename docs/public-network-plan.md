@@ -144,6 +144,11 @@ The runbook must contain:
    test payloads and a bounded driver workload. A process memory limit contains
    resource consumption; it does not repair storage accounting or prevent an
    attacker from interrupting this experimental service.
+   #245 aligns client/peer admission: configurable 100 KiB values, 1 KiB keys,
+   and TTL clamping to five minutes–24 hours for these roots. Use 128 KiB client
+   and 192 KiB gossip ingress body limits, and verify full-size replication
+   before activation. Filling the payload capacity remains an accepted testnet
+   limit; entry expiry is local, and subsequent writes can keep filling it.
 3. The exposed HTTP paths and proxy/firewall rules. Bootstrap and supported
    gossip remain open to joining nodes; no peer allowlist or shared cluster
    secret is required. Keep backend listeners behind the configured ingress so

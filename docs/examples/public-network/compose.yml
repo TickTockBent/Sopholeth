@@ -26,6 +26,8 @@ services:
       NODE_MAX_STORAGE_MB: 64
       NODE_MIN_TTL: 300
       NODE_MAX_TTL: 86400
+      NODE_MAX_VALUE_BYTES: 102400
+      NODE_MAX_KEY_BYTES: 1024
       NODE_STATE_DIR: /var/lib/soph
       NODE_CLUSTER_SECRET: ""
       NODE_TRUST_PROXY: "true"

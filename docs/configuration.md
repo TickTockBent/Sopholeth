@@ -33,19 +33,28 @@ peer override.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `NODE_REPLICATION` | `3` | Factor used to calculate the dynamic quorum threshold. |
-| `NODE_MIN_TTL` | `300` | Local client-write TTL floor in seconds, normalized to at least 300. |
-| `NODE_MAX_TTL` | `86400` | Local client-write TTL ceiling in seconds. |
+| `NODE_MIN_TTL` | `300` | Local TTL floor for client and peer writes, in seconds; normalized to at least 300. |
+| `NODE_MAX_TTL` | `86400` | Local TTL ceiling for client and peer writes, in seconds. |
+| `NODE_MAX_VALUE_BYTES` | `102400` | Maximum decoded value size (100 KiB); larger writes return `413`. |
+| `NODE_MAX_KEY_BYTES` | `1024` | Maximum decoded key size in bytes (1 KiB); longer write keys return `413`. |
 | `NODE_WRITE_TIMEOUT` | `5` | Quorum wait in seconds; expiration normally produces `202`. |
 | `NODE_MAX_STORAGE_MB` | `0` | Payload capacity in MiB; `0` is unlimited. Full stores reject writes with `507`. |
 
-Keep maximum TTL at least as large as the effective minimum. The handlers
-also have a 10-second write context, so increasing the quorum timeout alone
-does not extend that ceiling.
+Size limits must be positive. Maximum TTL must be at least the effective
+minimum and at most 2147483647 seconds (the gossip wire format's ceiling);
+invalid bounds fail startup. The handlers also have a 10-second write context,
+so increasing the quorum timeout alone does not extend that ceiling.
+
+These size caps are node settings, not protocol constants. Keep a network's
+limits aligned so peers can accept each other's writes. When raising them,
+also raise the ingress body limits: gossip carries base64 values and needs
+about 1.4 times the value limit plus room for keys and JSON metadata.
 
 Capacity counts payload bytes, not total process memory. Keys, entry metadata,
 connections, and runtime overhead require additional memory. Plan capacity
-from measured workloads. Replicated writes need a separate validation audit
-before public launch; client-side clamping is not a complete wire policy.
+from measured workloads. All stored writes share key/value caps and TTL
+clamping, including HTTP and WebSocket gossip. Broader peer-message validation
+and resource accounting remain tracked in #177/#178 and #217.
 
 ## Operations
 

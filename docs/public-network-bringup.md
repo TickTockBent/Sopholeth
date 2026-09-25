@@ -166,10 +166,20 @@ verified discovery. Check DNS, tunnel routing, hostname/ID, and logs instead.
 
 Each root uses enclave `default`, replication factor 3, a five-second write
 wait, 64 MiB payload capacity, a 512 MiB container memory limit, and one CPU.
-The ingress accepts at most 1 MiB per request (including gossip's JSON/base64),
-bounds header/body idle times, and limits active requests and worker connections.
-Start with payloads of at most 32 KiB. These deployment bounds do not repair
-the deferred resource/slow-peer audits. NGINX's
+The node admits at most **100 KiB (102400 bytes) per value** and **1 KiB per
+decoded key** on client and peer writes, and clamps all stored TTLs to five
+minutes–24 hours. Oversized writes return 413 without being stored, ACKed, or
+forwarded. These are node settings, not permanent protocol size limits.
+NGINX allows 128 KiB bodies on `/v1/data/` and 192 KiB on `/v1/gossip/message`,
+leaving room for base64 and JSON around a full-size value. Raising the node's
+cap also requires raising both ingress limits; budget about 1.4 times the
+value cap plus key/metadata overhead on the peer route.
+
+The ingress also bounds header/body idle times, active requests, and worker
+connections. Start ordinary probes at 32 KiB or less. These bounds do not
+repair the deferred resource/slow-peer audits or prevent storage saturation.
+About 655 full-size values still fill a root; they expire according to local
+TTL, and overwrites restart that clock. NGINX's
 [connection limits](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html)
 count requests after complete headers; the worker and header-timeout limits
 also matter. [Proxy retries](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_next_upstream)
@@ -204,8 +214,20 @@ HTTPS without `-k` or redirect following. Confirm its exact node ID, public
 network/default enclave, and both other roots at their signed origins. Verify
 `Cache-Control: no-store`, no cached data responses, and anonymous access.
 `/v1/ws`, `/v1/stream`, `/v1/metrics`, and unknown paths must return 404. Port 18080
-must be unreachable through the public and Tailscale addresses. Exercise a
-body larger than 1 MiB and a chunked equivalent: both must receive 413.
+must be unreachable through the public and Tailscale addresses. Check each
+root's write limits with both known-length and chunked requests:
+
+- A 102400-byte client value must be accepted and readable through both other
+  roots. Its base64 peer envelope is about 137 KB, below the 192 KiB backstop.
+- A 102401-byte value must return 413 on both client and peer PUTs and remain
+  absent. For a peer PUT, encode the value as JSON/base64.
+- A 1025-byte decoded key, even with an empty value, must return 413 on either
+  write path. A 1024-byte key is valid; URL-encode client keys.
+- Bodies above 128 KiB on `/v1/data/` and 192 KiB on `/v1/gossip/message` must
+  return 413 at ingress. Do not set a uniform 100 KiB body limit: it would
+  reject otherwise valid gossip envelopes.
+- A peer PUT with a ten-year TTL must store with `X-Original-TTL: 86400`;
+  a below-minimum peer TTL must store with `X-Original-TTL: 300`.
 
 Use a fresh profile with the adopted CLI, then explicitly select each root for
 cross-node checks. Explicit profiles are routing choices; `soph join` without
