@@ -102,6 +102,10 @@ type Store interface {
 	Get(key string) ([]byte, bool)
 	GetWithMetadata(key string) ([]byte, time.Time, time.Duration, bool) // data, createdAt, originalTTL, exists
 	Scan() []string
+	// ScanPage returns at most limit live keys in lexicographic order that
+	// share prefix and sort strictly after cursor. It lets callers page
+	// through the keyspace at page-sized cost instead of full scans (#220).
+	ScanPage(prefix, cursor string, limit int) []string
 }
 
 func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int, replicationFactor int, maxStorageBytes int64, writeTimeout time.Duration, clusterSecret string, enclave string) *ClusterNode {
@@ -481,6 +485,13 @@ func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 
 func (cn *ClusterNode) Scan() []string {
 	return cn.store.Scan()
+}
+
+// ScanPage pages through live keys in lexicographic order: at most limit
+// keys that share prefix and sort strictly after cursor. Delegates to the
+// store's ordered index so request cost tracks the page size (#220).
+func (cn *ClusterNode) ScanPage(prefix, cursor string, limit int) []string {
+	return cn.store.ScanPage(prefix, cursor, limit)
 }
 
 func (cn *ClusterNode) HandleBootstrap(req *gossip.BootstrapRequest) *gossip.BootstrapResponse {
