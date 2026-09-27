@@ -193,8 +193,9 @@ Keep passphrase recovery information separately, recoverable without the origina
 workstation. Update the backup after rotations and retain current publication
 history; old keys alone cannot safely resume allocated versions.
 
-Before activation, restore with the working copies unavailable. Initial,
-unprovisioned custody can be checked at a temporary private path. After
+Before activation, verify that the restored copy works independently of the
+working homes. Initial, unprovisioned custody can be checked at a temporary
+private path; `--check-keys` reads the keys from that restored home. After
 provisioning, restore the operational home and public repository at their
 **original bound absolute paths**, on an isolated replacement or with the originals
 safely moved aside and the old publisher disabled. Restore the operator home too.
