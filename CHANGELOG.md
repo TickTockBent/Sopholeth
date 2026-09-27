@@ -18,8 +18,8 @@
 
 - Embed the intended `sopholeth` authority's public TUF bundle for node and CLI
   discovery at `https://sopholeth.io/omega`. Record the initial fingerprint and
-  remaining activation steps; backup restoration, publication, and live root
-  deployment remain pending.
+  remaining activation steps. Restored keys and first HTTPS publication are
+  verified; production scheduling and live root deployment remain pending.
 - Prepare the three-root bring-up runbook and unprivileged container/ingress
   configuration for Kraid, Ridley, and Motherbrain. Record the approved public
   origins and Cloudflare Tunnel setup; intended authority activation remains

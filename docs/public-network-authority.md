@@ -24,43 +24,68 @@ Activation status:
 
 - Authority initialization: complete; all six encrypted key files are present.
 - Public bundle: signature/fingerprint validation passed against the operator report.
-- Backup restoration and passphrase recovery: awaiting operator verification.
-- Renewal provisioning and first publication: pending.
+- Backup restoration: all six active keys verified from a separate restored
+  home, with the same fingerprint. The encrypted operator archive is retained
+  off Kraid with private permissions.
+- Renewal provisioning: complete at `/srv/omega-online`, owned by `soph-omega`.
+- First publication: release 1 verified over HTTPS by the publisher and again
+  as `soph-omega`. A fresh trust client on Motherbrain independently verified
+  the signed metadata and approved three-root manifest.
+- Post-publication backup and production renewal timer: pending.
 - Three-root deployment and real-network checks: pending.
+
+## First publication
+
+All four metadata roles are at version 1. The approved manifest lists Kraid,
+Ridley, and Motherbrain at their `https://<node-id>.sopholeth.io` origins in
+the `default` enclave.
+
+| Checkpoint | UTC |
+| --- | --- |
+| Publication verified by publisher | `2026-09-27T00:28:14Z` |
+| Next renewal due | `2026-09-28T00:26:46Z` |
+| Initial timestamp/snapshot expiry | `2026-10-04T00:26:46Z` |
+| Initial targets approval expiry | `2026-12-26T00:26:46Z` |
+
+These are the first release's deadlines; use `soph omega status --verify` for
+current versions and expiration dates. Public fetches returned direct HTTPS
+200 responses. `timestamp.json` has `Cache-Control: no-store`; `1.root.json`
+has `public, max-age=31536000, immutable`. The fresh trust client verified
+root, targets, snapshot, timestamp, and the hashed `bootstrap.json` target
+using the adopted bundle, without a preexisting cache or TLS bypass.
 
 ## Next operator step
 
-Before provisioning, create a private archive on Kraid and verify a restored
-copy at a separate path. These commands run as the normal login user; `sudo`
-reads the protected home and restores its ownership and permissions. The
-archive includes the whole operator home, including the earlier rehearsal.
-Keep the rehearsal timer disabled and run no other omega operations during
-the copy. At this stage no operational binding has been created for `sopholeth`,
-so its restored home can be checked at a temporary path.
+Take a new backup of all three homes on Kraid, with the renewal timer still
+disabled and no other omega commands running. The new operational home contains
+unencrypted renewal keys as well as the current publication journal, so encrypt
+the complete archive. GnuPG is already installed on Kraid. The following Bash
+commands stream directly into an encrypted file, then check that the archive
+decrypts using a freshly entered passphrase. No plaintext archive is written.
 
 ```bash
 (
-  set -e
+  set -euo pipefail
   umask 077
   backup_dir=$(mktemp -d "$HOME/sopholeth-omega-backup.XXXXXX")
-  sudo tar -C /srv -cpf - omega-offline > "$backup_dir/omega-offline.tar"
-
-  restore_dir=$(sudo mktemp -d /srv/omega-restore.XXXXXX)
-  sudo tar -C "$restore_dir" -xpf "$backup_dir/omega-offline.tar"
-  printf 'Backup archive: %s\nRestore directory: %s\n' \
-    "$backup_dir/omega-offline.tar" "$restore_dir"
-
-  sudo soph --json --timeout 5m omega status \
-    --home "$restore_dir/omega-offline" --network sopholeth --check-keys
+  sudo tar -C /srv -cpf - omega-offline omega-online omega-public |
+    gpg --pinentry-mode loopback --symmetric --cipher-algo AES256 \
+      --output "$backup_dir/omega-full.tar.gpg"
+  gpg --no-symkey-cache --pinentry-mode loopback \
+    --decrypt "$backup_dir/omega-full.tar.gpg" | tar -tf - >/dev/null
+  printf 'Verified encrypted backup: %s\n' "$backup_dir/omega-full.tar.gpg"
 )
 ```
 
-Expect successful key checks and the exact fingerprint above. Save the archive
-to private backup storage off Kraid, with passphrase recovery kept separately.
-The copy on Kraid alone is a restore check, not protection against losing Kraid.
-Share only the status report when recording the result.
+Save the printed `.gpg` file off Kraid, keeping its passphrase recoverable
+separately, then [enable the production renewal timer](public-network-bringup.md#enable-intended-network-renewal-on-kraid).
+The archive includes the earlier rehearsal's files too; its timer stays disabled.
+Preserve ownership and the original `/srv/omega-offline`, `/srv/omega-online`,
+and `/srv/omega-public` paths on later restoration, following
+[omega operations](omega-operations.md#verify-a-restored-copy). The archive check
+above verifies decryption and readability; it is not a second full service-restore
+rehearsal. Keep this backup current after renewals and rotations.
 
-Then continue with [renewal provisioning and first publication](public-network-bringup.md#create-and-back-up-the-intended-authority-on-kraid).
-After that handoff, take a fresh backup including the operational home and
-public spool. Later restoration must preserve their original bound paths, as
-described in [omega operations](omega-operations.md#verify-a-restored-copy).
+The encryption/decryption command was exercised with disposable data and a
+temporary GnuPG home. See GnuPG's [symmetric encryption command](https://www.gnupg.org/documentation/manuals/gnupg/Operational-GPG-Commands.html)
+and [terminal passphrase options](https://www.gnupg.org/documentation/manuals/gnupg/GPG-Esoteric-Options.html).

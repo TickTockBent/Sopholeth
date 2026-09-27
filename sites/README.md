@@ -68,12 +68,13 @@ on changes outside its folder to trigger a deployment.
 
 ## Omega metadata hosting
 
-`sopholeth.io` reserves `/omega/` for the public metadata repository. The config
-is committed in `sites/sopholeth.io/vercel.json`; this slice needs no new Vercel
-project, environment variables, or cron job. The existing project keeps Root
-Directory `sites/sopholeth.io` and deploys the configuration through its normal Git
-integration. There are no authority keys or signed metadata in this checkout;
-the site routes return a real 404 until the publisher is integrated.
+`sopholeth.io/omega/` serves the public metadata repository through a project-level
+rewrite to the separate `sopholeth-omega` Vercel project. The docs project keeps
+Root Directory `sites/sopholeth.io` and its normal Git integration. The omega
+publisher deploys public metadata separately; docs deploys cannot replace its
+history. Release 1 of the intended authority is published and verified; see the
+[authority record](../docs/public-network-authority.md). Site folders contain no
+custody files. The public bootstrap bundle is versioned with the node and CLI.
 
 **Before public authority initialization, settle the production domain.** On
 2026-09-23, the apex returned a 308 redirect to `www.sopholeth.io`, including for

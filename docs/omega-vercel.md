@@ -19,9 +19,11 @@ Other framework preset, has no install/build commands, and serves output `.`
 from the project root. Login protection is disabled for this public-data project.
 The publisher does not upload custody files or credentials.
 
-Disposable signed metadata is hosted under a unique rehearsal subpath. The final
-`/omega/` timestamp and root locations remain empty and return anonymous JSON 404s
-with `Cache-Control: no-store`. No production authority has been created.
+The intended production authority now serves release 1 at `/omega/`, verified
+through the publisher, service account, and a fresh independent trust client.
+See the [authority record](public-network-authority.md) for its fingerprint and
+activation status. The earlier disposable rehearsal used its own subpath; its
+timer remains disabled.
 
 The apex domain now serves the docs directly, with www redirecting to it.
 The metadata rewrite is installed as a project-level rule, separate from docs
@@ -48,7 +50,11 @@ for objects present at the origin. The regex rule forwarded their full paths.
 An empty-repository 404 alone cannot prove that forwarding works; verify actual
 signed objects before activation.
 
-To stage the empty scaffold from this checkout using the authenticated Vercel CLI:
+The following empty-scaffold procedure is retained for a new metadata project.
+The current project already serves signed metadata; subsequent changes use the
+omega publisher and its retained history.
+
+To stage an empty scaffold using the authenticated Vercel CLI:
 
 ```bash
 omega_scaffold=$(mktemp -d)

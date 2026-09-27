@@ -64,7 +64,8 @@ Nodes and `soph join` now use the HTTPS trust client, embedded public bundle,
 and initial TUF-root fingerprint gate. Local fixtures exercise saved-profile
 renewal, HTTPS bootstrap/gossip, and runtime expiry. The intended authority has
 been initialized on Kraid, and its [public bundle and fingerprint](public-network-authority.md)
-are recorded for adoption. Backup restoration, first publication, and root
+are recorded for adoption. Restored keys and first HTTPS publication are
+verified. The post-publication backup, production renewal timer, and root
 deployment remain pending. Real-network validation belongs to bring-up.
 
 ## Delivery order

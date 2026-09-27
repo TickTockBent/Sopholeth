@@ -1,8 +1,9 @@
 # Three-root public test-network bring-up
 
 Prepared for Kraid, Ridley, and Motherbrain. This is the operator procedure.
-The intended authority is initialized on Kraid; backup restoration, publication,
-and root deployment remain pending in the [authority record](public-network-authority.md).
+The intended authority is initialized on Kraid, its restored keys are verified,
+and release 1 is published. The post-publication backup, production timer, and
+root deployment remain pending in the [authority record](public-network-authority.md).
 Run commands as the normal login user. Only host administration and omega
 custody use `sudo`.
 
@@ -64,9 +65,10 @@ enforces the launch limits and excludes unsupported paths.
 
 ## Create and back up the intended authority on Kraid
 
-Initialization below is complete for the recorded authority. The next operator
-step is the [restored-backup check](public-network-authority.md#next-operator-step).
-Retain the existing authority and fingerprint when continuing this procedure.
+Initialization, the restored-backup check, and first publication below are
+complete for the recorded authority. Continue with the
+[post-publication backup](public-network-authority.md#next-operator-step) and
+renewal timer. Retain the existing authority and fingerprint.
 
 Use the installed `soph` and custody/service-account layout from the successful
 [Kraid rehearsal](omega-kraid-rehearsal.md#install-and-prepare). Update the binary
