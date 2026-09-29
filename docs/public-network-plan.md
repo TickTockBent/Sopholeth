@@ -7,6 +7,8 @@ fourth node. The scope reset with the project owner on 2026-09-24 replaced the
 earlier requirement to finish the entire public-alpha audit queue before starting
 the network. [Issue #80](https://github.com/TickTockBent/Sopholeth/issues/80)
 tracks this milestone; individual audit issues retain their findings.
+The [2026-09-29 issue inventory](issue-inventory-2026-09-29.md) records completed
+findings and the remaining scope of every issue open at activation.
 
 The first deployment is for testing and validation. Once the network works,
 use the findings to simplify setup into a few scripts with interactive passphrase
@@ -236,7 +238,7 @@ The first repair queue after bring-up is:
 
 | Observed problem | Scope of the fix |
 | --- | --- |
-| Peer corruption/ghosts/races: #211, #213, #169 | Check message consistency and response correlation; validate referrals before changing existing records; remove stale duplicate paths. Record residual spoofing risk. No admission authority or trusted identity class is required. |
+| Peer referrals and ghost records: #211, #213 | Signed-root/established-route protection and the PONG mutation race (#169) are fixed in #243. Bound referral work, correlate liveness responses, and remove stale duplicate paths. No admission authority or trusted identity class is required. |
 | ACK accounting/write outcomes: #164, #166, #170 | Unique write IDs, one response per peer per pending write, the recorded replication context/enclave, a defined threshold, and honest local-acceptance reporting. This does not prove independent or honest replicas. |
 | Slow-peer delivery/forwarding: #212, #167 | Let healthy sends progress with bounded concurrency and lifetimes. Never retry the client PUT implicitly. |
 | Service shutdown: #151 | Complete orderly stop/restart; verify subsequent writes after rejoining. |
@@ -266,14 +268,14 @@ update individual tickets as fixes or tested deployment mitigations land.
 | Mixed audit roll-ups #177/#178 | Take only findings needed by an exercised path into a current slice; do not make every residual a precondition for starting tests. |
 | WebSocket participation: #140, #142, #144, #154, #173, #175, #147 | Keep the endpoint excluded for the initial HTTP/standalone-node path. Complete relevant safeguards and lifecycle tests before enabling it. |
 | Release pipeline and distribution: #223/#224 | Test with recorded builds from the reviewed commit. Finish automated publication gates and artifact verification before distributing a general release. |
-| Omega #195–#199 and CLI #198 | Linux consumers and the remote renewal service are deployed and verified. Observe the first timer-driven due renewal; track remaining platform and issue-specific work without rebuilding completed custody workflows. |
+| Omega report/custody polish #234–#236 and Windows CLI #198 | The original omega lifecycle findings are complete. Keep these distinct residuals; observe the first timer-driven due renewal under #180. |
 | Explicit reset bundles #231 | Follow up after the compiled-bundle path works; reset can initially require an explicitly adopted new build. |
 | MCP, dashboard, viewer polish, attachment optimization, payload backfill | Remain outside the three-root milestone. |
 
 ### Windows public-client gate
 
 Native Windows `soph join`, saved-profile renewal, and `soph serve` remain a
-planned deliverable under #198/#195. The Linux test network may start first;
+planned deliverable under #198. The Linux test network may start first;
 document Windows public discovery as unsupported until its backend is ready.
 Do not introduce unlocked or memory-only trust as a shortcut.
 
