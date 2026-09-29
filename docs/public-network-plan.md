@@ -6,6 +6,12 @@ This replaces the earlier requirement to finish the entire public-alpha audit
 queue before starting the network. [Issue #80](https://github.com/TickTockBent/Sopholeth/issues/80)
 tracks this milestone; individual audit issues retain their findings.
 
+The first deployment is for testing and validation. Once the network works,
+use the findings to simplify setup into a few scripts with interactive passphrase
+prompts, verification, and saved backups/hashes. Then tear down and rebuild to
+exercise the improved process. This operator simplification follows live testing;
+it is not another prerequisite for the initial three-root bring-up.
+
 ## Contract and scope
 
 The [core principles](core-principles.md) constrain every implementation choice:

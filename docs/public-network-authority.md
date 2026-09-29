@@ -37,9 +37,11 @@ Activation status:
 - First production freshness renewal: release 2 verified by the service on
   2026-09-29. The production Vercel drop-in is installed and the hourly timer is
   enabled and active. The disposable rehearsal timer remains disabled.
-- Public ingress: all three approved hostnames return HTTPS 502 with valid TLS,
-  consistent with root listeners not yet running.
-- Three-root deployment and real-network checks: pending.
+- Public ingress: all three tunnels are reachable with valid TLS. Kraid now
+  returns healthy public HTTPS responses; Ridley and Motherbrain await startup.
+- Root deployment: Kraid is running and reports `official root=true` from
+  verified discovery. A fresh public `soph join` selected Kraid successfully.
+  Ridley/Motherbrain deployment and cross-root validation remain pending.
 
 ## First publication
 
@@ -80,16 +82,20 @@ run. Record the first timer-driven due renewal when it occurs.
 
 ## Next operator step
 
-Authority adoption is merged in #249 (`03ff9b2`). Build the reviewed release and
-[start the roots](public-network-bringup.md#adopt-the-bundle-and-build-the-release)
-in order: Kraid, Ridley, Motherbrain. Then verify anonymous cross-root writes,
+Authority adoption is merged in #249 (`03ff9b2`) and Kraid is running. Build the
+same reviewed release and [start the remaining roots](public-network-bringup.md#adopt-the-bundle-and-build-the-release):
+Ridley, then Motherbrain. Then verify anonymous cross-root writes,
 the admission limits, and an unlisted node joining the public network.
 
 ## Prepared deployment artifacts
 
-Kraid's release build completed on 2026-09-29. The installed CLI checksum and
-local node image were checked directly on the host. Port 18080 is free and the
-root deployment directory has not yet been created; startup is the next step.
+Kraid's release build and startup completed on 2026-09-29. The installed CLI
+checksum and local node image were checked directly on the host. The node is
+healthy behind the loopback ingress on port 18080; public health returns the
+correct ID/network/enclave with `Cache-Control: no-store`. Initially it has no
+peers, as the other two roots are not running yet. The topology `role` field
+describes the separate WebSocket attachment role; the discovery startup log
+confirms Kraid's official root role.
 
 | Kraid artifact | Value |
 | --- | --- |
