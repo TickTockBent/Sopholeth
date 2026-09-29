@@ -65,10 +65,11 @@ enforces the launch limits and excludes unsupported paths.
 
 ## Create and back up the intended authority on Kraid
 
-Initialization, the restored-backup check, and first publication below are
-complete for the recorded authority. Continue with the
-[post-publication backup](public-network-authority.md#next-operator-step) and
-renewal timer. Retain the existing authority and fingerprint.
+Initialization, the restored-backup check, first publication, full encrypted
+backup, and first production renewal are complete for the recorded authority.
+The production renewal timer is enabled. Continue with
+[building the release](#adopt-the-bundle-and-build-the-release).
+Retain the existing authority and fingerprint; the commands below record setup.
 
 Use the installed `soph` and custody/service-account layout from the successful
 [Kraid rehearsal](omega-kraid-rehearsal.md#install-and-prepare). Update the binary
@@ -117,6 +118,10 @@ error and retry the same operation after correcting it. Take a fresh backup of
 both homes and the repository after this handoff.
 
 ## Adopt the bundle and build the release
+
+The public bundle is already adopted in merged #249 (`03ff9b2`). Use that reviewed
+release for the initial deployment. The adoption procedure below is retained for
+reference; no new authority or bundle copy is needed for this launch.
 
 Copy **only** `/srv/omega-offline/sopholeth/bundle.json` into
 `internal/discovery/bundle.json`. Review and commit that public trust adoption;

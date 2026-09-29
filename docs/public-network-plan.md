@@ -57,16 +57,18 @@ The metadata-only Vercel project serves through `https://sopholeth.io/omega/`.
 The [hosted rehearsal](omega-hosted-rehearsal.md) exercised publication, renewal,
 rotation, and isolation from docs deployments. Kraid's service invocation
 succeeded after the public-directory ownership repair, now fixed in #240.
-The operator disabled and removed the disposable timer. A complete daily remote
-renewal cycle has not yet been observed; observe it on the running test network.
+The disposable timer remains disabled. The first due production renewal verified
+release 2 on 2026-09-29, and the hourly production timer is enabled. Observe its
+first timer-driven due renewal on the running test network.
 
 Nodes and `soph join` now use the HTTPS trust client, embedded public bundle,
 and initial TUF-root fingerprint gate. Local fixtures exercise saved-profile
 renewal, HTTPS bootstrap/gossip, and runtime expiry. The intended authority has
 been initialized on Kraid, and its [public bundle and fingerprint](public-network-authority.md)
-are recorded for adoption. Restored keys and first HTTPS publication are
-verified. The post-publication backup, production renewal timer, and root
-deployment remain pending. Real-network validation belongs to bring-up.
+are adopted in merged #249. Restored keys, first HTTPS publication, and the first
+production renewal are verified. The full encrypted backup is retained off Kraid
+and the production timer is enabled. Root deployment and real-network validation
+remain pending.
 
 ## Delivery order
 

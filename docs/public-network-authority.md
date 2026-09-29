@@ -31,14 +31,21 @@ Activation status:
 - First publication: release 1 verified over HTTPS by the publisher and again
   as `soph-omega`. A fresh trust client on Motherbrain independently verified
   the signed metadata and approved three-root manifest.
-- Post-publication backup and production renewal timer: pending.
+- Post-publication backup: complete before renewal, covering release 1 and all
+  three homes. The operator verified archive decryption; the encrypted copy on
+  Motherbrain matches Kraid's SHA-256 and has private permissions.
+- First production freshness renewal: release 2 verified by the service on
+  2026-09-29. The production Vercel drop-in is installed and the hourly timer is
+  enabled and active. The disposable rehearsal timer remains disabled.
+- Public ingress: all three approved hostnames return HTTPS 502 with valid TLS,
+  consistent with root listeners not yet running.
 - Three-root deployment and real-network checks: pending.
 
 ## First publication
 
-All four metadata roles are at version 1. The approved manifest lists Kraid,
-Ridley, and Motherbrain at their `https://<node-id>.sopholeth.io` origins in
-the `default` enclave.
+At first publication, all four metadata roles were at version 1. The approved
+manifest lists Kraid, Ridley, and Motherbrain at their
+`https://<node-id>.sopholeth.io` origins in the `default` enclave.
 
 | Checkpoint | UTC |
 | --- | --- |
@@ -54,10 +61,35 @@ has `public, max-age=31536000, immutable`. The fresh trust client verified
 root, targets, snapshot, timestamp, and the hashed `bootstrap.json` target
 using the adopted bundle, without a preexisting cache or TLS bypass.
 
+## First production renewal
+
+The operator started `soph-omega-renewal@sopholeth.service` on 2026-09-29. It
+published and verified release 2 as `soph-omega`; root and targets remain at
+version 1, while timestamp and snapshot are now version 2.
+
+| Checkpoint | UTC |
+| --- | --- |
+| Renewal verified by service | `2026-09-29T11:51:03Z` |
+| Next renewal due | `2026-09-30T11:50:53Z` |
+| Timestamp/snapshot expiry | `2026-10-06T11:50:53Z` |
+
+The timer was enabled afterward and its active/enabled state confirmed on Kraid.
+It checks hourly, verifies without deploying before renewal is due, and refreshes
+daily with seven-day validity. A failed renewal is retried on the next hourly
+run. Record the first timer-driven due renewal when it occurs.
+
 ## Next operator step
 
-Take a new backup of all three homes on Kraid, with the renewal timer still
-disabled and no other omega commands running. The new operational home contains
+Authority adoption is merged in #249 (`03ff9b2`). Build the reviewed release and
+[start the roots](public-network-bringup.md#adopt-the-bundle-and-build-the-release)
+in order: Kraid, Ridley, Motherbrain. Then verify anonymous cross-root writes,
+the admission limits, and an unlisted node joining the public network.
+
+## Repeat the full backup
+
+Take a new backup of all three homes on Kraid with the renewal timer stopped and
+no other omega commands running. Wait for an active publication to finish before
+copying. The operational home contains
 unencrypted renewal keys as well as the current publication journal, so encrypt
 the complete archive. GnuPG is already installed on Kraid. The following Bash
 commands stream directly into an encrypted file, then check that the archive
@@ -67,6 +99,7 @@ decrypts using a freshly entered passphrase. No plaintext archive is written.
 (
   set -euo pipefail
   umask 077
+  sudo -v
   backup_dir=$(mktemp -d "$HOME/sopholeth-omega-backup.XXXXXX")
   sudo tar -C /srv -cpf - omega-offline omega-online omega-public |
     gpg --pinentry-mode loopback --symmetric --cipher-algo AES256 \
@@ -78,7 +111,7 @@ decrypts using a freshly entered passphrase. No plaintext archive is written.
 ```
 
 Save the printed `.gpg` file off Kraid, keeping its passphrase recoverable
-separately, then [enable the production renewal timer](public-network-bringup.md#enable-intended-network-renewal-on-kraid).
+separately, then resume the production renewal timer.
 The archive includes the earlier rehearsal's files too; its timer stays disabled.
 Preserve ownership and the original `/srv/omega-offline`, `/srv/omega-online`,
 and `/srv/omega-public` paths on later restoration, following
