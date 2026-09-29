@@ -66,6 +66,7 @@ function SiteNav() {
         <nav style={{ display: 'flex', gap: 22, alignItems: 'center', fontSize: 12 }}>
           <NavLink href="#architecture">architecture</NavLink>
           <NavLink href="#quickstart">quickstart</NavLink>
+          <NavLink href="./fade/">fade</NavLink>
           <NavLink href="https://sopholeth.io/">docs</NavLink>
           <NavLink href="https://sopholeth.dev/">devlog</NavLink>
           <a href={PROJECT_REPOSITORY} style={{

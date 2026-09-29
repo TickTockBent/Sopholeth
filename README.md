@@ -151,6 +151,7 @@ independent Vercel project root.
 - [Omega trust design](docs/omega-trust-design.md)
 - [Roadmap](docs/roadmap.md)
 - [soph.stream behavior and remaining work](docs/soph-stream-plan.md)
+- [Fade public message board](docs/fade.md)
 - [Contributing](CONTRIBUTING.md), [validation harness](test/burnin/README.md), and [changelog](CHANGELOG.md)
 
 See [LICENSE](LICENSE) for the current licensing terms.
