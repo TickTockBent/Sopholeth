@@ -113,6 +113,37 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(() => document.querySelector('#identity').textContent === 'port-80 / test');
     assert.ok(standardPortRequested);
     console.log('PASS: explicit URL port handling');
+
+    // Without ?node=, the page watches the configured public roots and walks
+    // past an unavailable one. The URL stays generic so reloads keep defaults.
+    const publicPage = await browser.newPage({ viewport: { width: 1200, height: 900 }, reducedMotion: 'reduce' });
+    publicPage.on('pageerror', err => errors.push(err.message));
+    await publicPage.addInitScript(() => { Math.random = () => 0; });
+    let deadRequests = 0;
+    await publicPage.route(origin + '/config.json', route => route.fulfill({ json: { public: ['http://dead.test', origin, 'not a url'] } }));
+    await publicPage.route('http://dead.test/v1/stream', route => { deadRequests++; return route.fulfill({ status: 503, body: '' }); });
+    items = [entry('public-value', 'seen through a public root')];
+    await publicPage.goto(origin + '/');
+    await publicPage.waitForFunction(() => document.querySelector('#identity').textContent === 'fixture / test');
+    await publicPage.waitForFunction(() => document.querySelector('[data-key="public-value"]'));
+    assert.ok(deadRequests >= 1);
+    assert.equal(new URL(publicPage.url()).searchParams.get('node'), null);
+    assert.equal(await publicPage.locator('#node').inputValue(), '');
+    assert.match(await publicPage.locator('#connection').textContent(), /public network/);
+    // Dropping the live root's stream moves on through the list and back.
+    const beforeDrop = connectionCount;
+    for (const response of viewers) response.end();
+    await publicPage.waitForFunction(() => document.querySelector('#connection').dataset.state === 'connected' && document.querySelector('[data-key="public-value"]'));
+    assert.ok(connectionCount > beforeDrop);
+    assert.ok(deadRequests >= 2);
+    // An explicit node from the form leaves public mode and never fails over.
+    await publicPage.locator('#node').fill(origin);
+    await publicPage.locator('#connect-form button').click();
+    await publicPage.waitForFunction(o => new URL(location.href).searchParams.get('node') === o, origin);
+    await publicPage.waitForFunction(() => document.querySelector('#connection').textContent === 'Connected · live local view');
+    assert.deepEqual(errors, []);
+    await publicPage.close();
+    console.log('PASS: public-network default, root failover, explicit override');
   } finally {
     if (browser) await browser.close();
     for (const response of viewers) response.destroy();

@@ -77,7 +77,7 @@ credentials and write operations, and shutdown with an active stream.
 controlled SSE fixture. It covers overwrite positions, stale events, preview
 filtering, full-value reads and 404s, binary/empty/HTML payloads, clock-aware
 expiration, snapshot replacement on reconnect, overflow, mobile resizing,
-and reduced motion.
+reduced motion, and the public-network default with root failover.
 
 With Playwright and its Chromium installed in your development environment:
 
