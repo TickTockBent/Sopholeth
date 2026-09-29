@@ -60,7 +60,7 @@ function SiteNav() {
         }}>
           <span style={{ color: '#22d3ee' }}>$</span>&nbsp;sopholeth
           <span className="nav-status" style={{ color: '#8b949e', marginLeft: 8, letterSpacing: 0, fontSize: 11 }}>
-            prelaunch
+            public testnet
           </span>
         </a>
         <nav style={{ display: 'flex', gap: 22, alignItems: 'center', fontSize: 12 }}>
@@ -113,7 +113,7 @@ const BOOT_LINES = [
 { tag: 'NET', color: '#22d3ee', text: 'gossip replication · dynamic quorum' },
 { tag: 'SYS', color: '#facc15', text: 'mandatory TTL enforced · min=300s max=86400s' },
 { tag: 'AUTH', color: '#e040fb', text: 'no accounts · opaque values · client encryption' },
-{ tag: 'BOOT', color: '#39ff14', text: 'public launch pending · try a private node.' }];
+{ tag: 'BOOT', color: '#39ff14', text: 'public testnet live · explore at soph.stream.' }];
 
 
 function Hero() {

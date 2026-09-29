@@ -4,11 +4,9 @@
 encrypted TUF authorities, unattended renewal, online/membership/root-key
 rotation, root-expiry recovery, and verified publication to a local HTTPS-served
 repository on Linux. Production initialization uses encrypted custody by default.
-The intended authority has been initialized on Kraid and its first release
-verified over HTTPS. Vercel publication, its hosted rehearsal, and Linux node/CLI
-discovery integration are complete. See the [authority record](public-network-authority.md)
-for activation progress and the [public-network plan](public-network-plan.md)
-for deployed network testing.
+The public testnet is running with Vercel metadata hosting and renewal on Kraid.
+See the [authority record](public-network-authority.md) for its initial identity
+and deployed artifacts, and the [network plan](public-network-plan.md) for testing.
 
 The launch profile uses one secured connected operator workstation and a tested
 backup. The operator may use `sudo`; the renewal service runs as a separate,
@@ -105,7 +103,7 @@ The custody home is the durable registry of network identities. Keep using it
 and preserve its backups. An offline command cannot detect a second independent
 home or a deleted registry; changing homes is not a recovery procedure. A
 production workflow must establish the canonical registry, encrypted key storage,
-and tested backups before public activation. The proposed first profile permits
+and tested backups before public activation. The testnet custody profile permits
 one connected operator workstation.
 
 ### Files, custody, and status
@@ -129,7 +127,7 @@ Production initialization always uses encrypted keys. Schema 1, which embeds
 six plaintext keys, remains permanently disposable-only. Schema 2 separates
 public identity from private encrypted files and rejects mixed custody modes.
 Windows public-client support remains a
-[separate planned deliverable](public-network-plan.md#windows-public-client-gate);
+[separate planned deliverable](public-network-plan.md#platform-and-viewer-follow-ups);
 the initial Linux test network can run before that backend is ready.
 
 `status` verifies signed public identity, history, and the completion receipt without a password.
@@ -255,7 +253,7 @@ rehearsal CA can be supplied through the platform's trusted CA configuration
 (for example `SSL_CERT_FILE` on Linux); there is no insecure TLS flag. Hosting
 at `sopholeth.io/omega/` has base-path support and committed Vercel routing/cache
 rules and a deployment adapter. Project-level routing and the hosted disposable
-rehearsal are complete; remote service setup remains. See [Vercel publication](omega-vercel.md).
+rehearsal are complete; Kraid runs the renewal service. See [Vercel publication](omega-vercel.md).
 
 Create the approved manifest, for example `bootstrap.json`:
 
@@ -418,7 +416,7 @@ The global `--timeout` bounds the operator command, including lock waits and
 verification (15 seconds by default); allow more time for slow storage or
 remote rehearsal. Expiry is checked again before reporting verification
 success. Publication checks concern the metadata origin seen by this operator;
-external clients and regional caches still need the planned remote rehearsal.
+external clients and regional caches need their own reachability checks.
 
 ## Provision and schedule unattended renewal
 

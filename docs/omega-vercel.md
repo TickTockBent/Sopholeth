@@ -19,7 +19,7 @@ Other framework preset, has no install/build commands, and serves output `.`
 from the project root. Login protection is disabled for this public-data project.
 The publisher does not upload custody files or credentials.
 
-The intended production authority now serves release 1 at `/omega/`, verified
+The intended production authority serves signed metadata at `/omega/`, verified
 through the publisher, service account, and a fresh independent trust client.
 See the [authority record](public-network-authority.md) for its fingerprint and
 activation status. The earlier disposable rehearsal used its own subpath; its
@@ -166,17 +166,17 @@ Metadata project rollback is not an operational recovery procedure. Docs project
 rollback is safe once the independent rewrite is established; changing or removing
 that project-level rule can still interrupt availability.
 
-## Validation and remaining activation
+## Validation
 
-The [hosted rehearsal report](omega-hosted-rehearsal.md) records the live run and
-the config, routing, and propagation findings it exposed. Permanent renewal will
-run on an operator-selected remote host; service credentials and scheduling are
-still deployment work.
+The hosted rehearsal verified publication, renewal, rotation, and isolation from
+docs deployments. The intended authority is now active, and Kraid runs the
+production renewal service. See the [authority record](public-network-authority.md)
+and [operator runbook](public-network-bringup.md) for the deployment.
 
 Local tests cover interrupted promotion, failed staged cache checks, idempotent
 retry, renewal, history retention, custody handoff, conflicting remote history,
 config binding, and credential/redirect confinement in one publication flow.
-To exercise the generated config with the actual local Vercel router:
+To exercise the generated config with the local Vercel router:
 
 ```bash
 OMEGA_ROUTING_FIXTURE=/tmp/omega-vercel.json \
@@ -184,12 +184,10 @@ OMEGA_ROUTING_FIXTURE=/tmp/omega-vercel.json \
 python3 test/hosting/omega_routes.py --metadata-config /tmp/omega-vercel.json vercel
 ```
 
-These checks use throwaway files and create no public authority. Before activation,
-complete a hosted disposable rehearsal under a unique base path, for example
-`https://sopholeth.io/omega/rehearsal-20260923/`. Never publish a throwaway authority
-at the final `/omega/` location: its numbered immutable objects could remain cached
-after a reset. The project-level rewrite preserves this rehearsal prefix.
-Configure the service token locally, publish and renew signed disposable metadata,
-check fresh and returning clients, and verify docs deployment/rollback isolation.
-Only then initialize the intended public authority and proceed through the remaining
-release and peer-identity gates in the [launch plan](public-network-plan.md).
+These checks use throwaway local files and do not deploy. The opt-in
+[hosted fixture](../internal/omega/hosted_rehearsal_test.go), tagged
+`omega_hosted_rehearsal`, is excluded from ordinary tests. It uses the configured
+metadata project and a `/omega/rehearsal-...` path; it was a pre-activation tool.
+Do not replay it against the active project: a deployment replaces the whole
+served repository, even when the rehearsal URL uses a different subpath. Future
+hosted rehearsals need an isolated project and corresponding fixture configuration.

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Repository maintenance
+
+- Remove archived burn-in output, completed rehearsal/audit reports, the old
+  stream mockup, and unused marketing assets. Condense the network/stream plans
+  and omega design; update current guides for the running public testnet.
+  Historical records remain in Git history.
+
 ### Replication
 
 - Apply shared, configurable key/value limits to client and peer writes
@@ -221,7 +228,7 @@
   examples, and make burn-in targets and output directories configurable.
 
 Published artifacts, repository hosting, DNS, and running infrastructure are
-separate launch steps. See the [naming guide](docs/rebrand.md).
+separate launch steps at the time of the rebrand.
 
 ### Existing implementation awaiting release
 
@@ -234,13 +241,12 @@ The implementation work recorded before this documentation pass includes:
 - HTTP key listing with pagination, enclave gossip, resource limits, and
   signed public discovery.
 
-The restored Go tree still needs sustained multi-substrate validation, and
-the public trust anchor remains unset. See the
-[roadmap](docs/roadmap.md) for launch gates.
+At the rebrand, the restored Go tree still needed sustained multi-substrate
+validation and the public trust anchor was unset. See the [roadmap](docs/roadmap.md)
+for current status.
 
 ## Earlier history
 
-The [pre-rebrand changelog](docs/archive/repram-changelog.md) preserves the
-original development record and 2.0.0 release notes. It includes superseded
-implementations and historical claims; use current documentation for setup
-and behavior.
+The [pre-rebrand changelog in Git history](https://github.com/TickTockBent/Sopholeth/blob/043fe22/docs/archive/repram-changelog.md)
+contains the original development record and 2.0.0 release notes. Use current
+documentation for setup and behavior.

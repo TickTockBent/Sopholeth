@@ -3,8 +3,8 @@
 The Go node and `soph` use omega's HTTPS/TUF metadata. The embedded public
 bundle identifies the intended `sopholeth` test-network authority at
 `https://sopholeth.io/omega`. See the [authority record](public-network-authority.md)
-for its initial fingerprint and the remaining activation steps. The bundle alone
-does not publish metadata or start the roots.
+for its initial fingerprint and deployed artifacts. All three roots are running;
+the bundle alone does not publish metadata or start nodes.
 
 ## Trust boundary
 
@@ -58,7 +58,7 @@ bundle is embedded in both `bin/server` and `bin/soph`, including Docker builds
 from the same source. Builds from this checkout carry the intended public
 authority. A deliberately unconfigured `{}` bundle rejects public discovery;
 private connections still work. Bundle adoption and the
-actual host setup belong to the [bring-up runbook](public-network-plan.md#3-put-the-three-roots-on-the-available-hosts).
+actual host setup belong to the [bring-up runbook](public-network-bringup.md).
 
 The initial bundle stays fixed through ordinary signed key rotations. A network
 reset needs a deliberately adopted new bundle/build and fresh state; a saved
@@ -158,9 +158,10 @@ certificate/hostname and redirect rejection, runtime expiry during a stalled
 refresh, retry scheduling, and viewer stream withdrawal/reconnection. Existing
 trust tests cover signatures, rotation, rollback, and durable writes.
 
-These checks establish the integration, not a deployed network. Three-root
-operation, external DNS/TLS/ingress, host failures, and real `soph join` behavior
-will be validated during bring-up. Native Windows public discovery is still
+The [live testnet checks](public-network-validation.md) additionally cover
+three-root operation, public HTTPS ingress, fresh `soph join`, replication, and
+an unlisted node. Host failures and sustained load remain to be tested.
+Native Windows public discovery is still
 unsupported pending its storage backend. The standalone dashboard remains on
 the disabled legacy DNS path and is outside this test-network milestone; its
 explicit private seeds remain available. Historical DNS code and the legacy

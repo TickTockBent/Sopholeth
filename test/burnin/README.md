@@ -1,9 +1,9 @@
 # Sopholeth validation harness
 
-This directory contains load generators, lab helpers, and historical
-observations. Helpers accept explicit targets and state directories; the
-signing loop still requires a dedicated dnsmasq lab host. These tools do not
-replace the public-alpha acceptance scenarios described below.
+This directory contains reusable load generators, metrics capture, and lab
+helpers with explicit targets and state directories. The signing loop still
+requires a dedicated dnsmasq lab host. Choose test scenarios from the
+[network plan](../../docs/public-network-plan.md).
 
 ## Available tools
 
@@ -62,28 +62,16 @@ The segmented wrapper continues after k6 threshold failures, so a completed
 wrapper run does not by itself mean validation passed. Preserve and inspect
 each segment's results.
 
-## Evidence required for launch
+## Recording a run
 
-The next all-Go run must include multiple substrates and transient clients,
-with parent failure, root changes, partitions, recovery, and capacity
-pressure. Record the commit, node configuration, topology, workload settings,
-fault timings, and acceptance criteria before starting.
+Record the commit, configuration, topology, workload, fault timings, and expected
+outcomes before starting. Capture driver results and node metrics: response
+codes, latency, quorum outcomes, dropped iterations, process memory, recovery
+time, and actual accepted TTLs. Allocation totals and uptime cannot substitute
+for request or correctness measurements.
 
-Capture driver results as well as node metrics: request rates, response
-codes, latency, quorum outcomes, dropped iterations, process memory, and
-recovery time. Preserve the actual accepted TTLs. Allocation totals and
-process uptime cannot substitute for request or correctness measurements.
-
-See the [roadmap](../../docs/roadmap.md#before-public-alpha) for the complete
-launch gates. No new sustained burn-in result is claimed by this rebrand.
-
-## Historical evidence
-
-- [May 2026 mixed Go/TS report](archive/2026-05-burnin.md): observations from
-  the retired mixed implementation, with evidence limits stated explicitly.
-- [April 2026 raw artifacts](archive-2026-04-25/): original metrics and logs
-  from an earlier run. These are distinct from the May report.
-
-Raw artifacts retain their original metric and project names. The old
-host-by-host command transcript has been removed; it depended on personal
-infrastructure and the deleted TypeScript node.
+Use the [network plan](../../docs/public-network-plan.md) to select a bounded
+scenario. Put raw logs, metrics, profiles, and screenshots outside the checkout
+under `BURNIN_STATE_DIR` or in ignored `test-results/`. Summarize measured results
+and reproduction steps in the relevant issue; link large artifacts separately.
+The retired mixed Go/TypeScript reports and raw logs remain in Git history.

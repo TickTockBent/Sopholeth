@@ -8,7 +8,6 @@ bin/
 *.tmp
 *.temp
 *.log
-!test/burnin/archive-*/*.log
 .vscode/
 .idea/
 .claude/

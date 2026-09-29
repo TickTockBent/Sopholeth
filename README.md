@@ -19,16 +19,18 @@ expiration cannot make readers forget copies they kept.
 
 The Go implementation includes an HTTP node, an embedded MCP server, gossip
 replication, WebSocket attachments, signed public discovery, and a topology
-dashboard. The next milestones are the **first public network**, a **demo web
-application**, and a **probe simulation**.
+dashboard. The **public test network is running** on Kraid, Ridley, and
+Motherbrain. Build `soph`, run `soph join`, and watch values at
+[soph.stream](https://soph.stream/). See the [CLI guide](docs/cli.md) for direct
+text and file input. This is an experimental network for validation; the
+[network plan](docs/public-network-plan.md) tracks remaining tests and limits.
 
-Public launch is pending: the discovery trust anchor is deliberately unset,
-so public discovery fails closed. Use a private network for development.
+A demo web application and probe simulation follow in the
+[roadmap](docs/roadmap.md).
 
 The service executables are `server` and `dashboard`. Internal names
 follow their roles: `NODE_*` configuration, plain MCP tool names, and component
-metrics. See the [migration guide](docs/rebrand.md) when updating an older
-checkout or deployment. The `soph` client talks to any node over HTTP and includes
+metrics. The `soph` client talks to any node over HTTP and includes
 encrypted authority initialization, publication, unattended renewal, online, membership, and root-key
 rotation, and verification under `soph omega`; see
 [omega operations](docs/omega-operations.md).
@@ -144,11 +146,11 @@ independent Vercel project root.
 - [Usage patterns](docs/patterns.md) and [client-side encryption](docs/encryption-example.md)
 - [Architecture](docs/architecture.md) and [core principles](docs/core-principles.md)
 - [Signed discovery](docs/discovery.md) and [omega operations](docs/omega-operations.md)
-- [First public-network plan: omega, then three roots](docs/public-network-plan.md)
+- [Public test-network plan and remaining work](docs/public-network-plan.md)
 - [Kraid, Ridley, and Motherbrain bring-up](docs/public-network-bringup.md)
-- [Omega trust design and integration spike](docs/omega-trust-design.md)
-- [Roadmap](docs/roadmap.md) and [rebrand migration](docs/rebrand.md)
-- [soph.stream implementation and launch plan](docs/soph-stream-plan.md)
+- [Omega trust design](docs/omega-trust-design.md)
+- [Roadmap](docs/roadmap.md)
+- [soph.stream behavior and remaining work](docs/soph-stream-plan.md)
 - [Contributing](CONTRIBUTING.md), [validation harness](test/burnin/README.md), and [changelog](CHANGELOG.md)
 
 See [LICENSE](LICENSE) for the current licensing terms.

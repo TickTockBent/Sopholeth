@@ -1,8 +1,7 @@
 # Sopholeth node configuration
 
 The node reads `NODE_*` environment variables, with `NODE_ID` for its ID.
-The dashboard uses `DASHBOARD_STATE_DIR` for its own state. The
-[migration guide](rebrand.md) covers the direct switch from the old names.
+The dashboard uses `DASHBOARD_STATE_DIR` for its own state.
 
 ## Network and listeners
 

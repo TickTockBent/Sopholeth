@@ -6,8 +6,8 @@ bounded local lifetime. Useful state survives through new writes from
 participants who still need it.
 
 The reference node is written in Go. The same executable runs an HTTP service
-or an MCP stdio server with an embedded node. The service builds as `server`; the future `soph` client is separate.
-Component names and interfaces are described in the [migration guide](rebrand.md).
+or an MCP stdio server with an embedded node. The service builds as `server`;
+the [`soph` client](cli.md) is a separate executable.
 
 ## Components
 
@@ -18,7 +18,8 @@ Component names and interfaces are described in the [migration guide](rebrand.md
 | [Cluster](../internal/cluster/node.go) | Local writes, replication, and acknowledgement tracking. |
 | [Gossip](../internal/gossip/protocol.go) | Peer knowledge, health checks, forwarding, and message deduplication. |
 | [Tree manager](../internal/tree/manager.go) | Substrate and transient WebSocket attachment. |
-| [Trust](../internal/trust/signedlist.go) | Signed public root-list validation. |
+| [Discovery](../internal/discovery/session.go) | HTTPS/TUF root discovery, runtime expiry, and refresh. |
+| [Trust client](../internal/trust/bootstrap/README.md) | Signed metadata validation and durable rollback protection. |
 | [MCP adapter](../internal/mcp/server.go) | Agent tools over stdio, sharing the local node. |
 | [Dashboard](../cmd/dashboard/main.go) | Topology observation through a separate operator application. |
 
@@ -121,8 +122,8 @@ authorize ordinary peers or writes. See
 
 WebSocket attachments carry the same gossip messages as HTTP. They let a
 transient use an outbound connection to participate without relying on direct
-inbound reachability. The restored Go tree needs a sustained multi-substrate
-validation run before launch.
+inbound reachability. Public WebSocket participation remains disabled pending
+multi-substrate validation and safeguards; the testnet uses HTTP gossip.
 
 ## Access and retention
 

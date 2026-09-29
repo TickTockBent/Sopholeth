@@ -1,14 +1,11 @@
 # Omega production custody and recovery
 
-Status: encrypted initialization, publication, all rotation roles, separate renewal
-custody, and backup/reset rehearsal implemented on Linux. Revised 2026-09-23.
-This records the first-network profile for
-[#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
-[public-network plan](public-network-plan.md#what-is-already-ready).
-See [omega operations](omega-operations.md) for commands and recovery steps.
-Production creation now selects encrypted schema 2 by default; no live authority
-has been created. Hosted publication and Linux node/CLI discovery are implemented. Intended
-authority activation and real-network testing remain.
+This is the custody profile used by the running public testnet. Encrypted
+initialization, publication, all rotation roles, separate renewal custody, and
+backup/reset rehearsal are implemented on Linux. Production creation uses
+schema 2 by default. See [omega operations](omega-operations.md) for commands
+and recovery, and the [authority record](public-network-authority.md) for the
+adopted identity and deployment.
 
 ## Launch criteria and accepted limits
 
@@ -194,7 +191,7 @@ for out-of-band root replacement after root-quorum compromise.
 These slices exercise the two launch criteria above. Air gaps, independent
 signing devices, HSMs, multiparty approvals, portable signing requests, signed
 backup attestations, and automatic reconstruction of lost journals are future
-work, not gates. Other launch work remains in the public-network plan.
+work, not gates. Remaining testnet work is in the public-network plan.
 
 Follow the [test guidance](../CONTRIBUTING.md#development) from #229. Add focused
 checks for encryption/unlock failures, wrong identity, interrupted encrypted

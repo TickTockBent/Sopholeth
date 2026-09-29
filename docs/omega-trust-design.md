@@ -1,367 +1,125 @@
-# Omega trust lifecycle: integration spike and proposed design
+# Omega trust design
 
-Status: trust client, atomic encrypted authority initialization, local-directory
-and Vercel publication, unattended online renewal, online/membership/root-key
-rotation, served-release verification, and root-expiry recovery are implemented.
-The hosted disposable rehearsal and Kraid service invocation passed. A full
-daily remote renewal cycle, release integration, and discovery consumers remain
-to be completed on the revised test-network path.
-The completed [spike](../test/omega-tuf/README.md) established the design for
-[#195](https://github.com/TickTockBent/Sopholeth/issues/195) and the
-[public-network plan](public-network-plan.md). Its scenarios now exercise the
-[durable client](../internal/trust/bootstrap/README.md) in the main Go suite.
-`soph omega init`, `provision-renewal`, `publish` with online
-renewal, online/membership/root-key `rotate`, and `status --verify` implement the current operator slices.
-This does not switch node discovery or establish a production authority.
-The [audit](omega-signing-audit.md) remains the record of the interim protocol.
-
-## Decision
-
-Use TUF for authenticated distribution of a small bootstrap manifest over
-HTTPS. Proceed with `github.com/theupdateframework/go-tuf/v2` **v2.4.2** as
-the integration baseline. Keep Sopholeth's manifest validation, runtime
-authorization, durable state, and operator workflows outside the library.
-Do not develop another custom rotation protocol or introduce another CLI.
-
-The spike selected a reviewed stable release, rather than upstream master.
-That release requires Go 1.25.0; the previous Go 1.22.2 toolchain could not
-compile it. The application, Docker builders, development requirements, and
-CI now use Go 1.27.1, and the root module includes go-tuf v2.4.2. The separate
-spike module/workflow has been retired. Existing discovery consumers have not
-yet switched to the new package.
-[Release](https://github.com/theupdateframework/go-tuf/releases/tag/v2.4.2),
-[release go.mod](https://github.com/theupdateframework/go-tuf/blob/v2.4.2/go.mod),
-[Go releases](https://go.dev/dl/).
-
-Version 2.4.2 includes the fix for counting one public key under multiple IDs
-toward a signature threshold. Choosing an older version just to retain
-Go 1.22 would need a separate security review. This spike reviews the release
-notes, published upstream advisories, and integration paths; it is not an
-independent cryptographic audit or a blanket assurance about dependencies.
-[Threshold advisory](https://github.com/theupdateframework/go-tuf/security/advisories/GHSA-3633-5h82-39pq).
-
-The original spike module had two direct requirements (go-tuf and its Sigstore
-signer API) and ten indirect requirements. That includes crypto, protobuf,
-and container-related utilities pulled in by the signing library. The actual
-versions used by the integrated client and tests are recorded in
-[go.mod](../go.mod) and [go.sum](../go.sum).
-This is a real dependency/toolchain cost,
-but preferable to maintaining the update security protocol ourselves.
-
-## What the experiment establishes
-
-The tests use newly generated Ed25519 keys, an HTTPS repository on loopback,
-real signed metadata/target downloads, temporary client directories, and a
-controlled clock. They demonstrate:
-
-- First discovery and identical refresh after restarting an updater.
-- Online renewal after removing both offline signing roles from the fixture.
-- Timestamp rollback rejection after restart, including persisted partial
-  progress when a new timestamp references a missing snapshot.
-- Rejection of older snapshot/membership versions even inside freshly signed
-  online metadata, when the client has already accepted newer versions.
-- A root transition accepted with two old and two new root signatures, and
-  rejected with either quorum missing or below threshold.
-- A returning client traversing two transitions, including expired initial
-  and intermediate roots, when the final authority and metadata are current.
-- Restart from the latest accepted root, rejection of a retired online key,
-  and failure to recover an old client when a required transition is missing.
-- Rejection of changed target bytes and expiration of each metadata role.
-- A retained updater still returning target information after the deadline
-  represented by its metadata: runtime revocation is our responsibility.
-
-The original small restart wrapper rejected a missing/corrupt established
-root but lacked durable storage and locking. It is now replaced by the
-[client implementation](../internal/trust/bootstrap/README.md), with durable
-checkpoints, state validation, and process locks. Its regression tests also
-cover interrupted writes, bounded HTTPS, concurrent access, and runtime leases.
+The node and `soph` use HTTPS metadata verified by go-tuf v2. The encrypted
+`soph omega` lifecycle, durable trust client, runtime refresh, Vercel publisher,
+and first public testnet are implemented. This document records the design;
+[omega operations](omega-operations.md) contains operator commands,
+[discovery](discovery.md) describes consumers, and the
+[trust-client reference](../internal/trust/bootstrap/README.md) specifies formats
+and persistence behavior.
 
 ## Authority and custody
 
-| TUF role | Sopholeth responsibility | Proposed custody |
+| TUF role | Responsibility | First-network custody |
 | --- | --- | --- |
-| Root | Authorize role keys, thresholds, and successor authorities | Encrypted 2-of-3 Ed25519 keys on the operator workstation, with a separately stored backup |
-| Targets | Approve the bootstrap manifest and its validity period | Separate encrypted membership key on that workstation, 1-of-1 initially |
-| Snapshot | Bind approved metadata versions into a release | Online renewal service, separate key |
-| Timestamp | Advertise a short-lived current snapshot | Online renewal service, separate key |
+| Root | Authorize role keys and successor authorities | Three encrypted Ed25519 keys; 2-of-3 threshold |
+| Targets | Approve the bootstrap manifest and its validity | Separate encrypted membership key; 1-of-1 |
+| Snapshot | Bind metadata versions into a release | Separate online renewal key |
+| Timestamp | Advertise the current snapshot | Separate online renewal key |
 
-The three root signing keys are unrelated to the three public **node** roots.
-Node hosts receive public trust material only. Hosting credentials are also
-separate from signing keys. The first public-network profile permits one
-connected operator workstation to hold and unlock the root quorum. The threshold
-supports recovery from one lost key; it does not protect against compromise of
-that workstation. An air gap and independent signing machines are future options.
+Root signing keys are unrelated to the three public root **nodes**. A connected
+operator workstation may hold and unlock the root quorum. This supports recovery
+from one lost key, not protection from whole-host compromise. A separate service
+account holds only online renewal keys; node containers receive only public
+trust material. Air gaps and independent signing devices are future options.
 
-The [production custody proposal](omega-production-custody.md) develops this
-into a workflow with encrypted files, a tested backup, and schema-2 public
-authority records. Authenticated discovery and operator recovery are the launch
-criteria. An explicit network reset is acceptable after authority compromise or
-unrecoverable state; clients must deliberately adopt the replacement trust bundle.
-The encrypted backend now supports the full operator lifecycle and production
-initialization with schema 2. Ordinary `status` needs no password;
-`status --check-keys` verifies active restored generations. Schema 1 stays
-disposable-only. See [custody and restoration](omega-operations.md#encrypted-custody-and-backup-restoration).
-Hosted metadata, the compiled bundle/release check, and Linux node/CLI
-integration are implemented. Adopting the intended authority and operating
-three public roots remain bring-up work.
+Production authority schema 2 contains public identity records with separate
+age-encrypted key files. Schema 1 remains disposable-only. Ordinary status needs
+no passphrase; `status --check-keys` verifies the active restored key generations.
+See [custody and recovery](omega-production-custody.md) for accepted limits.
 
-Compromise confined to the renewal service account must not permit new membership
-approval or replacement of the root authority. Keep operator keys and passwords
-inaccessible to that account; a whole-host compromise is outside this boundary.
-The service can still deny updates or replay an older, still-valid approved
-manifest to a client without newer state. Expiry
-limits that exposure; signing separation does not eliminate it. Membership
-key compromise permits malicious approved endpoints until corrected through
-the authority; it deserves protected storage and a rehearsed revocation path.
-
-Start rehearsal with the following policy, and adjust from measured outage
-tolerance before activation:
-
-| Metadata | Lifetime | Renewal trigger |
+| Metadata | Lifetime | Renewal policy |
 | --- | --- | --- |
 | Root | 365 days | Operator rotation with at least 180 days remaining |
 | Targets / membership | 90 days | Review and reapprove with at least 30 days remaining |
-| Snapshot | 7 days | Renew with timestamp daily |
-| Timestamp | 7 days | Renew daily; check/retry hourly and alert on a missed cycle |
+| Snapshot and timestamp | 7 days | Refresh daily; check/retry hourly |
 
-These are the first-network operating values, implemented by the publisher,
-not library defaults. A missed daily renewal normally leaves six days of
-validity in the last timestamp. This tolerates publishing outages while allowing
-previously signed discovery to remain acceptable for up to seven days; signature
-and rollback checks still apply. Root/membership deadlines can shorten that
-window. An unreachable repository can still block clients without a valid cache.
-Online renewal cannot extend root or membership approval forever. It must refuse to present
-expired approval as healthy and warn well before either operator approval is
-due. Here, offline approval means outside unattended renewal, not an air-gapped
-machine. Clock synchronization and clock-error reporting are deployment inputs.
+Root and membership deadlines can shorten the online validity window. The
+renewal service cannot approve different membership or extend offline approval
+indefinitely. A failed daily publication normally leaves six days of validity;
+a client without valid cached metadata still needs a reachable repository.
+Key rotation is an operator action, not part of daily freshness renewal.
 
-## Repository and bootstrap manifest
+## Repository and manifest
 
-Initially ship an explicit HTTPS repository URL and the initial signed root
-bundle with a public release. DNS locates that HTTPS hostname; DNS TXT does
-not carry trust metadata or choose an arbitrary download URL. If alternate
-locators are added later, they need an explicit policy for allowed origins,
-redirects, and local/private address access.
+The public bundle pins the network identity, HTTPS repository URL, and initial
+signed root. The current authority is recorded in
+[public-network-authority.md](public-network-authority.md), with metadata at
+`https://sopholeth.io/omega/`. DNS locates that host; TXT records do not convey
+trust. Metadata and node clients verify TLS and reject redirects.
 
-The public home is planned at `https://sopholeth.io/omega/`. Repository
-validation, client fetching, and publisher verification now support HTTPS base
-paths and confine downloads to that origin and directory. Node endpoint
-validation still requires HTTPS origins. URL normalization preserves existing
-origin-only authorities; changing a bound repository path requires an explicit
-migration, not editing authority or client state.
+Use consistent snapshots, numbered root/targets/snapshot files, a fixed
+`timestamp.json`, and content-hashed `bootstrap.json` targets. The manifest
+contains schema, network, enclave, and distinct root IDs/HTTPS origins. Validate
+its complete signed chain, target hash, schema, network, and endpoints before
+activating it. The manifest endorses bootstrap entry points only: ordinary nodes
+may join and gossip without appearing in it, and writes remain anonymous.
 
-The apex must serve metadata directly. Production at `sopholeth.io`, with www
-redirecting to the apex, was verified on 2026-09-23. Before public `soph omega init`,
-recheck the exact metadata URL without redirects.
-The client intentionally rejects redirects, and initialization binds the chosen
-URL without contacting it. No in-place repository migration is implemented.
+The publisher retains every numbered root transition and published object in
+its journal. Install immutable objects before updating the timestamp. Timestamps
+and missing-object responses use `no-store`; existing immutable objects receive
+one-year immutable caching. Never prune the chain to repair a failed update.
+The metadata-only Vercel project is independent of docs deployments and rollbacks;
+[Vercel publication](omega-vercel.md) documents its route, verification, and limits.
 
-The docs site's Vercel configuration now reserves `/omega/` for fixed-name
-`timestamp.json`, numbered root/snapshot/targets metadata, and hash-addressed
-manifests. Timestamp responses use `no-store`; existing immutable objects use
-a one-year immutable cache policy. Missing objects return uncached JSON 404s,
-including future root versions. Internal/pending filenames are denied even if
-present in the site output. Other docs pages retain their existing routing.
-See [hosting configuration and checks](../sites/README.md#omega-metadata-hosting).
+Repository identity is bound into the authority, bundle, and client state.
+Changing it requires deliberate trust adoption; there is no in-place repository
+migration. Normal signed key rotations retain the initial bundle/fingerprint.
 
-The Vercel adapter stages retained public objects in a separate metadata-only
-project, checks their exact bytes and cache policy, promotes the deployment, and
-verifies the canonical public URL. Promotion state is journaled across retries.
-A project-level rewrite keeps `/omega/` independent of docs deployments and
-rollbacks; the [hosted rehearsal](omega-hosted-rehearsal.md) verified this with signed
-metadata. Do not put metadata into the Git-deployed docs site. Rehearsal authorities use a
-unique subpath so their immutable objects cannot collide with the final authority.
-See [Vercel publication](omega-vercel.md). No public authority has been created.
+## Durable client state and runtime authority
 
-Use consistent snapshots, a fixed target name `bootstrap.json`, numbered
-root/targets/snapshot files, and content-hashed target objects. Upload immutable
-objects before changing `timestamp.json`. Retain every numbered root
-transition for the first network, including transitions whose expiry has
-passed. This small repository does not need aggressive garbage collection.
-Retain other published objects through their relevant validity windows and
-the documented download/recovery margin; determine that margin in rehearsal.
-The [TUF specification](https://theupdateframework.github.io/specification/latest/)
-defines the update protocol; the retention and publication policy here is
-our operational choice.
+- Serialize access per network and refresh from the latest accepted root, not
+  the original bundled root on every restart.
+- Preserve authenticated partial progress even if a later download fails.
+  Accepting timestamp N must prevent fallback to N-1 after a restart.
+- Use durable checkpoints with private ownership, process locks, file/directory
+  synchronization, and corruption checks. Missing or corrupt established state
+  is an error, not an implicit trust reset.
+- Activate only complete verified manifests. Their deadline is the earliest
+  expiry across root, targets, snapshot, and timestamp metadata. An unchanged
+  valid renewal can extend it; a failed refresh cannot.
+- Withdraw incompatible retained authority after verified root/targets
+  transitions. Check deadlines on every root-role and recovery-seed lookup,
+  including while a refresh is stalled. Equality with the deadline is expired.
+- Offline startup may reverify a still-valid durable view. Expired discovery
+  withdraws the official root role and seeds; it does not evict ordinary peers
+  or alter payload TTLs.
 
-The proposed manifest describes a schema version, network identity, enclave,
-and bootstrap roots with stable node identifiers and explicit HTTPS origins.
-The first public manifest has three distinct roots in `default`. Validate
-identities, duplicate origins, URL form, and supported schema before signing
-and after download. Do not encode secrets or replication topology in it.
-Finalize the exact wire schema with the endpoint work in
-[#194](https://github.com/TickTockBent/Sopholeth/issues/194).
+The node pins signed root origins/enclaves through peer updates, including
+before first contact. A verified manifest can move those routes. Bootstrap
+responses are checked against the signed root identity; arbitrary peer referrals
+are not authenticated identities. The [discovery guide](discovery.md) covers
+refresh scheduling, route pins, profile renewal, and transport limits.
 
-This manifest authorizes bootstrap entry points, not ordinary peer membership.
-Any compatible node may join and gossip without appearing in it. Root node IDs
-are protocol handles; the manifest does not authenticate write authors or make
-replication acknowledgments a consensus certificate.
+## Signing, publication, and recovery
 
-HTTPS metadata delivery alone does not repair bootstrap transport. Nodes,
-CLI, and viewer must follow signed endpoint schemes consistently, verify TLS
-certificates and hostname identity, and define how configured node identity
-is checked. An authenticated bootstrap response must also have a defined
-policy for advertised gossip/WebSocket endpoints. HTTP downgrades or blind
-trust in forwarding headers must not reintroduce the audited gap.
+Initialization prepares and verifies a complete authority privately, then commits
+it with one atomic, non-replacing directory rename. Retries recover the same
+allocation or verify the committed authority. They never create replacement keys
+for an existing network.
 
-Use an explicitly configured HTTP client with timeouts, bounded downloads,
-and restricted redirects; the library's default fetcher uses
-`http.DefaultClient`. The spike's client trusts the test server's certificate
-without disabling TLS verification. Public-Internet endpoint validation,
-redirect policy, and node transport are not implemented by this test.
+Publishing and rotation use single-writer locks, monotonic versions, immutable
+prepared releases, and durable retry journals. `provision-renewal` transfers the
+journal and online keys recoverably while leaving operator keys inaccessible to
+the service. Publication verifies exact served bytes and signatures before
+reporting success. Repair moves forward through retained history; rolling back
+the timestamp or promoting arbitrary old metadata is not recovery.
 
-## Client state and runtime authority
+A successor root must meet both the previous and new root thresholds. Online and
+membership rotations replace their role assignments through that chain. Root
+rotation also requires explicit renewal of the unchanged membership approval.
+The scheduler can finish only a fully signed handoff; it cannot supply missing
+operator approval. Retired private generations are never fallback signers.
 
-Keep state separate for each network and serialize access across processes
-and refresh goroutines. A new updater is needed for each refresh. On restart,
-supply the latest accepted local `root.json` to `config.New`; only a genuinely
-new state store starts from the release bundle. `updater.New` persists its
-supplied root immediately. Passing the bundled root on every restart would
-overwrite the newer root. These are integration requirements observed in the
-pinned [updater source](https://github.com/theupdateframework/go-tuf/blob/v2.4.2/metadata/updater/updater.go).
+Keep the public transition chain, current journals, and checked encrypted backups.
+Loss of an online or membership key is recoverable through the root quorum;
+loss of one root key through the other two. If the quorum or trustworthy version
+history cannot be recovered, explicitly reset with a new independently adopted
+bundle. Disconnected clients may keep accepting old signed metadata until its
+lease expires, so rotation does not promise instantaneous revocation.
 
-Preserve successfully authenticated metadata even when a later step fails.
-A client can have accepted timestamp N while snapshot N is unavailable; it
-must not discard N and accept N-1 on restart. The production state layer must
-record an initialized marker, accepted versions, and complete metadata writes,
-and treat missing/corrupt established state as an actionable error. Do not
-silently reset it from an older bundle. Recovery/reset must be explicit and
-must explain that discarding state discards rollback history.
-
-The library renames temporary metadata files but does not fsync the file or
-parent directory; target writes are ordinary writes. Provide crash-durable
-storage around the complete update sequence, preserving partial verified
-progress, before claiming restart protection through power loss. Evaluate
-that storage boundary during implementation rather than assuming the cache
-is a transaction. Protect directory ownership/permissions and reject unsafe
-existing locations; library directory creation does not tighten existing
-permissions. Local state modification by an attacker is outside the network
-update protection demonstrated here.
-
-Only activate a manifest after its complete signature/version chain, target
-hash, and Sopholeth schema/endpoint checks pass. Retain the accepted manifest
-separately from an in-progress refresh, with its authenticated expiration
-deadline: the earliest expiry among its root, targets, snapshot, and
-timestamp metadata. A successful unchanged renewal can extend that deadline.
-A failed refresh cannot extend it. Any newly authenticated revocation or
-authority change must also invalidate incompatible retained authorization;
-do not blindly retain a lease under keys the client has already retired.
-
-Check that deadline whenever returning trusted roots or recovery seeds, and
-schedule revocation of root bootstrap status even while refreshes are failing.
-Treat equality with the deadline as expired. Existing peer sessions and
-payload operations require their own explicitly documented behavior; losing
-bootstrap authority must not accidentally rewrite payload TTL semantics.
-Startup while offline must reverify a complete accepted state and its lease;
-do not turn on the library's `UnsafeLocalMode` as an unexplained fallback.
-
-## One operator workflow
-
-`soph omega init`, `provision-renewal`, local-directory `publish` (including
-`--renew`), online/membership/root-key `rotate`, and `status --verify` are
-implemented for disposable authorities on Linux; see the
-[operator guide](omega-operations.md). Initialization prepares
-and verifies the entire authority privately, then commits it with a single
-atomic, non-replacing directory rename. Repeated invocations recover the same
-transaction or verify the same committed authority. Production custody remains
-pending. Publication uses a separate immutable release journal, explicit
-consecutive release versions, independent approval/renewal versions,
-timestamp-last writes, and exact served-byte
-verification through a fresh durable client. See the operator guide for its
-retry and expiration contract. The complete command surface below includes
-subsequent planned work:
-
-- `soph omega init`: create an exclusive staged authority directory, protect
-  key files, verify generated key consistency, produce public bundle and
-  fingerprints, and record the recoverable initialization state. An existing
-  or interrupted initialization cannot silently replace keys.
-- `soph omega provision-renewal`: bind a separate operational home and transfer
-  the journal recoverably, enabling it only after the history and two online
-  keys are durable. Keep root and membership keys in the offline home.
-- `soph omega publish`: validate membership approval, prepare immutable
-  objects, sign permitted roles, publish timestamp last, then independently
-  fetch and verify the served result and expected versions. Nonzero exit on
-  any publication or verification failure. An unattended renewal mode uses
-  only approved membership metadata and online keys; it never requests the
-  ultimate authority key just to extend routine freshness.
-- `soph omega status`: display network, accepted versions, role fingerprints,
-  bootstrap roots, all expiration deadlines, last verified publication, and
-  required action. Provide machine-readable output and failure exit codes.
-- `soph omega rotate`: prepare replacement snapshot/timestamp keys, or use
-  `--role targets` for the offline membership key. Prepare a successor root
-  signed by the unchanged 2-of-3 root quorum. Require its reviewed
-  digest for application, retain numbered roots, and recover publication through
-  the online journal. Membership private generations stay offline; their signed
-  targets handoff preserves approval and expiry and enables scheduler recovery
-  only after it is complete. Root mode replaces all three authority keys and
-  extends root validity, satisfying both old and new 2-of-3 thresholds. Its
-  explicit `--renew-approval` apply renews the unchanged membership through an
-  offline signature, including after the previous root expires. The scheduler
-  can complete only a fully signed public handoff. Automated deployment adoption
-  tracking and production custody remain later slices; never overwrite keys.
-
-Signing and publication need a single-writer lock, durable monotonic counters,
-immutable prepared releases, and an idempotent retry journal. If timestamp N
-escapes before its objects, complete N or publish a higher numbered repair;
-rolling the timestamp back is not a valid recovery procedure.
-
-For an authority rotation, root N+1 must meet both root N's threshold and its
-own threshold. For an online or membership role rotation, the root authority
-signs the changed role assignment. Publish the numbered root chain and
-successor role metadata in the planned order; retain the chain permanently.
-There is no need for the old online key to remain valid in the new root just
-to accommodate returning clients. Clients that have not seen the transition
-can remain on old signed state until its lease expires, so emergency rotation
-is not instantaneous revocation across disconnected clients.
-
-Retire replaced operational keys after publication verification and observed
-adoption by all three roots and representative clients, preserving the
-transition and the documented offline recovery material. Loss of an online
-or membership key is recoverable through the root quorum. Loss of one of
-three root keys is recoverable with the other two. Losing the quorum requires
-its protected backups; losing every recovery path requires a newly distributed
-trust anchor. Compromise of the root quorum cannot be repaired by trusting an
-unsigned replacement from the same compromised delivery channel.
-
-## Implementation sequence and remaining gates
-
-1. Preserve the placeholder rejection/release gate from
-   [#192](https://github.com/TickTockBent/Sopholeth/issues/192) while upgrading
-   the application toolchain and integrating the public root bundle representation.
-2. Build the durable trust client and manifest/endpoint validation. Carry the
-   spike's cases into production regression tests and add crash interruption,
-   corruption, concurrent access, bounded fetches, and runtime revocation.
-3. Implement `soph omega` initialization, publishing/renewal, status, and
-   rotation with disposable custody material. Retire the standalone `omega`
-   command and update all builds and consumers together.
-4. Integrate runtime expiration, retry timing, and public profile/viewer
-   renewal; rehearse real publication, key recovery, and bootstrap transport.
-5. Continue the root correctness work and remote three-root rehearsal in the
-   public-network plan. Production custody, bundle fingerprints, addresses,
-   DNS, and activation come from that runbook, not this spike.
-
-The toolchain upgrade, explicit bundle/manifest types, and durable client from
-steps 1–2 are implemented. Step 3 now includes atomic disposable `init`,
-journaled local-directory `publish`, restricted online custody provisioning,
-unattended renewal, online/membership/root-key rotation, and local/HTTPS-verified
-`status`, root-expiry recovery, and replacement with one rotated root signer
-unavailable. Encrypted custody, Vercel hosting, the hosted rehearsal, and
-standalone-tool retirement are also implemented. Node/CLI adoption, embedded
-public-bundle release checks, runtime invalidation, HTTPS bootstrap/gossip, and
-saved-profile/viewer refresh are implemented and exercised locally. The actual
-public bundle remains unconfigured. Dashboard adoption and native Windows
-storage are deferred; deployed network behavior still needs bring-up testing. The [client reference](../internal/trust/bootstrap/README.md)
-records its supported storage platforms and exact validation boundaries.
-
-The first TUF consumer integration and three-root test deployment target Linux.
-Native Windows public-client support remains planned. The
-[Windows gate](public-network-plan.md#windows-public-client-gate)
-covers the complete storage backend, including ACL/account policy, ancestor
-paths, locking, durable replacement, and native Windows regression tests.
-The current unsupported-platform error remains explicit until that backend is
-ready. Windows support is a follow-up deliverable, not a prerequisite for the
-Linux test network; do not claim it from cross-compilation alone.
-
-The spike does not close #195 or the related audit issues. It establishes a
-feasible library and trust lifecycle and identifies the integration work
-needed before the first public network can use them.
+Native Windows durable discovery, explicit reset-bundle overrides, and remaining
+operator report/ownership findings are tracked in the
+[network plan](public-network-plan.md). The completed integration spike and
+interim DNS audit remain in Git history; current public discovery does not use
+that DNS protocol.
