@@ -4,10 +4,14 @@
 
 ### Test applications
 
-- Recreate Fade at `sopholeth.com/fade/`: a public ephemeral message board with
+- Recreate Fade at `sopholeth.com/fade/`: a public ephemeral chat channel with
   optional callsign/location, 5-minute to 1-day lifetimes, node selection,
   live updates, key lookup, and polling fallback. Use the current site design
   tokens and ordinary node APIs; no separate backend or message database.
+- Keep the chat composer in view, order messages oldest first, support
+  Enter-to-send, and preserve the reader's position when new messages arrive.
+  Move node controls and key lookup into Channel details. Redirect slashless
+  site paths so `/fade` loads its own stylesheet, script, and configuration.
 
 ### Repository maintenance
 
