@@ -9,7 +9,7 @@ directory. Deployment filtering uses a shared Git-based check.
 | `sopholeth.com` | `sites/sopholeth.com` | Rebranded marketing and showcase site, moved from `web/`. |
 | `sopholeth.io` | `sites/sopholeth.io` | Documentation landing page, private-node quickstart, and links to the maintained repository guides. |
 | `sopholeth.dev` | `sites/sopholeth.dev` | Devlog and release-notes landing page, starting with the merged rebrand. |
-| `soph.stream` | `sites/soph.stream` | Live node viewer; connect through the node field or `?node=`. No public default endpoint is configured yet. |
+| `soph.stream` | `sites/soph.stream` | Live node viewer. Watches the public network by default; `?node=` or the node field selects a specific node. |
 
 ## Vercel setup
 
@@ -169,9 +169,11 @@ their styles are intentionally local so deployments remain independent.
 through the Go package in [stream.go](stream.go). These files are the single
 source for both distributions; rebuild `bin/soph` after changing them. The
 static Vercel project continues to serve its own directory without a build.
-The static `config.json` is empty; `soph serve` supplies the selected node
-and initial filter at that path and forwards viewer reads to the selected
-node. Document-relative asset and API URLs support port-forwarding prefixes.
+The static `config.json` lists the public roots under `public`. Without
+`?node=`, the page connects to one of them at random and moves to the next
+when a stream fails, rebuilding from that root's snapshot. Update the list
+when roots change. `soph serve` supplies its own `config.json` with the
+selected node and initial filter, and forwards viewer reads to that node. Document-relative asset and API URLs support port-forwarding prefixes.
 See the [CLI guide](../docs/cli.md#local-stream-viewer) and
 [local validation instructions](../test/stream/README.md).
 

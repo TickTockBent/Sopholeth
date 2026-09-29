@@ -5,6 +5,9 @@
   const entries = new Map(), cards = new Map(), retiring = new Map();
   let slots = [], slotElements = [], source = null, endpoint = '', identity = null;
   let servedNode = '';
+  // Public mode walks the configured public roots; each switch rebuilds from
+  // that node's own snapshot. An explicit node never fails over.
+  let publicNodes = [], publicIndex = 0, publicMode = false, publicFailures = 0, failoverTimer = null;
   let state = 'idle', query = '', mobile = false, capacity = 0;
   let epoch = Date.now(), anchor = performance.now(), detailKey = null, detailRequest = null;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -46,7 +49,7 @@
   }
   function saveURL() {
     const url = new URL(location.href);
-    if (endpoint) url.searchParams.set('node', endpoint); else url.searchParams.delete('node');
+    if (endpoint && !publicMode) url.searchParams.set('node', endpoint); else url.searchParams.delete('node');
     if (query) url.searchParams.set('q', query); else url.searchParams.delete('q');
     history.replaceState(null, '', url);
   }
@@ -67,10 +70,29 @@
     let target;
     try { target = normalizeNode(value.trim()); }
     catch (err) { $('node').setCustomValidity(err.message); $('node').reportValidity(); return; }
+    publicMode = false; clearTimeout(failoverTimer);
+    open(target);
+  }
+  function connectPublic(advance) {
+    publicMode = true; clearTimeout(failoverTimer);
+    if (advance) publicIndex = (publicIndex + 1) % publicNodes.length;
+    open(publicNodes[publicIndex]);
+  }
+  function publicFailover(connection) {
+    connection.close(); clearView();
+    publicFailures++;
+    // One quick pass over the roots, then back off so a network-wide outage
+    // does not become a reconnect loop against every root.
+    const passes = Math.floor(publicFailures / publicNodes.length);
+    const delay = passes ? Math.min(30000, 2000 * 2 ** (passes - 1)) : 500;
+    setState('disconnected', new URL(endpoint).host + ' unavailable · trying another public node…');
+    failoverTimer = setTimeout(() => connectPublic(true), delay);
+  }
+  function open(target) {
     if (source) source.close();
     endpoint = target; identity = null; clearView(); saveURL();
-    $('node').value = endpoint; $('identity').textContent = endpoint;
-    setState('connecting', 'Connecting to node…');
+    $('node').value = publicMode ? '' : endpoint; $('identity').textContent = endpoint;
+    setState('connecting', publicMode ? 'Connecting to the public network…' : 'Connecting to node…');
     const connection = new EventSource(nodeURL('v1/stream'));
     source = connection;
     const event = (name, callback) => connection.addEventListener(name, message => {
@@ -88,7 +110,8 @@
       identity = { node: data.node, enclave: data.enclave };
       $('identity').textContent = data.node + ' / ' + data.enclave;
       for (const entry of snapshot) if (entry.expires > now()) entries.set(entry.key, entry);
-      setState('connected', 'Connected · live local view');
+      publicFailures = 0;
+      setState('connected', publicMode ? 'Connected · public network · live local view' : 'Connected · live local view');
     });
     event('put', data => {
       if (state !== 'connected' || !identity || data.node !== identity.node) return;
@@ -113,6 +136,7 @@
     event('clock', data => { if (state === 'connected') { syncClock(data.now); tick(); } });
     connection.onerror = () => {
       if (source !== connection) return;
+      if (publicMode) { publicFailover(connection); return; }
       clearView();
       setState('disconnected', 'Stream unavailable · retrying with a fresh snapshot…');
     };
@@ -265,7 +289,12 @@
       $('detail-status').textContent = err.message + ' Showing the stream preview.';
     }
   }
-  $('connect-form').addEventListener('submit', event => { event.preventDefault(); connect($('node').value); });
+  $('connect-form').addEventListener('submit', event => {
+    event.preventDefault();
+    if ($('node').value.trim()) connect($('node').value);
+    else if (publicNodes.length) connectPublic(false);
+    else { $('node').setCustomValidity('Enter a node address.'); $('node').reportValidity(); }
+  });
   $('node').addEventListener('input', () => $('node').setCustomValidity(''));
   $('query').addEventListener('input', () => { query = $('query').value; saveURL(); render(); });
   $('close-detail').addEventListener('click', closeDetail);
@@ -280,8 +309,18 @@
     servedNode = config.node ? new URL(config.node).origin : '';
     const params = new URLSearchParams(location.search);
     query = params.get('q') ?? config.q ?? ''; $('query').value = query;
+    publicNodes = [];
+    for (const value of Array.isArray(config.public) ? config.public : []) {
+      try { publicNodes.push(normalizeNode(String(value))); } catch { /* skip unusable entries */ }
+    }
+    if (publicNodes.length) {
+      $('node').placeholder = 'public network';
+      publicIndex = Math.floor(Math.random() * publicNodes.length);
+    }
     const node = params.get('node') || servedNode;
-    if (node) connect(node); else render();
+    if (node) connect(node);
+    else if (publicNodes.length) connectPublic(false);
+    else render();
   }
   start().catch(() => setState('disconnected', 'Unable to load viewer configuration. Reload to try again.'));
 })();

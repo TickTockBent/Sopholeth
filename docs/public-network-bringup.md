@@ -221,7 +221,9 @@ From another machine, request every root's `/v1/health` and `/v1/topology` over
 HTTPS without `-k` or redirect following. Confirm its exact node ID, public
 network/default enclave, and both other roots at their signed origins. Verify
 `Cache-Control: no-store`, no cached data responses, and anonymous access.
-`/v1/ws`, `/v1/stream`, `/v1/metrics`, and unknown paths must return 404. Port 18080
+`/v1/ws`, `/v1/metrics`, and unknown paths must return 404. `/v1/stream` is
+open for the soph.stream viewer; `curl -N` should receive a snapshot, then a
+`clock` event every 15 seconds. Port 18080
 must be unreachable through the public and Tailscale addresses. Check each
 root's write limits with both known-length and chunked requests:
 

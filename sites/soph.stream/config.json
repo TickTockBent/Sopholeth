@@ -1,1 +1,7 @@
-{}
+{
+  "public": [
+    "https://kraid.sopholeth.io",
+    "https://ridley.sopholeth.io",
+    "https://motherbrain.sopholeth.io"
+  ]
+}

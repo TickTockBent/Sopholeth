@@ -9,7 +9,7 @@ Side quest inside Sopholeth. One static page, one node endpoint, two CLI command
 - Soph shape: key, payload (base64), truncated flag, size, ttl, written_at, expires_at, node.
 - Payloads cut at 4 KB in the stream; full value via `GET /v1/data/<key>` on demand.
 - CORS `*` on this endpoint only. Never blocks writes. Slow consumer gets dropped; it reconnects and gets a fresh snapshot.
-- `SOPH_STREAM=off` disables it.
+- `NODE_STREAM=off` disables it.
 
 ## Page
 - Viewport-sized slot grid, 3:2 cards, no default sort. New soph → random empty slot. Expired soph → fades, frees slot. Overflow waits in arrival order; footer shows the count.
@@ -35,13 +35,13 @@ Side quest inside Sopholeth. One static page, one node endpoint, two CLI command
 - Hands the page the enclave peer list for failover.
 - Flags: `--node`, `--port`, `--q <prefix>`, `--open`, `--bind`.
 - Prints one link and the node/enclave it's watching, then nothing.
-- Proxies nothing. Browser talks to the node directly.
+- Forwards stream and full-value reads to its node through the viewer port, so HTTPS port forwarding works.
 
 ## Node: topology change
 - `TopologyPeer` gains `root: bool`, true for peers learned from bootstrap config. Relative to the reporting node.
 
 ## Public deploy
-- soph.stream = the page on a static host, `?node=` defaulting to a Clocktower node in `default`. It shows that node's view; the dialog says so.
+- soph.stream = the page on a static host. Without `?node=` it picks a public root from `config.json` at random and fails over to the next one. It shows that node's view; the dialog says so.
 - Needs a public HTTPS stream endpoint and SSE keepalive that survives the host's idle timeout.
 
 ## Build order
