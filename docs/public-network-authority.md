@@ -37,12 +37,12 @@ Activation status:
 - First production freshness renewal: release 2 verified by the service on
   2026-09-29. The production Vercel drop-in is installed and the hourly timer is
   enabled and active. The disposable rehearsal timer remains disabled.
-- Public ingress: all three tunnels are reachable with valid TLS. Kraid and
-  Ridley return healthy public HTTPS responses; Motherbrain awaits startup.
-- Root deployment: Kraid and Ridley report `official root=true` from verified
-  discovery and list each other at their signed HTTPS origins. A fresh public
-  `soph join` selected Kraid successfully. Motherbrain deployment and cross-root
-  data validation remain pending.
+- Public ingress: all three roots return healthy public HTTPS responses through
+  their own tunnels, with valid TLS and the expected IDs/network/enclave.
+- Root deployment: all three report `official root=true` from verified discovery
+  and list both other roots at their signed HTTPS origins. Fresh public
+  `soph join`, anonymous cross-root operations, admission limits, five-minute
+  expiry, and an unlisted fourth node passed [live validation](public-network-validation.md).
 
 ## First publication
 
@@ -81,23 +81,23 @@ It checks hourly, verifies without deploying before renewal is due, and refreshe
 daily with seven-day validity. A failed renewal is retried on the next hourly
 run. Record the first timer-driven due renewal when it occurs.
 
-## Next operator step
+## Next operator work
 
-Authority adoption is merged in #249 (`03ff9b2`), with Kraid and Ridley running.
-Build the same reviewed release and [start Motherbrain](public-network-bringup.md#adopt-the-bundle-and-build-the-release).
-Then verify anonymous cross-root writes,
-the admission limits, and an unlisted node joining the public network.
+Authority adoption is merged in #249 (`03ff9b2`), and all three roots are running.
+The healthy-network checks passed. Continue testing the running network, observe
+the first timer-driven due renewal, and use the setup findings to simplify the
+operator process before deliberately tearing down and rebuilding. The
+[validation record](public-network-validation.md) distinguishes completed checks
+from remaining fault and transport tests.
 
-## Prepared deployment artifacts
+## Deployed artifacts
 
-Kraid's release build and startup completed on 2026-09-29. The installed CLI
-checksum and local node image were checked directly on the host. The node is
-healthy behind the loopback ingress on port 18080; public health returns the
-correct ID/network/enclave with `Cache-Control: no-store`. Ridley joined on
-2026-09-29; both public topology views now list the other root at its signed
-HTTPS origin in the default enclave. The topology `role` field
-describes the separate WebSocket attachment role; the discovery startup log
-confirms Kraid's official root role.
+All three roots started on 2026-09-29 from the same reviewed source. Their
+running image IDs and CLI checksums were checked on each host. Public health
+returns the correct ID/network/enclave with `Cache-Control: no-store`, and each
+topology lists both other roots at their signed HTTPS origins. The topology
+`role: transient` describes the separate WebSocket attachment role; the discovery
+startup logs confirm each node's official root role.
 
 | Kraid artifact | Value |
 | --- | --- |
@@ -114,6 +114,21 @@ public health passed. Its operator script saves the artifact details in
 | Source commit | `03ff9b2287d0d9e36893a05ceb7530a9860bdf70` |
 | Node image | `sha256:983a3b1ae43a8100566ff75afe8888255e47b0c5e72f7a6dd8d0dba4899e61f4` |
 | Built CLI SHA-256 | `8bd0ffd4c797bbfde7544c30c01645e704f1cdfd2225c503a4b75450ea010be9` |
+
+Motherbrain joined on 2026-09-29. All three roots now list both others at their
+signed HTTPS origins. Its operator script built an archive of the same reviewed
+source, outside the working checkout, and saved its release record and CLI under
+`~/.local/share/sopholeth/root/`. That CLI used `-buildvcs=false`; its checksum
+differs from the checkout builds above. Local image IDs are recorded per host.
+
+| Motherbrain artifact | Value |
+| --- | --- |
+| Source commit | `03ff9b2287d0d9e36893a05ceb7530a9860bdf70` |
+| Node image | `sha256:86c7c4cac62c6b876281db9030cc49102e38a5e8f08c0b55a558f978265c36df` |
+| Built CLI SHA-256 | `23dd4337215481bffb8492fddf5890e7708782b71c5fcc983afaef6f9891731e` |
+
+All three use ingress image
+`nginx@sha256:985220252f3863977e468f611ef118ebd01421289dd86ee1ae99cb068c3bce2b`.
 
 ## Repeat the full backup
 

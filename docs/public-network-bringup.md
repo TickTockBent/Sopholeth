@@ -1,9 +1,10 @@
 # Three-root public test-network bring-up
 
-Prepared for Kraid, Ridley, and Motherbrain. This is the operator procedure.
-The intended authority is initialized on Kraid, its restored keys are verified,
-and release 1 is published. The post-publication backup, production timer, and
-root deployment remain pending in the [authority record](public-network-authority.md).
+This is the operator procedure used to start Kraid, Ridley, and Motherbrain on
+2026-09-29. All three roots are running and passed the initial
+[live checks](public-network-validation.md). The authority, checked off-host
+backup, release 2, and enabled production timer are recorded in the
+[authority record](public-network-authority.md).
 Run commands as the normal login user. Only host administration and omega
 custody use `sudo`.
 
@@ -67,8 +68,8 @@ enforces the launch limits and excludes unsupported paths.
 
 Initialization, the restored-backup check, first publication, full encrypted
 backup, and first production renewal are complete for the recorded authority.
-The production renewal timer is enabled. Continue with
-[building the release](#adopt-the-bundle-and-build-the-release).
+The production renewal timer is enabled and all three roots are deployed.
+Continue with [operating the live network](#check-the-live-network-and-operate-it).
 Retain the existing authority and fingerprint; the commands below record setup.
 
 Use the installed `soph` and custody/service-account layout from the successful
@@ -299,5 +300,7 @@ from node rejection, including chunked bodies. Ten-year peer TTLs stored as
 86400 seconds, and negative peer TTLs as 300 seconds, on all three roots.
 The fourth-node join/replication check also passed; test containers were removed.
 
-This does not validate Cloudflare routing, host firewalls, live TLS, TTL expiry,
-or the daily renewal timer on these hosts. Those checks remain part of activation.
+These local fixtures did not validate Cloudflare routing, host firewalls, live
+TLS, TTL expiry, or the daily renewal timer on these hosts. The subsequent
+[2026-09-29 live validation](public-network-validation.md) records deployed-host
+results and remaining follow-ups, including the first timer-driven due renewal.
