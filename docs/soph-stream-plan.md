@@ -11,8 +11,11 @@ feature list have been superseded by the implementation and this plan.
 - The node's `GET /v1/stream` sends a local snapshot, accepted writes, advisory
   expiry events, and clock updates. Previews are limited to 4 KiB; detail reads
   fetch the current full value, which may differ from an earlier preview.
-- The viewer is read-only. Payloads render as text or a binary preview, never
-  executable markup. There is no payload history, browser persistence, or
+- A `write ↗` toggle opens a small form (key, value, TTL) that PUTs to the
+  node being watched; the value replicates from there like any other write.
+  A blank key is generated. The form reports 201 as confirmed and 202 as
+  stored but not yet confirmed. Payloads render as text or a binary preview,
+  never executable markup. There is no payload history, browser persistence, or
   analytics. Node selection and text search are reflected in the URL.
 - The selected node, enclave, and connection state remain visible. The page
   represents that node's local view, including its actual TTLs; counts and
@@ -22,12 +25,13 @@ feature list have been superseded by the implementation and this plan.
   An explicit `?node=` selects only that endpoint.
 - `soph join` retains named networks. Verified public profiles follow the omega
   discovery rules, and `soph serve` refreshes that profile while running.
-  The viewer server forwards reads through its own origin so HTTPS port
-  forwarding works. It does not retry a client PUT.
+  The viewer server forwards reads and the write form's PUTs through its own
+  origin so HTTPS port forwarding works. It does not retry a PUT.
 - Subscriber queues and snapshot size are bounded. Slow viewers disconnect;
   writes do not wait for a viewer. `NODE_STREAM=off` disables the endpoint.
   The current root ingress allows two streams per visitor; each node allows
-  eight total. Snapshot growth remains an open limitation under #218.
+  eight total. Past the snapshot limits, a snapshot keeps the newest entries
+  and reports the rest as `omitted` (#218).
 
 See the [API stream contract](api.md), [CLI guide](cli.md#local-stream-viewer),
 [shared asset setup](../sites/README.md#local-preview), and

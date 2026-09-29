@@ -293,6 +293,52 @@
       $('detail-status').textContent = err.message + ' Showing the stream preview.';
     }
   }
+  // Writes go to the node being watched and replicate from there as usual.
+  function generateKey() {
+    const hex = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+  }
+  function writeStatus(message, kind = '') {
+    $('write-status').textContent = message;
+    $('write-status').dataset.state = kind;
+  }
+  let writing = false;
+  async function submitWrite() {
+    if (writing) return;
+    if (!endpoint || state !== 'connected') { writeStatus('Connect to a node first.', 'error'); return; }
+    const key = $('write-key').value || generateKey();
+    const target = identity ? identity.node : new URL(endpoint).host;
+    writing = true; writeStatus('Writing to ' + target + '…');
+    try {
+      const response = await fetch(nodeURL('v1/data/' + encodeURIComponent(key)), {
+        method: 'PUT', cache: 'no-store', body: new TextEncoder().encode($('write-value').value),
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-TTL': $('write-ttl').value },
+      });
+      const messages = {
+        201: 'Stored on ' + target + ' · replication confirmed',
+        202: 'Stored on ' + target + ' · replication not yet confirmed',
+        413: 'Too large for this node (key or value over its limit).',
+        429: 'Rate limited. Wait a moment and try again.',
+        507: target + ' is full.',
+      };
+      const ok = response.status === 201 || response.status === 202;
+      writeStatus(messages[response.status] || 'Write failed (HTTP ' + response.status + ').', ok ? 'ok' : 'error');
+      if (ok) { $('write-key').value = ''; $('write-value').value = ''; $('write-value').focus(); }
+    } catch {
+      writeStatus('Write failed: ' + target + ' is unreachable.', 'error');
+    } finally { writing = false; }
+  }
+  $('write-toggle').addEventListener('click', () => {
+    const open = $('write-form').hidden;
+    $('write-form').hidden = !open;
+    $('write-toggle').setAttribute('aria-expanded', String(open));
+    if (open) $('write-value').focus();
+    layout();
+  });
+  $('write-form').addEventListener('submit', event => { event.preventDefault(); submitWrite(); });
+  $('write-value').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); submitWrite(); }
+  });
   $('connect-form').addEventListener('submit', event => {
     event.preventDefault();
     if ($('node').value.trim()) connect($('node').value);

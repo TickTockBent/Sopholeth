@@ -236,11 +236,12 @@ an initial case-insensitive search across keys and payload previews.
 
 `soph serve` provides the startup node and filter to the browser, so opening
 the viewer without query parameters still connects to the selected network.
-It forwards streaming and full-value reads to that node through the viewer's
-own address. This also works through HTTPS port forwarding such as
+It forwards streaming, full-value reads, and the write form's `PUT` requests
+to that node through the viewer's own address. This also works through HTTPS port forwarding such as
 `https://editor.example/proxy/8181/`; only the viewer port needs forwarding.
-Assets and reads retain the proxy prefix. Forwarded reads target only the
-selected network, and the viewer does not expose write operations. Verified
+Assets and reads retain the proxy prefix. Forwarded requests target only the
+selected network. Writes forward only the value, `Content-Type`, and `X-TTL`,
+and are never retried. Verified
 public viewing refreshes hourly or sooner near expiry, cancels the old stream
 during checks, and reconnects to a fresh snapshot. It keeps the profile selected
 at startup even if another command changes the current profile. If discovery

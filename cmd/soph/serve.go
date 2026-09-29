@@ -189,8 +189,14 @@ func serveViewerHandlerWithLease(current func() (*url.URL, context.Context, erro
 				json.NewEncoder(w).Encode(map[string]string{"node": target.String(), "q": query})
 			}
 		case r.URL.Path == "/v1/stream" || strings.HasPrefix(r.URL.Path, "/v1/data/"):
-			if r.Method != http.MethodGet {
-				w.Header().Set("Allow", "GET")
+			// The viewer's write panel PUTs values; the stream stays read-only.
+			write := r.Method == http.MethodPut && r.URL.Path != "/v1/stream"
+			if r.Method != http.MethodGet && !write {
+				allow := "GET"
+				if r.URL.Path != "/v1/stream" {
+					allow = "GET, PUT"
+				}
+				w.Header().Set("Allow", allow)
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
@@ -210,6 +216,13 @@ func serveViewerHandlerWithLease(current func() (*url.URL, context.Context, erro
 				req.Out.Header = make(http.Header)
 				req.Out.Header.Set("Accept", req.In.Header.Get("Accept"))
 				req.Out.Header.Set("User-Agent", client.UserAgent)
+				if req.In.Method == http.MethodPut {
+					for _, name := range []string{"Content-Type", "X-TTL"} {
+						if value := req.In.Header.Get(name); value != "" {
+							req.Out.Header.Set(name, value)
+						}
+					}
+				}
 			}
 			selectedProxy.ServeHTTP(w, r.WithContext(requestCtx))
 		default:

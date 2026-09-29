@@ -70,14 +70,15 @@ writes, revision-specific expiration, rejected writes, preview truncation,
 snapshots that keep the newest entries past the limits, oversized entries, slow subscriber eviction, connection limits, replicated
 writes, stream shutdown, and CORS. CLI tests cover viewer assets, selected
 profiles and overrides, help, JSON output, and cancellation. They also cover
-read forwarding, encoded keys, upstream error responses, exclusion of proxy
-credentials and write operations, and shutdown with an active stream.
+read and write forwarding, encoded keys, upstream error responses, exclusion
+of proxy credentials and other methods, and shutdown with an active stream.
 
 [viewer.cjs](viewer.cjs) drives the actual static files in Chromium using a
 controlled SSE fixture. It covers overwrite positions, stale events, preview
 filtering, full-value reads and 404s, binary/empty/HTML payloads, clock-aware
 expiration, snapshot replacement on reconnect, overflow, mobile resizing,
-reduced motion, and the public-network default with root failover.
+reduced motion, the public-network default with root failover, and the write
+panel (generated keys, confirmed, pending, and rejected writes).
 
 With Playwright and its Chromium installed in your development environment:
 

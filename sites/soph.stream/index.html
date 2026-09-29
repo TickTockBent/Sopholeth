@@ -24,7 +24,15 @@
         <label for="node">Node</label><input id="node" type="text" placeholder="localhost:8080" autocomplete="off" spellcheck="false" /><button type="submit">connect ↗</button>
       </form>
       <label class="search-label" for="query">Filter</label><input id="query" type="search" placeholder="filter keys + payloads" autocomplete="off" />
+      <button id="write-toggle" type="button" aria-expanded="false" aria-controls="write-form">write ↗</button>
     </div>
+    <form id="write-form" class="write-form" hidden>
+      <label for="write-key">Key</label><input id="write-key" type="text" placeholder="key (blank generates one)" autocomplete="off" spellcheck="false" />
+      <label for="write-value">Value</label><textarea id="write-value" rows="1" placeholder="value" spellcheck="false"></textarea>
+      <label for="write-ttl">TTL</label><select id="write-ttl"><option value="300">5 min</option><option value="3600" selected>1 hour</option><option value="21600">6 hours</option><option value="86400">24 hours</option></select>
+      <button type="submit">put ↗</button>
+      <p id="write-status" class="write-status" role="status"></p>
+    </form>
     <div class="stream-status">
       <p id="connection" class="status" role="status" data-state="idle">Choose a node to begin</p>
       <p class="node-identity"><span id="identity">No node selected</span><span><b id="count">0</b> live<span id="queue"></span><span id="omitted"></span></span></p>

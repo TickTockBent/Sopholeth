@@ -7,6 +7,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../../sites/soph.stream');
 const viewers = new Set();
+const writes = [];
 let items = [], omittedCount = 0, clock = Date.now(), connectionCount = 0;
 const entry = (key, payload, revision = '1', ttl = 300) => ({
   key, payload: Buffer.from(payload).subarray(0, 4096).toString('base64'),
@@ -22,6 +23,18 @@ const server = http.createServer((req, res) => {
     res.write('retry: 100\n');
     res.write(`event: snapshot\ndata: ${JSON.stringify({ now: new Date(clock).toISOString(), node: 'fixture', enclave: 'test', entries: items, omitted: omittedCount })}\n\n`);
     viewers.add(res); req.on('close', () => viewers.delete(res)); return;
+  }
+  if (url.pathname.startsWith('/v1/data/') && req.method === 'PUT') {
+    const key = decodeURIComponent(url.pathname.slice('/v1/data/'.length));
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      writes.push({ key, value: Buffer.concat(chunks).toString(), ttl: req.headers['x-ttl'], type: req.headers['content-type'] });
+      if (key === 'toolarge') { res.writeHead(413).end('too large'); return; }
+      emit('put', { now: new Date(clock).toISOString(), node: 'fixture', entry: entry(key, Buffer.concat(chunks).toString(), String(100 + writes.length), Number(req.headers['x-ttl'])) });
+      res.writeHead(key === 'pending' ? 202 : 201).end();
+    });
+    return;
   }
   if (url.pathname.startsWith('/v1/data/')) {
     const key = decodeURIComponent(url.pathname.slice('/v1/data/'.length));
@@ -148,6 +161,39 @@ const server = http.createServer((req, res) => {
     assert.deepEqual(errors, []);
     await publicPage.close();
     console.log('PASS: public-network default, root failover, explicit override');
+
+    // The write panel stays closed until toggled and PUTs to the watched node.
+    const writePage = await browser.newPage({ viewport: { width: 1200, height: 900 }, reducedMotion: 'reduce' });
+    writePage.on('pageerror', err => errors.push(err.message));
+    items = [];
+    await writePage.goto(origin + '/?node=' + encodeURIComponent(origin));
+    await writePage.waitForFunction(() => document.querySelector('#connection').dataset.state === 'connected');
+    assert.equal(await writePage.locator('#write-form').isVisible(), false);
+    await writePage.locator('#write-toggle').click();
+    assert.equal(await writePage.locator('#write-toggle').getAttribute('aria-expanded'), 'true');
+    await writePage.locator('#write-value').fill('from the panel');
+    await writePage.locator('#write-ttl').selectOption('300');
+    await writePage.locator('#write-form button[type=submit]').click();
+    await writePage.waitForFunction(() => document.querySelector('#write-status').textContent === 'Stored on fixture · replication confirmed');
+    const generated = writes.at(-1);
+    assert.match(generated.key, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    assert.deepEqual([generated.value, generated.ttl, generated.type], ['from the panel', '300', 'text/plain; charset=utf-8']);
+    await writePage.waitForFunction(key => document.querySelector(`[data-key="${key}"] .card-payload`)?.textContent === 'from the panel', generated.key);
+    assert.equal(await writePage.locator('#write-value').inputValue(), '');
+    await writePage.locator('#write-key').fill('pending');
+    await writePage.locator('#write-value').fill('quorum later');
+    await writePage.locator('#write-value').press('Control+Enter');
+    await writePage.waitForFunction(() => document.querySelector('#write-status').textContent.endsWith('replication not yet confirmed'));
+    await writePage.locator('#write-key').fill('toolarge');
+    await writePage.locator('#write-value').fill('x');
+    await writePage.locator('#write-form button[type=submit]').click();
+    await writePage.waitForFunction(() => document.querySelector('#write-status').dataset.state === 'error');
+    assert.equal(await writePage.locator('#write-key').inputValue(), 'toolarge');
+    await writePage.locator('#write-toggle').click();
+    assert.equal(await writePage.locator('#write-form').isVisible(), false);
+    assert.deepEqual(errors, []);
+    await writePage.close();
+    console.log('PASS: write toggle, generated key, confirmed/pending/rejected writes, card from write');
   } finally {
     if (browser) await browser.close();
     for (const response of viewers) response.destroy();

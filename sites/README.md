@@ -169,7 +169,7 @@ The static `config.json` lists the public roots under `public`. Without
 `?node=`, the page connects to one of them at random and moves to the next
 when a stream fails, rebuilding from that root's snapshot. Update the list
 when roots change. `soph serve` supplies its own `config.json` with the
-selected node and initial filter, and forwards viewer reads to that node. Document-relative asset and API URLs support port-forwarding prefixes.
+selected node and initial filter, and forwards viewer reads and writes to that node. Document-relative asset and API URLs support port-forwarding prefixes.
 See the [CLI guide](../docs/cli.md#local-stream-viewer) and
 [local validation instructions](../test/stream/README.md).
 
