@@ -78,7 +78,8 @@ controlled SSE fixture. It covers overwrite positions, stale events, preview
 filtering, full-value reads and 404s, binary/empty/HTML payloads, clock-aware
 expiration, snapshot replacement on reconnect, overflow, mobile resizing,
 reduced motion, the public-network default with root failover, and the write
-panel (generated keys, confirmed, pending, and rejected writes).
+panel (generated keys, confirmed, pending, and rejected writes), newest-first
+slot promotion, and rebuilding a stream that goes silent without an error.
 
 With Playwright and its Chromium installed in your development environment:
 

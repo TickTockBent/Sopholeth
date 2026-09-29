@@ -12,6 +12,11 @@
   let publicNodes = [], publicIndex = 0, publicMode = false, publicFailures = 0, failoverTimer = null;
   let state = 'idle', query = '', mobile = false, capacity = 0;
   let epoch = Date.now(), anchor = performance.now(), detailKey = null, detailRequest = null;
+  // The node sends at least a clock event every 15 seconds. A connection that
+  // stays silent longer has stalled without reporting an error (a proxy kept
+  // it open, or the browser suspended the tab), so rebuild it.
+  const STALL_MS = 45000;
+  let lastEventAt = 0;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const now = () => epoch + performance.now() - anchor;
   const syncClock = value => { const time = Date.parse(value); if (!Number.isFinite(time)) throw new Error('Invalid node clock'); epoch = time; anchor = performance.now(); };
@@ -97,8 +102,10 @@
     setState('connecting', publicMode ? 'Connecting to the public network…' : 'Connecting to node…');
     const connection = new EventSource(nodeURL('v1/stream'));
     source = connection;
+    lastEventAt = Date.now();
     const event = (name, callback) => connection.addEventListener(name, message => {
       if (source !== connection) return;
+      lastEventAt = Date.now();
       try { callback(JSON.parse(message.data)); }
       catch {
         connection.close(); clearView();
@@ -148,11 +155,14 @@
   function fillSlots() {
     const assigned = new Set(slots.filter(key => key !== null));
     const free = slots.flatMap((key, i) => key === null ? [i] : []);
-    for (const key of entries.keys()) {
-      if (assigned.has(key)) continue;
+    if (!free.length) return;
+    // Newest writes take free slots first, so a busy node shows fresh values
+    // instead of working through a backlog of older ones.
+    const waiting = [...entries.values()].filter(entry => !assigned.has(entry.key)).sort((a, b) => b.written - a.written);
+    for (const entry of waiting) {
       if (!free.length) break;
       const choice = Math.floor(Math.random() * free.length);
-      slots[free.splice(choice, 1)[0]] = key;
+      slots[free.splice(choice, 1)[0]] = entry.key;
     }
   }
   function cardFor(entry) {
@@ -352,6 +362,13 @@
   dialog.addEventListener('click', event => { if (event.target === dialog) closeDetail(); });
   layout(); new ResizeObserver(layout).observe(viewport);
   setInterval(tick, 250);
+  function checkStall() {
+    if (!source || state === 'disconnected' || Date.now() - lastEventAt < STALL_MS) return;
+    setState('connecting', 'Stream went quiet · reconnecting with a fresh snapshot…');
+    if (publicMode) connectPublic(false); else open(endpoint);
+  }
+  setInterval(checkStall, 5000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkStall(); });
   async function start() {
     const response = await fetch('./config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Viewer configuration unavailable');
