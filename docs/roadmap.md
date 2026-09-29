@@ -129,6 +129,15 @@ Measure:
 Visualize signpost lifetimes, refresh events, communication horizons, and
 knowledge fading across disconnected regions.
 
+A playful first live-network scenario exists in [`cmd/probesim`](../cmd/probesim):
+probes exchange beacons, findings, greetings, and replies through TTL'd keys
+while radiation corrupts their codebases. Its most useful mutation is key
+convention drift: the drifted probe stays healthy at the network layer but
+disappears from everyone else's view, who notice only its missing beacon.
+It is a traffic generator, not the discrete-event model above; light lag
+appears only as flavor text. `make probesim-run` writes about one value per
+second to the public testnet; `--dry-run` keeps it in memory.
+
 **Exit:** repeatable runs and published assumptions explain what was learned.
 Hypothetical protocol changes are explicitly versioned experiments, separate
 from production behavior.
