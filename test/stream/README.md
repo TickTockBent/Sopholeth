@@ -1,6 +1,6 @@
 # Local stream validation
 
-The first slice uses a real Go node, the `soph` CLI, and the same viewer assets
+These checks use a real Go node, the `soph` CLI, and the same viewer assets
 that the standalone site deploys. There is no simulated feed in the viewer.
 
 ## Run locally

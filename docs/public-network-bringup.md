@@ -72,19 +72,47 @@ The production renewal timer is enabled and all three roots are deployed.
 Continue with [operating the live network](#check-the-live-network-and-operate-it).
 Retain the existing authority and fingerprint; the commands below record setup.
 
-Use the installed `soph` and custody/service-account layout from the successful
-[Kraid rehearsal](omega-kraid-rehearsal.md#install-and-prepare). Update the binary
-from the reviewed commit first. Keep its disposable timer disabled. The final
-authority is **`sopholeth`**, with repository **`https://sopholeth.io/omega`**.
-Retain those exact values on retries; never repurpose the rehearsal authority.
+For a fresh host, build the reviewed CLI and prepare the same service-account
+layout. Run the build as the normal login user; administration uses explicit
+`sudo`. The authority is **`sopholeth`**, with repository
+**`https://sopholeth.io/omega`**. Retain those values on retries; keep the old
+disposable timer disabled.
+
+```bash
+make build-soph
+sudo install -m 0755 bin/soph /usr/local/bin/soph
+id soph-omega >/dev/null 2>&1 || sudo useradd --system --no-create-home --shell /usr/sbin/nologin soph-omega
+sudo install -d -o root -g root -m 0700 /srv/omega-offline
+sudo install -d -o soph-omega -g soph-omega -m 0700 /srv/omega-online
+sudo install -d -o soph-omega -g soph-omega -m 0755 /srv/omega-public
+sudo install -d -o root -g root -m 0755 /etc/soph
+sudo install -m 0644 docs/examples/omega/vercel.json /etc/soph/omega-vercel.json
+```
+
+Create `/etc/soph/omega-vercel.env` as root, mode `0600`, and enter
+`VERCEL_TOKEN=<deployment token>` through an editor. Load it only for publishing;
+the renewal service reads the same file through systemd. These Bash commands
+prepare the file and load the variable without printing it:
+
+```bash
+sudo touch /etc/soph/omega-vercel.env
+sudo chown root:root /etc/soph/omega-vercel.env
+sudo chmod 0600 /etc/soph/omega-vercel.env
+sudoedit /etc/soph/omega-vercel.env
+set -a
+. <(sudo cat /etc/soph/omega-vercel.env)
+set +a
+```
+
+The offline home contains encrypted operator keys; the renewal account cannot
+access them. The online home holds renewal keys and publication history. Use
+stable local paths and preserve these ownership boundaries on restoration.
 
 Before `init`, request `https://sopholeth.io/omega/timestamp.json` without following
 redirects. Expect anonymous JSON 404 with `Cache-Control: no-store`. If metadata
 already exists, inspect it instead of initializing another authority.
 
 ```bash
-make build-soph
-sudo install -m 0755 bin/soph /usr/local/bin/soph
 curl --max-time 15 -i https://sopholeth.io/omega/timestamp.json
 sudo soph --json omega init --home /srv/omega-offline --network sopholeth \
   --repository https://sopholeth.io/omega
@@ -98,8 +126,8 @@ Keep the passphrase recoverable separately. See the
 [backup procedure](omega-operations.md#verify-a-restored-copy).
 
 Review [roots.json](examples/public-network/roots.json), then install and publish
-it. Load `VERCEL_TOKEN` from the existing private environment file as in the
-rehearsal; never put it in arguments or source control.
+it. Load `VERCEL_TOKEN` from the private environment file as above; never put
+it in arguments or source control.
 
 ```bash
 sudo install -m 0644 docs/examples/public-network/roots.json /etc/soph/public-roots.json
@@ -222,8 +250,8 @@ are disabled so ingress does not replay a write.
 ## Enable intended-network renewal on Kraid
 
 Install the existing service/timer if needed, and give **this instance** its
-Vercel drop-in. The token file and `soph-omega` account already exist from the
-rehearsal. The old disposable timer stays disabled.
+Vercel drop-in. The token file and `soph-omega` account come from the setup
+above. The old disposable timer stays disabled.
 
 ```bash
 sudo install -m 0644 docs/examples/omega/soph-omega-renewal@.{service,timer} /etc/systemd/system/
@@ -286,7 +314,7 @@ Check expiry after the five-minute TTL floor. Start an unlisted fourth node
 with a distinct ID/origin, the same bundle, `NODE_NETWORK=public`, empty
 `NODE_PEERS`, and enclave `default`; give it an anonymously reachable gossip
 endpoint. Verify replication both ways without changing the signed manifest.
-Then stop that temporary node. Record results and versions in #180/#80.
+Then stop that temporary node. Record results and versions in #180.
 
 From a host's `root_dir`, use `docker compose -p soph-public-root ps`,
 `logs --tail 50`, `stop`, and `up -d` for routine management. Persist `state/`
@@ -297,32 +325,10 @@ Restart loses that node's payloads; rejoining does not backfill them. Check new
 writes after each restart. A `201` reflects the current acknowledgment threshold,
 not a guarantee of three independent copies.
 
-See the [launch plan](public-network-plan.md#4-verify-the-healthy-network-then-test-its-failures)
+See the [launch plan](public-network-plan.md#next-work)
 for fault testing after the healthy path works. No shared peer secret, join
 allowlist, or write identity is introduced by this deployment.
 
-## Local validation record
-
-On 2026-09-24, a disposable Docker network exercised node/CLI source `0044c83`
-with a freshly created throwaway omega bundle. The Compose limits and ingress
-configuration above ran as unprivileged users with read-only images. Test-only
-origins, a local TLS frontend/CA, and dynamic loopback ports stood in for the
-public tunnels. All three processes cold-started sequentially and learned the
-other roots. Verified `soph join`, writes through each root, cross-root reads,
-listing, `no-store`, excluded-route 404s, and known-length/chunked 413s passed.
-An unlisted fourth node joined and replicated both ways, while its bootstrap
-endpoint correctly returned 403. Test containers were removed afterward.
-
-On 2026-09-25, source `9d38944` repeated that fixture with #245's node and
-ingress limits. A 102400-byte value with a 1024-byte key, written through each
-root with both known-length and chunked uploads, replicated to both others.
-Client and peer writes with 102401-byte values or 1025-byte keys returned 413
-and remained absent. The 128/192 KiB ingress boundaries were checked separately
-from node rejection, including chunked bodies. Ten-year peer TTLs stored as
-86400 seconds, and negative peer TTLs as 300 seconds, on all three roots.
-The fourth-node join/replication check also passed; test containers were removed.
-
-These local fixtures did not validate Cloudflare routing, host firewalls, live
-TLS, TTL expiry, or the daily renewal timer on these hosts. The subsequent
-[2026-09-29 live validation](public-network-validation.md) records deployed-host
-results and remaining follow-ups, including the first timer-driven due renewal.
+The earlier local fixture reports remain in Git history. Use the
+[live validation record](public-network-validation.md) for deployed-host results
+and the remaining fault/renewal observations.

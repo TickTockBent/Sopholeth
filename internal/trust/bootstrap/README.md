@@ -11,8 +11,9 @@ go test -race ./internal/trust/bootstrap
 The node and CLI use this package through `internal/discovery`. The public
 release gate checks the embedded initial TUF-root fingerprint. The standalone
 dashboard remains on the disabled legacy DNS path and is deferred. The
-`soph omega` operator lifecycle is implemented. Ordinary builds still have an
-unconfigured bundle; this package creates no production authority.
+`soph omega` operator lifecycle is implemented. Ordinary builds include the
+[testnet's public bundle](../../../docs/public-network-authority.md); this
+package creates no authority.
 
 ## API and formats
 
@@ -141,7 +142,7 @@ applications keep their current platform behavior until they adopt this API.
 
 Initial node/CLI integration targets the Linux test network. Native Windows
 public discovery remains a planned
-[follow-up](../../../docs/public-network-plan.md#windows-public-client-gate)
+[follow-up](../../../docs/public-network-plan.md#platform-and-viewer-follow-ups)
 for `soph join`, profile renewal, and `soph serve`.
 The Windows backend must address ACL/account and path validation, locking,
 and durable state replacement, with tests running on Windows itself. The

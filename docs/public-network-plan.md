@@ -1,297 +1,93 @@
-# First public test network: three working roots
+# Public test network: validation and next steps
 
-Status: three roots running and healthy-network validation passed, 2026-09-29.
-The [live results](public-network-validation.md) cover verified discovery,
-anonymous operations, replication, admission limits, expiry, and an unlisted
-fourth node. The scope reset with the project owner on 2026-09-24 replaced the
-earlier requirement to finish the entire public-alpha audit queue before starting
-the network. [Issue #80](https://github.com/TickTockBent/Sopholeth/issues/80)
-tracks this milestone; individual audit issues retain their findings.
-The [2026-09-29 issue inventory](issue-inventory-2026-09-29.md) records completed
-findings and the remaining scope of every issue open at activation.
+Kraid, Ridley, and Motherbrain are running in the `default` enclave. The
+2026-09-29 [live validation](public-network-validation.md) covers verified
+public discovery, anonymous operations, cross-root replication, payload/TTL
+limits, expiration, and an unlisted fourth node. Streaming is enabled on all
+three roots, and [soph.stream](https://soph.stream/) watches them by default.
 
-The first deployment is for testing and validation. Once the network works,
-use the findings to simplify setup into a few scripts with interactive passphrase
-prompts, verification, and saved backups/hashes. Then tear down and rebuild to
-exercise the improved process. This operator simplification follows live testing;
-it is not another prerequisite for the initial three-root bring-up.
+Use the [bring-up runbook](public-network-bringup.md) for deployment and service
+commands, the [authority record](public-network-authority.md) for the initial
+fingerprint and deployed artifacts, and [omega operations](omega-operations.md)
+for signing, renewal, rotation, and recovery. The
+[open issues](https://github.com/TickTockBent/Sopholeth/issues) track current
+findings; avoid maintaining a second dated issue inventory in the repository.
 
 ## Contract and scope
 
-The [core principles](core-principles.md) constrain every implementation choice:
+The [core principles](core-principles.md) constrain the work:
 
-- Any compatible node can bootstrap, join, and gossip without membership
-  approval. Three roots are the initial entry points, not a membership limit.
-- Writes have no authenticated author. There are no client accounts, write
-  credentials, key owners, or required payload signatures.
-- Omega authenticates the bootstrap directory and its updates. Being listed
-  as a root grants a discovery role, not authority over values or other nodes.
-  Removing a root from that directory does not ban it from ordinary gossip.
-- Peer IDs are protocol handles. Acknowledgments report observed replication;
-  they do not prove honest operators, independent physical copies, or consensus.
-  Duplicate-response checks do not establish Sybil resistance.
-- Values stay opaque, TTL starts at local acceptance, and restart loses local
-  payloads. Connectivity recovery does not backfill missed writes.
+- Any compatible node can bootstrap, join, and gossip without approval. Three
+  roots are entry points, not a membership limit.
+- Writes are anonymous. There are no client accounts, key owners, write
+  credentials, or required payload signatures.
+- Omega authenticates the bootstrap directory and its updates. It does not
+  authorize ordinary peers or writes. Its signing threshold is unrelated to
+  replication acknowledgments.
+- Peer IDs are protocol handles. Observed confirmations do not establish
+  honest operators, independent copies, or consensus.
+- Values stay opaque. TTL starts at local acceptance; restarts lose local
+  payloads, and reconnecting does not backfill missed writes.
 
-There is no controlled-admission service, root-issued peer credential, trusted
-voter class, or write-attribution system on this milestone's path. Future
-transport protections must justify their cost while preserving open joining and
-the write contract. The omega root-signing threshold is unrelated to data-write
-acknowledgments.
+This is a Linux standalone-node test network, with HTTP gossip and bounded SSE.
+WebSocket ingress and public metrics are excluded. Cloudflare is a shared
+public-ingress dependency; Motherbrain also depends on workstation uptime.
+The connected-host omega custody profile is already implemented. Further
+custody ceremony, MCP, and dashboard deployment are outside this work block.
 
-Start with Linux standalone nodes, the `default` enclave, fixed reachable
-endpoints, and the `soph` HTTP client. Public joining means both a fresh CLI
-client and an additional standalone node can use the network. Native Windows
-public discovery remains planned; it does not hold up this Linux test network.
-MCP, dashboard deployment, full WebSocket/transient participation, and viewer
-polish are outside the initial milestone.
+## Next work
 
-## What is already ready
+1. **Observe unattended renewal.** Kraid's hourly timer is armed; daily refresh
+   uses seven-day timestamp/snapshot validity. The first service-driven renewal
+   passed. Record the first timer-driven due renewal and check failure/retry
+   reporting. Use `soph omega status --verify` for current deadlines.
+2. **Exercise failures on the running network.** Stop/restart one root, introduce
+   a slow peer, and test partitions, repeated/missing ACKs, capacity pressure,
+   and recovery. Record source versions, configuration, workload, fault timing,
+   outcomes, and resource use under #180 using #183's data contract. The guest
+   join used public HTTPS bootstrap and a Tailscale return route; repeat with
+   an independently reachable public guest origin.
+3. **Fix what the runs expose.** Prioritize problems that prevent joining,
+   healthy replication, or useful testing. Use small reproductions and scoped
+   fixes; the table below identifies the existing queue.
+4. **Simplify setup, then rebuild.** Turn the validated operator procedure into
+   a few scripts that prompt for passphrases, verify results, and save backups
+   and hashes. After that work, deliberately tear down and rebuild the testnet.
+   A reset requires an explicit new trust adoption; do not silently replace an
+   existing authority or its rollback history.
 
-The node already provides anonymous put/get/list, local TTL expiration, and
-gossip replication. The CLI already joins nodes and performs those operations;
-the initial `soph serve` and soph.stream viewer also exist. Deploy and exercise
-these capabilities. They are not new implementation milestones, and their
-known bugs do not mean the whole subsystem needs rebuilding.
+The healthy-network milestone is complete. These tests do not require clearing
+the whole public-alpha backlog first. Record actual peer views and thresholds:
+a `201` is an observed quorum result, not a promise of three independent copies.
 
-The `soph omega` suite implements encrypted initialization, backup checking,
-publication, separate unattended renewal custody, status verification, and
-online/membership/root-key rotation. Schema 1 remains disposable-only; schema 2
-stores encrypted operator keys. The connected-host custody approach and reset
-boundary are documented in [omega operations](omega-operations.md) and the
-[custody proposal](omega-production-custody.md). No new custody design is needed.
-Here, membership signing approves the bootstrap-root manifest, not ordinary
-node admission.
+## Repair queue
 
-The metadata-only Vercel project serves through `https://sopholeth.io/omega/`.
-The [hosted rehearsal](omega-hosted-rehearsal.md) exercised publication, renewal,
-rotation, and isolation from docs deployments. Kraid's service invocation
-succeeded after the public-directory ownership repair, now fixed in #240.
-The disposable timer remains disabled. The first due production renewal verified
-release 2 on 2026-09-29, and the hourly production timer is enabled. Observe its
-first timer-driven due renewal on the running test network.
-
-Nodes and `soph join` now use the HTTPS trust client, embedded public bundle,
-and initial TUF-root fingerprint gate. Local fixtures exercise saved-profile
-renewal, HTTPS bootstrap/gossip, and runtime expiry. The intended authority has
-been initialized on Kraid, and its [public bundle and fingerprint](public-network-authority.md)
-are adopted in merged #249. Restored keys, first HTTPS publication, and the first
-production renewal are verified. The full encrypted backup is retained off Kraid
-and the production timer is enabled. Kraid, Ridley, and Motherbrain are healthy,
-have discovered each other, and passed the initial live data checks. The
-unlisted fourth-node check used public HTTPS bootstrap and a Tailscale return
-route; a separate public guest endpoint remains a transport follow-up.
-
-## Delivery order
-
-### 1. Remove the known startup/recovery loop
-
-The [#150](https://github.com/TickTockBent/Sopholeth/issues/150) fix separates
-explicit `SYNC_REQUEST` messages from one-way `SYNC` announcements. Two
-under-peered nodes now finish their exchange, and later requests still discover
-new peers. The regression exercises repeated recovery ticks and HTTP discovery.
-This prerequisite is implemented. The discovery integration in step 2 is also
-implemented and deployed. Keep builds compatible because older nodes lack the
-request type.
-
-Do not make the entire replication/peer audit a dependency of first deployment.
-Existing replication is sufficient to start with a small healthy-network test;
-use the running network to work through the fault cases below. Any further
-prerequisite needs a concrete explanation of what prevents bring-up.
-
-### 2. Connect real discovery to nodes and the CLI
-
-Implemented for Linux using the existing
-[HTTPS trust client](../internal/trust/bootstrap/README.md) and omega output.
-The [discovery contract](discovery.md) records the behavior below. Bundle
-adoption is complete, and public joining now also has
-[deployed-host validation](public-network-validation.md).
-
-- Load the public TUF bundle in the node and `soph`, and compare its fingerprint
-  with the expected authority when building the test-network binaries. Keep
-  ordinary unconfigured builds fail-closed. This completes the remaining
-  bundle integration in #195 and replaces the legacy release-anchor check.
-- Use signed HTTPS root origins without dropping their schemes, disabling
-  certificate checks, or following redirects to an unapproved origin (#194).
-  Checking an official bootstrap endpoint does not certify its peer referrals.
-- Pin listed root IDs to their verified origin/enclave throughout peer-table
-  updates. Only a later verified manifest can move those routes. Unsigned
-  bootstrap/SYNC cannot move an established ordinary peer either, and PONG
-  cannot change its enclave. This addresses the route-replacement part of
-  #211; peer admission stays open and the broader liveness/resource cases
-  remain follow-up work.
-- Preserve rollback protection, cached discovery within its validity, runtime
-  expiry, and retry backoff (#160, #193, #172). Expired metadata must not keep
-  authorizing an official root role or bootstrap seed. Ordinary peer membership
-  and payload TTLs do not acquire an omega authorization lease.
-- Refresh public CLI profiles without manual rejoining (#198). Keep each
-  profile bound to its selected network; discovery work must not repeat a PUT
-  whose local acceptance may already be known. Exercise the same profile path
-  from `soph serve` when using the viewer.
-
-Local tests exercise a disposable authority, a fresh client, a saved profile
-following updated roots, an ordinary unlisted node joining and replicating over
-HTTPS, and expiry during blocked refresh. The viewer's stream selection is
-withdrawn and rebuilt on refresh. Existing trust/rotation coverage is reused;
-real `soph join`, public HTTPS transport, and three-root operation subsequently
-passed on the running network in steps 3–4.
-
-An explicit bundle override for deliberate resets (#231) is useful follow-up.
-Initially, distributing a new binary with a deliberately adopted new bundle is
-an acceptable reset procedure. Never silently replace a saved network's trust.
-
-### 3. Put the three roots on the available hosts
-
-The [bring-up runbook](public-network-bringup.md) uses Kraid (DigitalOcean),
-Ridley (Hetzner), and Motherbrain (the operator workstation), with the approved
-`kraid.sopholeth.io`, `ridley.sopholeth.io`, and `motherbrain.sopholeth.io`
-origins. Each host has its own public tunnel and root. Cloudflare is a shared
-ingress dependency; Motherbrain also depends on workstation uptime. Normal
-login users run the commands, with explicit `sudo` for host administration.
-The operator completed activation on 2026-09-29; deployed artifacts and authority
-checkpoints are recorded [separately](public-network-authority.md).
-
-The runbook must contain:
-
-1. Each root's host, public hostname, reachable advertised address, fixed ports,
-   TLS termination, and service paths. Configure stable, distinct `NODE_ID`
-   values as a restart aid, not credentials. Validate advertised endpoints from
-   another host; record the transport used for gossip as well as bootstrap.
-2. The common `default` enclave, replication factor 3, observed-confirmation
-   policy, storage setting, and process memory/CPU/connection budgets. Use small
-   test payloads and a bounded driver workload. A process memory limit contains
-   resource consumption; it does not repair storage accounting or prevent an
-   attacker from interrupting this experimental service.
-   #245 aligns client/peer admission: configurable 100 KiB values, 1 KiB keys,
-   and TTL clamping to five minutes–24 hours for these roots. Use 128 KiB client
-   and 192 KiB gossip ingress body limits, and verify full-size replication
-   before activation. Filling the payload capacity remains an accepted testnet
-   limit; entry expiry is local, and subsequent writes can keep filling it.
-3. The exposed HTTP paths and proxy/firewall rules. Bootstrap and supported
-   gossip remain open to joining nodes; no peer allowlist or shared cluster
-   secret is required. Keep backend listeners behind the configured ingress so
-   proxy limits cannot be bypassed. Exclude unsupported WebSocket and dashboard
-   surfaces, and verify the exclusions externally. The bounded SSE route is now
-   enabled for soph.stream testing, with two streams per visitor and eight per
-   node; snapshot-growth handling remains follow-up work under #218.
-4. The reviewed, tested source commit and exact binaries deployed. Build from
-   that commit and record binary checksums and the bundle fingerprint. Do not
-   use a floating image tag or treat the current auto-publishing workflow as
-   release approval. General release-pipeline work remains #223/#224.
-5. Authority setup through the existing omega commands, a checked encrypted
-   backup, and a saved public bundle/fingerprint. Recheck the
-   [domain preflight](../sites/README.md#omega-metadata-hosting) before creating
-   this network's authority at `/omega/`; do not reuse the disposable rehearsal
-   identity. Node services get public omega material, never its signing keys.
-6. Bootstrap/publication order, service install/start/status commands, and a
-   stop/restart/update procedure. Kraid runs the separate renewal account: daily
-   refresh, seven-day validity, hourly checks/retries. Re-enable the timer only
-   for the intended network, with status/expiry checks and an operator contact.
-
-Minimal ingress configuration needs body/header size limits, timeouts, and
-connection limits appropriate to the test workload. Verify these on the actual
-path. They reduce exposure while testing; they do not close #217–#221 or claim
-robustness against hostile traffic. If a required path cannot be bounded by the
-deployment, fix that specific problem before exposing it.
-
-Use a disposable local integration run to settle commands and cold-start order.
-Then activate the intended public test network through the runbook and test it
-in place. There is no separate full production-scale rehearsal prerequisite.
-Authority loss or compromise can require an announced reset with a new bundle;
-this network has no continuity or durable-data guarantee.
-
-### 4. Verify the healthy network, then test its failures
-
-The initial healthy-network checks below passed on 2026-09-29. See the
-[validation record](public-network-validation.md) for measured results and scope.
-Fault testing and the first timer-driven due renewal remain follow-ups.
-
-Record the commit, endpoints, relevant configuration, and results in #180,
-using #183's current data contract. First verify existing functionality:
-
-- A fresh `soph` client discovers the network and performs put/get/list without
-  credentials. A write to each root can be read from the other two healthy
-  roots before its local TTL expires; each node eventually expires its copy.
-- A fourth, independently started compatible node bootstraps and participates
-  without adding it to the signed root list or obtaining permission. Verify
-  gossip in both directions, then remove it. Three roots do not cap membership.
-- Verify signed discovery externally, cached restart within validity, and
-  rejection of invalid/expired discovery in the disposable fixture. Check the
-  public renewal service and retain its first actual daily refresh result.
-- Check root resource use and logs under the small workload. Record failures
-  and recoveries without logging value contents. Exercise `soph serve` and
-  soph.stream once streaming is included; viewer polish does not gate the
-  put/get/list network.
-
-**Milestone complete:** three roots are reachable, verified public bootstrap
-works, clients and an additional node can join permissionlessly, anonymous
-put/get/list and healthy replication work, and the operator can manage the
-services and renewal. Record the daily renewal observation when it occurs;
-it is not a mandatory 24-hour wait before first bring-up.
-
-Then stop/restart a root, introduce a slow peer, and exercise missing or repeated
-acknowledgments. Expect the existing issues to explain some failures; record
-them and fix the affected path without withholding the useful running network.
-Do not equate every `201` with three copies: record the configured threshold and
-current peer view. Rejoining does not imply payload backfill.
-
-The first repair queue after bring-up is:
-
-| Observed problem | Scope of the fix |
+| Area | Remaining work |
 | --- | --- |
-| Peer referrals and ghost records: #211, #213 | Signed-root/established-route protection and the PONG mutation race (#169) are fixed in #243. Bound referral work, correlate liveness responses, and remove stale duplicate paths. No admission authority or trusted identity class is required. |
-| ACK accounting/write outcomes: #164, #166, #170 | Unique write IDs, one response per peer per pending write, the recorded replication context/enclave, a defined threshold, and honest local-acceptance reporting. This does not prove independent or honest replicas. |
-| Slow-peer delivery/forwarding: #212, #167 | Let healthy sends progress with bounded concurrency and lifetimes. Never retry the client PUT implicitly. |
-| Service shutdown: #151 | Complete orderly stop/restart; verify subsequent writes after rejoining. |
+| Peer bookkeeping (#211, #213) | Bound referrals, correlate liveness, and remove ghost records. Signed-root and established-peer route replacement is already rejected. |
+| Write outcomes (#164, #166, #170, #215) | Unique write IDs, duplicate ACK handling, stable per-write replication context, deadline reporting, and quorum-of-one forwarding. |
+| Slow peers and forwarding (#212, #167) | Bounded concurrent delivery so a stalled peer does not block healthy sends; no implicit client PUT retries. |
+| Shutdown (#151) | Complete orderly stop/restart and verify writes after rejoining. |
+| Storage and listing (#162, #163, #217, #220) | Expired-entry accounting, full-store forwarding, entry overhead, and bounded listing work. The ordered-index change from #248 was reverted in #255. |
+| Public resource handling (#218, #219, #221, #222) | Stream snapshot growth, HTTP deadlines/connections, rate-limiter state, and diagnostic exposure. Deployment limits do not close these issues. |
+| Payload transport (#214, #246) | Keep configurable value caps within the gossip envelope; evaluate raw-byte peer values for the next iteration. |
+| Larger meshes (#152, #165, #168) | Replay, asymmetric eviction, and deduplication behavior under churn and load. |
+| Omega polish (#234–#236) and reset bundles (#231) | Accurate custody reports, existing-file ownership, and explicit bundle overrides. |
+| Release distribution (#223, #224) | Reviewed/tested publishing and verifiable artifacts before a general release. |
 
-Fix a problem earlier if it prevents basic joining or healthy replication on the
-actual deployment. An endpoint answering a challenge is not proof of a trusted
-operator, and a protocol peer ID does not identify a write's author.
+The mixed audits (#177/#178) retain residual findings. Native Windows public
+clients (#198), dashboard/WSS discovery (#194), and WebSocket lifecycle work
+remain separate. Apply each finding to the paths being exercised without adding
+controlled admission or writer identity.
 
-Continue soak, capacity, churn, partition, and adversarial testing on this
-running test network and disposable local clusters. Its purpose is to expose
-remaining limitations. A discovered defect becomes a scoped fix, not evidence
-that Sopholeth needs a different participation or data model.
+## Platform and viewer follow-ups
 
-## Follow-up work and issue scope
+Windows public discovery needs native locking, account/ACL and path validation,
+durable replacement, and native recovery/rotation/rollback tests. Keep shared
+trust verification; no unlocked or memory-only fallback. Windows operator
+custody is a separate concern.
 
-No audit finding is closed by this plan. Earlier `launch:blocker` labels and
-public-alpha checklists describe a broader milestone; they are not a requirement
-to finish every listed issue before this test network can start. The work above
-in delivery steps 1–3 defines the immediate prerequisites; step 4 includes
-testing and the subsequent repair queue. Preserve reproduction evidence and
-update individual tickets as fixes or tested deployment mitigations land.
-
-| Follow-up | Treatment for first bring-up |
-| --- | --- |
-| Resource/stream hardening: #217–#221, public diagnostics #222 | Use the limited workload and explicit ingress/process bounds above; keep optional surfaces excluded until tested. Track remaining denial-of-service and scaling limits openly. |
-| Larger-mesh/capacity/replay behavior: #152, #162, #163, #165, #167, #168 | Test progressively after small-cluster bring-up; prioritize any #167 failure affecting the actual workload. No global ordering or authenticated writer is implied. |
-| Mixed audit roll-ups #177/#178 | Take only findings needed by an exercised path into a current slice; do not make every residual a precondition for starting tests. |
-| WebSocket participation: #140, #142, #144, #154, #173, #175, #147 | Keep the endpoint excluded for the initial HTTP/standalone-node path. Complete relevant safeguards and lifecycle tests before enabling it. |
-| Release pipeline and distribution: #223/#224 | Test with recorded builds from the reviewed commit. Finish automated publication gates and artifact verification before distributing a general release. |
-| Omega report/custody polish #234–#236 and Windows CLI #198 | The original omega lifecycle findings are complete. Keep these distinct residuals; observe the first timer-driven due renewal under #180. |
-| Explicit reset bundles #231 | Follow up after the compiled-bundle path works; reset can initially require an explicitly adopted new build. |
-| MCP, dashboard, viewer polish, attachment optimization, payload backfill | Remain outside the three-root milestone. |
-
-### Windows public-client gate
-
-Native Windows `soph join`, saved-profile renewal, and `soph serve` remain a
-planned deliverable under #198. The Linux test network may start first;
-document Windows public discovery as unsupported until its backend is ready.
-Do not introduce unlocked or memory-only trust as a shortcut.
-
-The Windows work needs native locking, account/ACL and path validation, durable
-state replacement, and native tests for join/restart, concurrent access,
-interruption, rotation, rollback, and expiry. Keep common trust verification
-shared. This is a prerequisite for claiming Windows public-client support, not
-for running three Linux roots. Windows omega operator custody is separate.
-
-## Plan history
-
-The earlier plan accumulated the omega audit and broad public-alpha findings,
-including peer admission and trusted-voter language in #225. That expansion
-went beyond Sopholeth's permissionless contract. The 2026-09-24 reset removes
-those architectural requirements and separates first bring-up from later
-hardening. The original bugs remain recorded in their issues and Git history.
-The 2026-09-29 activation satisfies the initial healthy-network milestone. It
-does not close the remaining audit findings or claim that fault testing passed.
+The [stream plan](soph-stream-plan.md) covers viewer behavior and remaining
+interaction tests. Follow the [roadmap](roadmap.md) for broader public-alpha
+work, the demo application, and simulation. Keep bulky test outputs outside
+Git; retain concise reproduction steps and conclusions with the relevant issue.

@@ -1,9 +1,8 @@
 # Legacy DNS burn-in helper
 
-This preserves the old single-key DNS format for disposable burn-in tests while
-node discovery consumers migrate to TUF. It is excluded from `make build`.
-The [signing audit](../../../docs/omega-signing-audit.md) records its limitations;
-use [`soph omega`](../../../docs/omega-operations.md) for the public authority.
+This preserves the old single-key DNS format for disposable lab consumers.
+It is excluded from `make build` and is not used by current node/CLI discovery.
+Use [`soph omega`](../../../docs/omega-operations.md) for the public authority.
 
 ```bash
 go build -o bin/omega-lab ./test/burnin/legacy-omega

@@ -1,211 +1,69 @@
-# soph.stream implementation and launch plan
+# soph.stream: current behavior and remaining work
 
-Status: Phase 1 implemented for local review, with the initial `soph serve`
-from Phase 2. Local validation is documented in
-[the stream test guide](../test/stream/README.md). Multi-node viewer failover,
-remote staging, and public launch remain pending.
+The public viewer is live and streaming from Kraid, Ridley, and Motherbrain.
+The same assets ship in `soph serve`. The original simulated mockup and discovery
+feature list have been superseded by the implementation and this plan.
 
-Sequencing update, 2026-09-22: the [public-network plan](public-network-plan.md)
-takes priority. Build `soph omega`, then rehearse and stand up three public
-roots in the `default` enclave using the existing CLI/viewer. The phases below
-retain viewer feature scope and acceptance criteria; completing all Phase 2
-polish is no longer a prerequisite for remote root work. MCP is deferred, and
-the editor-proxy connection problem is parked.
+## Current behavior
 
-The first deliverable is a live view of real Sopholeth data: write with
-`soph put`, see a card appear, overwrite it in place, and watch it expire.
-The public website and `soph serve` will share that experience.
+- Keep the Sopholeth aesthetic and emphasize payloads in a responsive card
+  grid. Overwrites update the existing card; local expiration removes it.
+- The node's `GET /v1/stream` sends a local snapshot, accepted writes, advisory
+  expiry events, and clock updates. Previews are limited to 4 KiB; detail reads
+  fetch the current full value, which may differ from an earlier preview.
+- The viewer is read-only. Payloads render as text or a binary preview, never
+  executable markup. There is no payload history, browser persistence, or
+  analytics. Node selection and text search are reflected in the URL.
+- The selected node, enclave, and connection state remain visible. The page
+  represents that node's local view, including its actual TTLs; counts and
+  empty states are not network-wide claims.
+- The static site selects a root from `config.json` and tries the other public
+  roots on stream failure. Each connection starts with a fresh snapshot.
+  An explicit `?node=` selects only that endpoint.
+- `soph join` retains named networks. Verified public profiles follow the omega
+  discovery rules, and `soph serve` refreshes that profile while running.
+  The viewer server forwards reads through its own origin so HTTPS port
+  forwarding works. It does not retry a client PUT.
+- Subscriber queues and snapshot size are bounded. Slow viewers disconnect;
+  writes do not wait for a viewer. `NODE_STREAM=off` disables the endpoint.
+  The current root ingress allows two streams per visitor; each node allows
+  eight total. Snapshot growth remains an open limitation under #218.
 
-The [discovery feature list](soph-stream-features.md) and
-[simulated demo](soph-stream-demo.html) provide product and interaction
-context. This plan incorporates the current repository and CLI behavior.
+See the [API stream contract](api.md), [CLI guide](cli.md#local-stream-viewer),
+[shared asset setup](../sites/README.md#local-preview), and
+[browser test guide](../test/stream/README.md) for details and runnable checks.
+The [live validation record](public-network-validation.md) and
+[bring-up runbook](public-network-bringup.md#check-the-live-network-and-operate-it)
+record the deployed path.
 
-## Agreed direction
+## Next validation
 
-- Keep the existing Sopholeth aesthetic, using the current
-  [site](../sites/soph.stream/index.html) and
-  [styles](../sites/soph.stream/styles.css) as the starting point.
-- Keep the CLI's named networks, current selection, and explicit overrides.
-  Extend saved profiles with topology as needed.
-- Implement a node-native `GET /v1/stream` SSE endpoint. The standalone
-  browser viewer talks directly to the selected node. `soph serve` serves
-  the same assets and forwards reads to its startup node, allowing HTTPS
-  port forwarding without exposing a second port to the browser.
-- Show the contacted node's local view, with its identity, enclave, and
-  connection state visible. Counts and empty states have that same scope.
-- Preserve actual local TTL behavior, including the five-minute minimum.
-  Use controlled time in automated tests; exercise real expiration in
-  interactive and cluster testing.
-- Keep the viewer read-only, with URL-based state and no payload history,
-  browser persistence, or analytics. Render payloads as text or a binary
-  preview, never as executable markup.
-- Use the existing `NODE_*` convention for node configuration, including
-  `NODE_STREAM=off` to disable streaming.
+Use the running testnet and disposable local clusters. This work accompanies
+the [network tests](public-network-plan.md#next-work); it is not a new launch gate.
 
-## Phase 1: one local node and a working viewer
+1. Exercise node shutdown/restart, browser disconnect, and public-root failover.
+   Verify the displayed node changes and the old view is replaced by a fresh
+   snapshot. A partition healing does not imply payload backfill.
+2. Compare write latency and resource use with no viewers, normal viewers, and
+   slow/disconnected viewers. Reproduce and fix snapshot-growth limits (#218).
+3. Exercise empty/binary values, preview truncation, overwrite/expiry during
+   detail fetch, bursts, overflow, mobile layout, keyboard use, and reduced
+   motion. Retain focused automated coverage of ordering and reconnects.
+4. Verify both the static site and `soph serve` through their intended HTTPS
+   paths: CORS, stream flushing, proxy buffering, keepalives, and idle timeouts.
 
-Build the smallest complete interaction using the actual Go node and CLI.
-This phase establishes the stream contract and proves the visual experience.
+Record commit, configuration, viewer count, workload, faults, and observed
+limits with the relevant issue. Preserve local TTL semantics and do not log
+payload contents as operational telemetry.
 
-### Deliver
+## Optional product work
 
-- A stream snapshot containing the node's live local entries, node ID,
-  enclave, and current node time.
-- Live events for accepted local writes, including overwrites and writes
-  arriving through replication. Add advisory expiration events from cleanup.
-  Observe storage acceptance so the feed covers every ingestion path.
-- Per-entry key, base64 payload preview, truncation flag, original size,
-  applied local TTL, local creation time, and local expiration time. Limit
-  payload previews to 4 KiB; fetch the current full value on demand.
-- A defined snapshot-to-live handoff: writes during snapshot creation must
-  reach the viewer in the correct order. An expiration event for an older
-  value must not remove its replacement.
-- Bounded subscriber queues and connection/resource limits. Slow viewers
-  disconnect and receive a fresh snapshot on reconnect; socket writes must
-  not hold storage locks or make storage wait for a viewer.
-- A minimal page with stable card slots, overwrite feedback, payload
-  preview, TTL bars, detail view, overflow count, mobile layout, and reduced
-  motion support. Match the existing site aesthetic.
-- Explicit connecting, connected, disconnected, and empty states. Reconnect
-  replaces the previous view with a fresh snapshot. Account for browser/node
-  clock differences when displaying remaining lifetime.
-- A basic explicit node URL so the same page can be tested against different
-  local endpoints. Confirm browser access for the stream and full-value read
-  using the existing CORS behavior.
+Sorting, theme selection, and broader same-enclave peer failover remain product
+options. If added, keep query semantics consistent across the site and
+`--q`, preserve stable card positions where possible, and rebuild the local view
+on every node change. General peer referrals must not become verified public
+roots simply because a node advertised them.
 
-Full-value reads are later observations: a key may expire or be overwritten
-after its preview arrives. The detail view must handle both without claiming
-the fetched bytes belong to an earlier event.
-
-### Acceptance gate
-
-- `soph put` creates a card; an overwrite updates that card without moving
-  it; expiration removes it without a page refresh.
-- Joining the stream during active writes and reconnecting after missed
-  events both produce a correct current view.
-- Empty values, binary data, oversized previews, and expiration during a
-  detail fetch have defined behavior.
-- Tests cover snapshot ordering, overwrite/expiration races, cancellation,
-  and slow-consumer handling. Compare write behavior with and without viewers.
-- Review the experience at real TTLs before expanding the UI. Adjust this
-  first slice if the live behavior is not yet compelling.
-
-## Phase 2: local cluster, CLI integration, and complete viewer
-
-Use three real nodes in the same enclave. Add a separate-enclave node for
-isolation scenarios. The existing [Compose setup](../docker-compose.yml)
-has two nodes in one enclave and a third in another; add a dedicated test
-configuration or override instead of assuming all three replicate together.
-
-### Deliver
-
-- A repeatable local start/stop and workload procedure. Write through one
-  node while watching another; include overwrites, bursts, and natural expiry.
-- `soph serve`, defaulting to loopback port 8181, with `--node`, `--port`,
-  `--bind`, `--open`, and `--q`. Use the selected named network when present;
-  make explicit overrides and the localhost fallback clear in help.
-- One maintained viewer implementation packaged for the static site and
-  embedded in the CLI. Preserve the independent Vercel site root; document
-  and verify how the two distributions receive identical assets.
-- Peer metadata scoped to each saved network: selected endpoint, last-used
-  node, enclave, and known peers. Validate identity and enclave before using
-  a failover candidate. Root flags describe discovery roles, not authority
-  over stored values.
-- Viewer failover within the selected network's enclave: last-used node,
-  then known roots, then other peers. Exhaustion produces a clear reconnect
-  or rejoin state. Every node switch rebuilds from that node's snapshot.
-- Bounded topology refresh during successful CLI interactions, with no
-  background daemon. A failed metadata refresh must not obscure an already
-  acknowledged write. Preserve the CLI's rule against automatic PUT retries;
-  broader command failover needs explicit operation-specific behavior.
-- Live search, supported sort modes, and URL state for node, query, sort,
-  and theme. Define `--q` consistently with the page's query semantics.
-  Searching preserves grid slots; leaving sorted mode may rebuild them.
-
-### Acceptance gate
-
-- Writes accepted on node A appear in node B's stream after replication.
-  Display each node's actual local TTL, including differences caused by delay.
-- Node shutdown, restart, browser disconnect, and peer failure recover through
-  a fresh snapshot. Failover stays inside the selected enclave and profile.
-- Partition/healing tests reflect current protocol behavior: healing alone
-  does not promise to backfill missed values.
-- CLI profile switching remains intact. Both site and embedded viewer pass
-  the same interaction checks, including keyboard use and reduced motion.
-- Keep race tests green and record cluster scenarios, faults, and results.
-
-## Phase 3: remote endpoints and hosted staging
-
-Remote test endpoints are available from the project owner for this phase.
-Their addresses and deployment details will be recorded during the three-root
-rehearsal. Viewer polish does not gate preparing those endpoints; discovery
-and root-facing correctness requirements follow the public-network plan.
-
-### Deliver
-
-- An endpoint inventory covering URL, running version, network/enclave,
-  browser-reachable peer addresses, and any proxy or TLS termination.
-  Select a disposable test network and define the intended fault/load runs.
-- A hosted preview of the static viewer connected to the remote test nodes,
-  plus `soph serve` exercised against those same nodes.
-- Verification of HTTPS, browser CORS, stream flushing, proxy buffering,
-  idle timeouts, keepalives, reconnect behavior, and reachable failover URLs.
-  Container-internal peer names must not silently become browser targets.
-- A repeatable remote workload and fault run, followed by a soak. Set the
-  workload, duration, viewer count, resource budgets, and pass/fail thresholds
-  before running it; use the [validation harness](../test/burnin/README.md)
-  where applicable.
-
-### Acceptance gate
-
-- Both viewer distributions work through the intended hosting path and
-  recover from idle disconnects and node loss.
-- Slow or disconnected browsers do not accumulate unbounded resources or
-  prevent writes from completing.
-- Record the commit, configuration, topology, workload, fault timings,
-  latency, write outcomes, resource use, and recovery results. Keep payloads
-  out of operational logs and metrics.
-- Resolve failures exposed remotely before public rollout. Private staging
-  demonstrates the application path; public discovery has its own launch
-  checks in the next phase.
-
-## Phase 4: public network and soph.stream launch
-
-The three-root test network can start before this broader viewer rollout; its
-immediate prerequisites are in the [network plan](public-network-plan.md).
-Complete relevant [public-alpha follow-ups](roadmap.md#before-public-alpha)
-as the viewer's exposed paths are enabled. The stream provides an observation
-tool; network correctness and load evidence also come from tests and the
-workload driver.
-
-### Deliver
-
-- Validated quorum, replication, enclave, lifecycle, and discovery-expiration
-  behavior with the required multi-node failure and sustained-load evidence.
-- The working `soph omega` suite, a public trust bundle, three reachable roots
-  with recorded failure domains, verified publication, monitoring, and operator
-  recovery procedures. Follow the [public-network plan](public-network-plan.md);
-  [omega operations](omega-operations.md) documents the implemented workflow.
-- Published release artifacts and an HTTPS stream endpoint for the intended
-  public enclave, with tested resource limits and the stream disable switch.
-- The viewer at `soph.stream`, configured to use that endpoint by default,
-  and a matching released `soph serve`. Retain explicit node selection and
-  visible node/enclave identity.
-- Updated site copy, CLI/API documentation, and release notes describing
-  shipped behavior and observed limits.
-
-### Acceptance gate
-
-A fresh client can discover and join the public network, write a value,
-observe its replication through soph.stream, and observe local expiration.
-The deployed viewer survives a tested node interruption and clearly reports
-the node it subsequently observes. Public-alpha validation evidence and
-operator procedures accompany the release.
-
-## Work that can proceed alongside local development
-
-Phase 1, initial `soph serve`, and the omega operator suite are available.
-The next network work is discovery consumer integration and deployment of three
-roots for testing, with the SYNC-storm fix before bring-up. Use the existing
-viewer when its endpoint is enabled and address failures on that path. Broader
-viewer features can follow without becoming prerequisites for the network.
+The separate conversation application and probe simulation remain in the
+[roadmap](roadmap.md). Neither requires turning this viewer into a writer or
+adding application identity to the node.

@@ -6,7 +6,7 @@ directory. Deployment filtering uses a shared Git-based check.
 
 | Domain | Vercel Root Directory | Contents |
 | --- | --- | --- |
-| `sopholeth.com` | `sites/sopholeth.com` | Rebranded marketing and showcase site, moved from `web/`. |
+| `sopholeth.com` | `sites/sopholeth.com` | Marketing and showcase site. |
 | `sopholeth.io` | `sites/sopholeth.io` | Documentation landing page, private-node quickstart, and links to the maintained repository guides. |
 | `sopholeth.dev` | `sites/sopholeth.dev` | Devlog and release-notes landing page, starting with the merged rebrand. |
 | `soph.stream` | `sites/soph.stream` | Live node viewer. Watches the public network by default; `?node=` or the node field selects a specific node. |
@@ -20,17 +20,15 @@ output directory, and sends missing paths to its own `404.html` with status
 404. No custom environment variables are required.
 
 Set the production branch to `main` and attach the matching domain in each
-project's domain settings. For an existing marketing project, change its
-Root Directory from `web` to `sites/sopholeth.com` before deploying this
-layout. The repository no longer includes a GitHub Pages `CNAME` file.
+project's domain settings.
 
 This follows Vercel's [monorepo project setup](https://vercel.com/docs/monorepos)
 and [static build configuration](https://vercel.com/docs/builds/configure-a-build#skip-build-step).
 Vercel project links and DNS changes are managed separately; these folders
 do not create projects or provision domains.
 
-Website DNS for `sopholeth.io` does not replace the network's
-`_bootstrap.sopholeth.io` and `_omega.sopholeth.io` TXT records.
+Public discovery uses HTTPS/TUF metadata at `sopholeth.io/omega/`; the old
+DNS TXT discovery format is not used by the node or CLI.
 
 ## Deploy only changed sites
 
@@ -72,15 +70,13 @@ on changes outside its folder to trigger a deployment.
 rewrite to the separate `sopholeth-omega` Vercel project. The docs project keeps
 Root Directory `sites/sopholeth.io` and its normal Git integration. The omega
 publisher deploys public metadata separately; docs deploys cannot replace its
-history. Release 1 of the intended authority is published and verified; see the
+history. The intended authority is published and verified; see the
 [authority record](../docs/public-network-authority.md). Site folders contain no
 custody files. The public bootstrap bundle is versioned with the node and CLI.
 
-**Before public authority initialization, settle the production domain.** On
-2026-09-23, the apex returned a 308 redirect to `www.sopholeth.io`, including for
-`/omega/timestamp.json`. The trust client and publisher reject all redirects.
-The redirect was reversed and direct apex responses verified later that day.
-For a new setup using `https://sopholeth.io/omega/`, open the project's
+**The metadata domain must serve directly.** The trust client and publisher
+reject redirects. The apex currently serves Production, with www redirecting
+to it. For a new setup using `https://sopholeth.io/omega/`, open the project's
 Settings → Domains, remove the apex-to-www redirect so `sopholeth.io` serves
 Production directly, then redirect `www.sopholeth.io` to the apex. See Vercel's
 [domain redirect settings](https://vercel.com/docs/domains/working-with-domains/deploying-and-redirecting).
@@ -183,7 +179,7 @@ See the [CLI guide](../docs/cli.md#local-stream-viewer) and
   publishing workflow is chosen. The docs landing page links to them on GitHub.
 - Add devlog entries to `sopholeth.dev/index.html`. Release ingestion, feeds,
   and semi-automated publishing are not implemented in this scaffold.
-- Validate `soph.stream` locally and in remote staging before configuring a
-  public network endpoint; follow the [stream plan](../docs/soph-stream-plan.md).
+- The public viewer is live. Follow the [stream plan](../docs/soph-stream-plan.md)
+  for failure testing and remaining interaction work.
 - The Go dashboard is a separate service under `cmd/dashboard`; it is not
   one of these static sites.

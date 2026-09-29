@@ -1,7 +1,7 @@
 # Sopholeth API
 
-This describes the Go implementation. The [naming guide](rebrand.md) lists
-current configuration, tool, and metric names for the direct cutover.
+This describes the Go implementation. See [configuration](configuration.md)
+for node settings and [the CLI guide](cli.md) for `soph` commands.
 
 The HTTP client API has no authentication or key ownership. All reads,
 existence checks, and listings inspect the contacted node's local store.

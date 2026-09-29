@@ -51,7 +51,8 @@ See [omega operations](omega-operations.md) for the commands, all-or-nothing
 commit/retry contract, publication journal, custody limits, and JSON status.
 `status --check-keys` unlocks all active keys to verify a restored backup.
 Ordinary status, completed retries, and renewal need no passphrase. The
-standalone `omega` operator binary is retired. The intended public bundle and real network deployment still precede public launch.
+standalone `omega` operator binary is retired. The running testnet's authority
+and deployed artifacts are recorded in [the authority record](public-network-authority.md).
 
 ## Join a network
 
@@ -92,9 +93,9 @@ root while listed and healthy, otherwise probes other current roots before
 sending the command. It never retries a PUT as part of discovery or failover.
 Normal renewal no longer requires another `join`.
 
-The public network is not live. Ordinary builds have an unconfigured bundle
-and fail with guidance; see [public discovery](discovery.md) for bundle adoption,
-state retention, and platform limits. Native Windows public discovery remains
+Builds from this checkout include the running testnet's public bundle;
+see [public discovery](discovery.md) for bundle adoption, state retention,
+and platform limits. Native Windows public discovery remains
 unsupported; explicit connections still work. Legacy DNS profiles require an
 explicit new `join`, and an existing public profile never silently adopts a
 different network or authority.

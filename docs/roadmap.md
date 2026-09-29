@@ -1,65 +1,43 @@
 # Sopholeth roadmap
 
-The next phase delivers three things: the first public network, a web
-application that makes it useful to people, and a simulation that tests its
-longer-term premise.
+The public test network and soph.stream viewer are running. The next work is
+to validate failure behavior, fix the problems it exposes, and simplify setup
+before rebuilding. A demo web application and probe simulation follow.
 
-The [core principles](core-principles.md) constrain production behavior.
-The [architecture](architecture.md) describes the current implementation.
-This roadmap describes work still required; it is not a list of shipped
-guarantees.
+The [core principles](core-principles.md) constrain behavior, and the
+[architecture](architecture.md) describes the implementation. The
+[public-network plan](public-network-plan.md) is the immediate work queue;
+[open issues](https://github.com/TickTockBent/Sopholeth/issues) carry reproductions
+and current status.
 
 ## Current foundation
 
-The Go node already implements anonymous HTTP put/get/list, in-memory TTL
-storage, enclave gossip, replication acknowledgments, signed discovery and
-caching, WebSocket attachments, and an embedded MCP interface. The `soph` CLI,
-initial `soph serve`, static viewer, and separate dashboard also exist.
+The Go node provides anonymous HTTP put/get/list, in-memory TTL storage,
+enclave gossip, observed replication acknowledgments, HTTPS/TUF discovery,
+WebSocket attachments, and an embedded MCP interface. The `soph` CLI and
+`soph serve` share the public trust bundle; the static viewer watches the
+three roots by default. The separate dashboard still needs public discovery
+integration.
 
-The omega operator lifecycle is implemented, including encrypted custody,
-publication, renewal, rotation, backup checking, and verified Vercel hosting.
-The hosted rehearsal and Kraid service invocation succeeded. Node/CLI consumers
-now use the HTTPS trust client and embedded bundle with runtime expiry and
-saved-profile refresh. The public bundle remains unconfigured and the network
-has not been activated. Local integration tests do not replace bring-up on the
-real hosts.
+The omega suite implements encrypted custody, publication, renewal, rotation,
+and backup checking. Kraid runs the renewal service with hourly checks, daily
+refresh, and seven-day freshness validity. See the
+[authority record](public-network-authority.md) and
+[live validation](public-network-validation.md) for deployment evidence.
 
-## First public network
+## Public test network
 
-The immediate objective is **three public roots running for testing**, using
-Linux standalone nodes in the `default` enclave. The
-[revised network plan](public-network-plan.md) separates existing functionality,
-actual bring-up prerequisites, and repairs to make on the running network.
+Participation remains permissionless: omega endorses bootstrap entry points,
+not members or write authors. The initial Linux deployment uses the `default`
+enclave, HTTP gossip, and bounded streaming; WebSocket ingress and public
+metrics remain excluded.
 
-Participation is permissionless: any compatible node can bootstrap, join, and
-gossip, and writes have no authenticated author. Omega endorses bootstrap
-entry points. Peer bookkeeping and observed replication counts do not imply
-controlled admission, trusted voters, or consensus.
-
-The SYNC-storm fix (#150) is implemented: explicit peer-list requests receive
-one-way announcements that cannot trigger another reply. The Linux discovery
-integration is also implemented. The next work is:
-
-1. Write the actual host/DNS/TLS/service runbook and deploy three roots from a
-   reviewed, tested commit. Reuse omega's implemented custody and renewal
-   procedures. Record shared failure domains if roots share a host.
-2. Verify put/get/list, healthy replication, TTL expiration, and an additional
-   node joining without approval. Then use the running network to test root
-   loss, slow peers, restarts, capacity, and remaining audit findings.
-
-Peer-record defects (#211/#213), ACK accounting (#164), slow-peer delivery
-(#212), and related races/lifecycle defects remain real work. Scope each fix to
-observed protocol behavior; do not introduce membership authorization or writer
-identity to satisfy an audit. They are not collectively a prerequisite for
-starting useful network tests. A failure that prevents basic joining or healthy
-replication on the actual deployment takes priority.
-
-Native Windows discovery remains a follow-up deliverable; initial Linux
-bring-up need not wait for it. MCP, dashboard deployment, full transient-writer
-participation, and viewer polish are deferred. Keep unused endpoints excluded
-from the initial deployment and test them before enabling their participation
-mode. The existing viewer can observe the network as its streaming path is
-included; retain the current aesthetic and named-network behavior.
+Healthy discovery, anonymous operations, replication, expiration, and an
+unlisted node joining have passed. Root loss, slow peers, partitions, capacity,
+and sustained operation still need testing. Native Windows public discovery,
+MCP, dashboard deployment, and full transient participation retain their own
+scope. Fix failures on exercised paths without making the entire audit queue
+or additional identity infrastructure prerequisites for useful testing.
 
 ## Before public alpha
 

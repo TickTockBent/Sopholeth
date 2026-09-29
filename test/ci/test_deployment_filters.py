@@ -202,7 +202,7 @@ class WorkflowFilterTests(unittest.TestCase):
             "test/burnin/Dockerfile.go-node": (False, False),
             "internal/trust/bootstrap/client.go": (True, True),
             "internal/trust/bootstrap/client_test.go": (True, False),
-            "test/omega-tuf/README.md": (False, False),
+            "test/burnin/README.md": (False, False),
         }
         for event in ("push", "pull_request"):
             go_paths = event_paths("test.yml", event)
