@@ -320,15 +320,18 @@ func (a *app) cmdPut(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) > 1 {
-		return usagef("usage: soph put [key] [--ttl seconds] [--file path]")
+	if len(pos) > 2 {
+		return usagef("usage: soph put [key [value]] [--ttl seconds] [--file path]")
+	}
+	if len(pos) == 2 && *file != "" {
+		return usagef("value and --file cannot be used together")
 	}
 	if *ttl < 0 {
 		return usagef("--ttl must be a positive number of seconds")
 	}
 	key := ""
 	generated := false
-	if len(pos) == 1 {
+	if len(pos) > 0 {
 		key = pos[0]
 		if key == "" {
 			return usagef("key must not be empty")
@@ -342,9 +345,14 @@ func (a *app) cmdPut(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	data, err := a.readInput(ctx, *file)
-	if err != nil {
-		return err
+	var data []byte
+	if len(pos) == 2 {
+		data = []byte(pos[1])
+	} else {
+		data, err = a.readInput(ctx, *file)
+		if err != nil {
+			return err
+		}
 	}
 	rctx, cancel := a.requestContext(ctx)
 	res, err := c.Put(rctx, key, data, *ttl)

@@ -153,6 +153,10 @@
 
 ### Client
 
+- Accept `soph put key "value"` for direct text input, including empty values,
+  while retaining stdin and file input. Show the direct form in CLI help and
+  quick-start examples.
+
 - Add the `soph` client CLI (#187): a direct HTTP client in `cmd/soph` with
   `join`, `use`, `networks`, `forget`, `put`, `get`, `exists`, `list`, and
   the read-only diagnostics. Joining validates a node's health and saves it

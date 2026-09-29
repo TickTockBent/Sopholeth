@@ -135,7 +135,8 @@ updates. `--config <path>` selects both the profile file and adjacent trust stat
 ## Data commands
 
 ```bash
-printf 'hello' | soph put greeting --ttl 300
+soph put greeting "hello from the testnet" --ttl 300
+soph put demo:empty ""                # store an empty value
 soph put --file report.bin --ttl 3600   # key is generated and printed
 soph get greeting
 soph get report --output report.bin
@@ -144,9 +145,17 @@ soph list --prefix demo: --limit 50
 soph list --prefix demo: --all
 ```
 
-`put` reads the value from stdin or `--file`. Without a key it generates a
-UUID-shaped one. The key is printed to stdout so scripts can capture it;
-everything else goes to stderr. Writing to an existing key replaces the value
+`put key "value"` writes the second argument exactly as supplied, without
+adding a newline or reading stdin. Quote values containing spaces. For a value
+starting with a dash, end flag parsing first: `soph put greeting --ttl 300 -- "--hello"`.
+Colons are ordinary characters in keys and values.
+
+Without a value argument, `put` reads stdin or `--file`. For example,
+`printf 'hello\n' | soph put greeting` stores a value with a trailing newline.
+A value argument and `--file` cannot be combined. When the key is omitted, it
+generates a UUID-shaped key for the stdin or file input. The key is printed to
+stdout so scripts can capture it; everything else goes to stderr.
+Writing to an existing key replaces the value
 and restarts its TTL, as the protocol defines. If stdout fails after the node
 accepts a write, the client exits 1 and reports the key and known quorum
 outcome on stderr. It does not retry the write.
@@ -277,7 +286,7 @@ soph --json exists missing
 ```
 
 Flags may appear before or after positional arguments. A literal `--` ends
-flag parsing for keys that start with a dash.
+flag parsing for keys or values that start with a dash.
 
 Use `soph <command> --help` (or `soph help <command>`) for the command's
 arguments and flags. Help exits 0 and does not load config or contact a node.

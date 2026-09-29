@@ -64,7 +64,7 @@ Or use the client. Join once, then every command uses that node:
 ```bash
 go build -o bin/soph ./cmd/soph
 ./bin/soph join localhost
-printf 'hello' | ./bin/soph put hello --ttl 300
+./bin/soph put hello "hello from the testnet" --ttl 300
 ./bin/soph get hello
 ./bin/soph exists hello
 ./bin/soph list

@@ -261,8 +261,8 @@ Networks:
   forget <name>                      remove a saved network
 
 Data (against the current network's node):
-  put [key] [--ttl seconds] [--file path] [--require-confirmed]
-                                     write stdin (or --file) under key; generates a key if omitted
+  put [key [value]] [--ttl seconds] [--file path] [--require-confirmed]
+                                     write value, stdin, or --file; generates a key if omitted
   get <key> [--output path]          write the value's bytes to stdout (or --output)
   exists <key>                       check presence and local TTL without the payload
   list [--prefix p] [--limit n] [--cursor c] [--all]
