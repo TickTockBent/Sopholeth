@@ -104,7 +104,7 @@ observation, independent of quorum confirmation.
 
 | Event | JSON fields | Meaning |
 | --- | --- | --- |
-| `snapshot` | `now`, `node`, `enclave`, `entries` | Every live local entry at subscription time. Replaces the previous view. |
+| `snapshot` | `now`, `node`, `enclave`, `entries`, `omitted` | The newest live local entries at subscription time, newest first, within the snapshot limits. `omitted` counts live entries left out. Replaces the previous view. |
 | `put` | `now`, `node`, `entry` | An accepted write or overwrite, including replicated writes. |
 | `expire` | `node`, `key`, `revision` | Cleanup removed this revision. Advisory; clients can expire their view by local timestamps. |
 | `clock` | `now` | Node time, sent every 15 seconds to keep the connection active. |
@@ -125,13 +125,15 @@ The read's TTL headers are exposed to browsers through CORS.
 The initial limits are eight active stream connections per node, 64 queued
 events per subscriber, 4096 snapshot entries, and a conservative 4 MiB JSON
 snapshot budget. An individual event has a conservative 16 KiB budget,
-including the escaped key. Oversized snapshots return `503`, without a
-partial result. A full queue or oversized live event drops the subscriber;
-writes continue. Each network write has a five-second deadline. These bounds
+including the escaped key. When live entries exceed the snapshot limits, the
+snapshot keeps the most recent writes and reports the rest in `omitted`; it
+never fails because of store contents. An entry over the event budget is
+omitted from snapshots and its live events are not sent. A full queue drops
+the subscriber; writes continue. Each network write has a five-second deadline. These bounds
 add memory overhead beyond the payload storage capacity setting.
 
-`NODE_STREAM=off` makes the endpoint return `404`. Connection/snapshot limits
-return `503` with `Retry-After: 5`. Normal request admission/rate limits and
+`NODE_STREAM=off` makes the endpoint return `404`. The connection limit
+returns `503` with `Retry-After: 5`. Normal request admission/rate limits and
 CORS apply; the stream bypasses the ordinary 30-second response timeout.
 Responses set `Cache-Control: no-store` and `X-Accel-Buffering: no`.
 

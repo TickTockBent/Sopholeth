@@ -145,30 +145,71 @@ func TestStreamOverflowAndLimits(t *testing.T) {
 	}
 }
 
-func TestStreamOversizedSnapshotIsNotPartial(t *testing.T) {
-	for _, mode := range []string{"entries", "bytes", "key"} {
+func TestStreamSnapshotKeepsNewestWithinBounds(t *testing.T) {
+	for _, mode := range []string{"entries", "bytes"} {
 		t.Run(mode, func(t *testing.T) {
 			m := NewMemoryStore(0)
 			defer m.Close()
-			switch mode {
-			case "entries":
-				for i := 0; i <= StreamSnapshotEntries; i++ {
-					m.Put(fmt.Sprint(i), nil, time.Minute)
-				}
-			case "bytes":
-				for i := 0; i < 800; i++ {
-					m.Put(fmt.Sprint(i), make([]byte, StreamPreviewBytes), time.Minute)
-				}
-			case "key":
-				m.Put(strings.Repeat("k", streamEventBytes), nil, time.Minute)
+			total := StreamSnapshotEntries + 10
+			payload := []byte(nil)
+			if mode == "bytes" {
+				total, payload = 800, make([]byte, StreamPreviewBytes)
 			}
-			if _, sub, err := m.Subscribe(); !errors.Is(err, ErrSnapshotLimit) || sub != nil {
-				t.Fatalf("%v, %v", sub, err)
+			for i := 0; i < total; i++ {
+				m.Put(fmt.Sprintf("%05d", i), payload, time.Minute)
 			}
-			if len(m.subscribers) != 0 {
-				t.Fatal("failed snapshot leaked subscription")
+			m.Put("expired", nil, -time.Second)
+			snapshot, sub, err := m.Subscribe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sub.Close()
+			kept := len(snapshot.Entries)
+			if kept == 0 || kept >= total || snapshot.Omitted != total-kept {
+				t.Fatalf("kept %d of %d, omitted %d", kept, total, snapshot.Omitted)
+			}
+			if mode == "entries" && kept != StreamSnapshotEntries {
+				t.Fatalf("kept %d, want %d", kept, StreamSnapshotEntries)
+			}
+			// Newest first, and exactly the most recent writes.
+			for i, entry := range snapshot.Entries {
+				if want := fmt.Sprintf("%05d", total-1-i); entry.Key != want {
+					t.Fatalf("entry %d is %q, want %q", i, entry.Key, want)
+				}
+			}
+			m.Put("after", nil, time.Minute)
+			if event := <-sub.Events(); event.Entry.Key != "after" {
+				t.Fatal(event)
 			}
 		})
+	}
+}
+
+func TestStreamOversizedEntryDoesNotAffectViewers(t *testing.T) {
+	m := NewMemoryStore(0)
+	defer m.Close()
+	oversized := strings.Repeat("k", streamEventBytes)
+	m.Put(oversized, nil, time.Minute)
+	m.Put("small", []byte("v"), time.Minute)
+	snapshot, sub, err := m.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	if len(snapshot.Entries) != 1 || snapshot.Entries[0].Key != "small" || snapshot.Omitted != 1 {
+		t.Fatalf("%+v", snapshot)
+	}
+	// A live write of the oversized key is skipped; the viewer stays
+	// subscribed and receives the next write.
+	m.Put(oversized, []byte("again"), time.Minute)
+	m.Put("next", nil, time.Minute)
+	select {
+	case event := <-sub.Events():
+		if event.Entry.Key != "next" {
+			t.Fatal(event.Kind, len(event.Entry.Key))
+		}
+	case <-sub.Done():
+		t.Fatal("oversized write disconnected the viewer")
 	}
 }
 
@@ -206,4 +247,41 @@ func BenchmarkPutWithStream(b *testing.B) {
 			}
 		})
 	}
+}
+
+// The recency list must mirror the store through overwrites and sweeps.
+func TestRecencyListTracksStore(t *testing.T) {
+	m := NewMemoryStore(0)
+	defer m.Close()
+	var clock atomic.Int64
+	clock.Store(time.Now().UnixNano())
+	m.mutex.Lock()
+	m.now = func() time.Time { return time.Unix(0, clock.Load()) }
+	m.mutex.Unlock()
+	for i := 0; i < 2000; i++ {
+		ttl := time.Minute
+		if i%3 == 0 {
+			ttl = time.Second
+		}
+		m.Put(fmt.Sprint(i%700), nil, ttl)
+	}
+	check := func() {
+		m.mutex.RLock()
+		defer m.mutex.RUnlock()
+		count, last := 0, uint64(0)
+		for entry := m.newest; entry != nil; entry = entry.older {
+			if m.data[entry.key] != entry || (entry.newer != nil && entry.newer.older != entry) || (count > 0 && entry.revision >= last) {
+				t.Fatalf("list out of sync at %q", entry.key)
+			}
+			last = entry.revision
+			count++
+		}
+		if count != len(m.data) {
+			t.Fatalf("list has %d entries, store has %d", count, len(m.data))
+		}
+	}
+	check()
+	clock.Add(int64(2 * time.Second))
+	m.cleanupExpired()
+	check()
 }

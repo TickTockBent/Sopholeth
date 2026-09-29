@@ -67,7 +67,7 @@ go test ./internal/storage -run '^$' -bench BenchmarkPutWithStream -benchmem
 
 The storage/server tests cover the snapshot-to-event handoff under concurrent
 writes, revision-specific expiration, rejected writes, preview truncation,
-oversized snapshots, slow subscriber eviction, connection limits, replicated
+snapshots that keep the newest entries past the limits, oversized entries, slow subscriber eviction, connection limits, replicated
 writes, stream shutdown, and CORS. CLI tests cover viewer assets, selected
 profiles and overrides, help, JSON output, and cancellation. They also cover
 read forwarding, encoded keys, upstream error responses, exclusion of proxy

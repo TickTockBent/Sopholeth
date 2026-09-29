@@ -15,6 +15,10 @@ type Entry struct {
 	TTL       time.Duration `json:"ttl"`
 	ExpiresAt time.Time     `json:"expires_at"`
 	revision  uint64
+	// Recency list, newest write first, so a stream snapshot can take the
+	// newest entries without scanning the store (#218).
+	key          string
+	newer, older *Entry
 }
 
 type MemoryStore struct {
@@ -27,6 +31,7 @@ type MemoryStore struct {
 	sequence     uint64
 	subscribers  map[*Subscription]struct{}
 	closed       bool
+	newest       *Entry
 }
 
 // NewMemoryStore creates a new store. maxBytes sets the capacity limit in bytes;
@@ -52,7 +57,8 @@ func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
 
 	// Account for overwrites: subtract the old entry's size if the key exists
 	var oldSize int64
-	if existing, exists := m.data[key]; exists {
+	existing, exists := m.data[key]
+	if exists {
 		oldSize = int64(len(existing.Data))
 	}
 
@@ -71,7 +77,12 @@ func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
 		TTL:       ttl,
 		ExpiresAt: now.Add(ttl),
 		revision:  m.sequence,
+		key:       key,
 	}
+	if exists {
+		m.unlinkLocked(existing)
+	}
+	m.linkNewestLocked(m.data[key])
 
 	m.currentBytes = m.currentBytes - oldSize + newSize
 	if len(m.subscribers) > 0 {
@@ -138,6 +149,7 @@ func (m *MemoryStore) cleanupExpired() {
 	for key, entry := range m.data {
 		if !now.Before(entry.ExpiresAt) {
 			m.currentBytes -= int64(len(entry.Data))
+			m.unlinkLocked(entry)
 			delete(m.data, key)
 			m.publishLocked(Event{Kind: "expire", Entry: StreamEntry{Key: key, Revision: entry.revision}})
 		}
@@ -205,4 +217,24 @@ func (m *MemoryStore) Scan() []string {
 	}
 
 	return keys
+}
+
+func (m *MemoryStore) linkNewestLocked(entry *Entry) {
+	entry.older = m.newest
+	if m.newest != nil {
+		m.newest.newer = entry
+	}
+	m.newest = entry
+}
+
+func (m *MemoryStore) unlinkLocked(entry *Entry) {
+	if entry.newer != nil {
+		entry.newer.older = entry.older
+	} else {
+		m.newest = entry.older
+	}
+	if entry.older != nil {
+		entry.older.newer = entry.newer
+	}
+	entry.newer, entry.older = nil, nil
 }

@@ -7,7 +7,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../../sites/soph.stream');
 const viewers = new Set();
-let items = [], clock = Date.now(), connectionCount = 0;
+let items = [], omittedCount = 0, clock = Date.now(), connectionCount = 0;
 const entry = (key, payload, revision = '1', ttl = 300) => ({
   key, payload: Buffer.from(payload).subarray(0, 4096).toString('base64'),
   size: Buffer.byteLength(payload), truncated: Buffer.byteLength(payload) > 4096,
@@ -20,7 +20,7 @@ const server = http.createServer((req, res) => {
     connectionCount++;
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' });
     res.write('retry: 100\n');
-    res.write(`event: snapshot\ndata: ${JSON.stringify({ now: new Date(clock).toISOString(), node: 'fixture', enclave: 'test', entries: items })}\n\n`);
+    res.write(`event: snapshot\ndata: ${JSON.stringify({ now: new Date(clock).toISOString(), node: 'fixture', enclave: 'test', entries: items, omitted: omittedCount })}\n\n`);
     viewers.add(res); req.on('close', () => viewers.delete(res)); return;
   }
   if (url.pathname.startsWith('/v1/data/')) {
@@ -79,12 +79,16 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(() => document.querySelectorAll('.value-card').length === 0);
     assert.equal(await page.locator('#empty-title').textContent(), 'This node is empty.');
     items = [entry('reconnected', 'new snapshot')];
+    assert.equal(await page.locator('#omitted').textContent(), '');
+    omittedCount = 1200;
     const previousConnections = connectionCount;
     for (const response of viewers) response.end();
     await page.waitForFunction(() => document.querySelector('[data-key="reconnected"]'));
     assert.ok(connectionCount > previousConnections);
     assert.equal(await page.locator('[data-key="alpha"]').count(), 0);
-    console.log('PASS: clock-aware expiry and fresh snapshot after reconnect');
+    assert.equal(await page.locator('#omitted').textContent(), ' · 1,200 older not loaded');
+    omittedCount = 0;
+    console.log('PASS: clock-aware expiry, fresh snapshot after reconnect, omitted count');
 
     for (let i=0; i<50; i++) emit('put', { now: new Date(clock).toISOString(), node: 'fixture', entry: entry('queued-'+i, 'value') });
     await page.waitForFunction(() => document.querySelector('#count').textContent === '51');

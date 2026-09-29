@@ -7,6 +7,8 @@
   let servedNode = '';
   // Public mode walks the configured public roots; each switch rebuilds from
   // that node's own snapshot. An explicit node never fails over.
+  // Live entries the node left out of its snapshot (newest are kept).
+  let omitted = 0;
   let publicNodes = [], publicIndex = 0, publicMode = false, publicFailures = 0, failoverTimer = null;
   let state = 'idle', query = '', mobile = false, capacity = 0;
   let epoch = Date.now(), anchor = performance.now(), detailKey = null, detailRequest = null;
@@ -61,7 +63,7 @@
   }
   function clearView() {
     for (const value of retiring.values()) clearTimeout(value.timer);
-    retiring.clear(); entries.clear(); cards.clear(); slots = Array(capacity).fill(null);
+    retiring.clear(); entries.clear(); cards.clear(); slots = Array(capacity).fill(null); omitted = 0;
     for (const slot of slotElements) slot.replaceChildren();
     grid.replaceChildren(...slotElements);
     closeDetail();
@@ -107,6 +109,7 @@
       if (!Array.isArray(data.entries) || data.entries.length > 4096 || typeof data.node !== 'string' || typeof data.enclave !== 'string') throw new Error('Invalid snapshot');
       const snapshot = data.entries.map(parseEntry);
       clearView(); syncClock(data.now);
+      if (Number.isSafeInteger(data.omitted) && data.omitted > 0) omitted = data.omitted;
       identity = { node: data.node, enclave: data.enclave };
       $('identity').textContent = data.node + ' / ' + data.enclave;
       for (const entry of snapshot) if (entry.expires > now()) entries.set(entry.key, entry);
@@ -186,6 +189,7 @@
     const visibleKeys = new Set(slots.filter(key => entries.has(key)));
     const waiting = mobile ? 0 : entries.size - visibleKeys.size;
     $('queue').textContent = waiting ? ' / ' + waiting + ' waiting' : '';
+    $('omitted').textContent = omitted ? ' · ' + omitted.toLocaleString() + ' older not loaded' : '';
     const matchesAny = [...entries.values()].some(matches);
     $('empty').hidden = state === 'connected' && entries.size > 0 && matchesAny;
     if (state === 'connected' && !entries.size) {
