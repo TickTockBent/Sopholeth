@@ -16,9 +16,8 @@ const (
 )
 
 var (
-	ErrStreamLimit   = errors.New("stream connection limit reached")
-	ErrSnapshotLimit = errors.New("store snapshot exceeds stream limits")
-	ErrStoreClosed   = errors.New("store is closed")
+	ErrStreamLimit = errors.New("stream connection limit reached")
+	ErrStoreClosed = errors.New("store is closed")
 )
 
 // StreamEntry owns a preview copy, never the stored payload. Treat previews
@@ -34,9 +33,14 @@ type StreamEntry struct {
 	Revision   uint64    `json:"revision,string"`
 }
 
+// Snapshot holds the newest live entries that fit the stream bounds. Omitted
+// counts stored entries left out, so a growing store degrades the view
+// instead of refusing it (#218). It is approximate: it can include entries
+// that expired but have not been swept yet.
 type Snapshot struct {
 	Now     time.Time     `json:"now"`
 	Entries []StreamEntry `json:"entries"`
+	Omitted int           `json:"omitted"`
 }
 
 type Event struct {
@@ -62,7 +66,11 @@ func (s *Subscription) Close() {
 
 // Subscribe captures the snapshot and registers for subsequent mutations in
 // one critical section. Encoding and network I/O happen after the lock is
-// released. Oversized snapshots fail as a whole, never silently omit keys.
+// released. The snapshot walks the recency list from the newest write, so
+// its cost is bounded by the snapshot limits, not the store size. When the
+// store exceeds those limits, the rest is counted as omitted; an entry too
+// large for one event is always omitted. It never fails because of store
+// contents.
 func (m *MemoryStore) Subscribe() (Snapshot, *Subscription, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -73,18 +81,23 @@ func (m *MemoryStore) Subscribe() (Snapshot, *Subscription, error) {
 		return Snapshot{}, nil, ErrStreamLimit
 	}
 	snapshot := Snapshot{Now: m.now(), Entries: make([]StreamEntry, 0)}
-	budget := 0
-	for key, entry := range m.data {
+	expiredSeen, budget := 0, 0
+	for entry := m.newest; entry != nil && len(snapshot.Entries) < StreamSnapshotEntries; entry = entry.older {
 		if !snapshot.Now.Before(entry.ExpiresAt) {
+			expiredSeen++
 			continue
 		}
-		size := previewCost(key, len(entry.Data))
-		budget += size
-		if size > streamEventBytes || budget > StreamSnapshotBytes || len(snapshot.Entries) >= StreamSnapshotEntries {
-			return Snapshot{}, nil, ErrSnapshotLimit
+		size := previewCost(entry.key, len(entry.Data))
+		if size > streamEventBytes {
+			continue
 		}
-		snapshot.Entries = append(snapshot.Entries, preview(key, entry))
+		if budget+size > StreamSnapshotBytes {
+			break
+		}
+		budget += size
+		snapshot.Entries = append(snapshot.Entries, preview(entry.key, entry))
 	}
+	snapshot.Omitted = len(m.data) - expiredSeen - len(snapshot.Entries)
 	sub := &Subscription{store: m, events: make(chan Event, StreamQueueSize), done: make(chan struct{})}
 	m.subscribers[sub] = struct{}{}
 	return snapshot, sub, nil
@@ -110,11 +123,12 @@ func preview(key string, entry *Entry) StreamEntry {
 }
 
 func (m *MemoryStore) publishLocked(event Event) {
+	// An event too large to send is skipped for everyone; it must not
+	// disconnect viewers (#218).
+	if previewCost(event.Entry.Key, len(event.Entry.Payload)) > streamEventBytes {
+		return
+	}
 	for sub := range m.subscribers {
-		if previewCost(event.Entry.Key, len(event.Entry.Payload)) > streamEventBytes {
-			m.dropLocked(sub)
-			continue
-		}
 		select {
 		case sub.events <- event:
 		default:
