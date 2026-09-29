@@ -152,8 +152,15 @@ func TestServeEmbeddedViewerAndShutdown(t *testing.T) {
 
 func TestServeViewerProxyReads(t *testing.T) {
 	requests := make(chan *http.Request, 8)
+	putBodies := make(chan string, 1)
 	node := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests <- r.Clone(context.Background())
+		if r.Method == http.MethodPut {
+			body, _ := io.ReadAll(r.Body)
+			putBodies <- string(body)
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
 		if r.URL.Path == "/v1/data/missing" {
 			http.NotFound(w, r)
 			return
@@ -201,11 +208,34 @@ func TestServeViewerProxyReads(t *testing.T) {
 		t.Fatal(response.StatusCode)
 	}
 	<-requests
+	// The write panel's PUT reaches the node with only its value, content
+	// type, and TTL; editor credentials stay behind.
+	req, _ = http.NewRequest(http.MethodPut, viewer.URL+"/proxy/8181/v1/data/greeting?ttl=5", strings.NewReader("hello"))
+	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	req.Header.Set("X-TTL", "3600")
+	req.Header.Set("Cookie", "editor-session=private")
+	response, err = c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatal(response.StatusCode)
+	}
+	upstream = <-requests
+	if upstream.Method != http.MethodPut || upstream.URL.Path != "/v1/data/greeting" || upstream.URL.RawQuery != "" ||
+		upstream.Header.Get("X-TTL") != "3600" || upstream.Header.Get("Content-Type") != "text/plain; charset=utf-8" || upstream.Header.Get("Cookie") != "" {
+		t.Fatal(upstream.Method, upstream.URL, upstream.Header)
+	}
+	if body := <-putBodies; body != "hello" {
+		t.Fatalf("forwarded body %q", body)
+	}
 	for _, test := range []struct {
 		method, path string
 		status       int
 	}{
-		{"PUT", "/v1/data/key", http.StatusMethodNotAllowed},
+		{"PUT", "/v1/stream", http.StatusMethodNotAllowed},
+		{"DELETE", "/v1/data/key", http.StatusMethodNotAllowed},
 		{"POST", "/v1/stream", http.StatusMethodNotAllowed},
 		{"GET", "/v1/status", http.StatusNotFound},
 		{"GET", "/health", http.StatusNotFound},
