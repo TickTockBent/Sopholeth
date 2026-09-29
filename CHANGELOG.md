@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Test applications
+
+- Recreate Fade at `sopholeth.com/fade/`: a public ephemeral message board with
+  optional callsign/location, 5-minute to 1-day lifetimes, node selection,
+  live updates, key lookup, and polling fallback. Use the current site design
+  tokens and ordinary node APIs; no separate backend or message database.
+
 ### Repository maintenance
 
 - Remove archived burn-in output, completed rehearsal/audit reports, the old

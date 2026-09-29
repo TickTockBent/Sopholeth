@@ -6,7 +6,7 @@ directory. Deployment filtering uses a shared Git-based check.
 
 | Domain | Vercel Root Directory | Contents |
 | --- | --- | --- |
-| `sopholeth.com` | `sites/sopholeth.com` | Marketing and showcase site. |
+| `sopholeth.com` | `sites/sopholeth.com` | Marketing and showcase site, plus [Fade](../docs/fade.md) at `/fade/`. |
 | `sopholeth.io` | `sites/sopholeth.io` | Documentation landing page, private-node quickstart, and links to the maintained repository guides. |
 | `sopholeth.dev` | `sites/sopholeth.dev` | Devlog and release-notes landing page, starting with the merged rebrand. |
 | `soph.stream` | `sites/soph.stream` | Live node viewer. Watches the public network by default; `?node=` or the node field selects a specific node. |

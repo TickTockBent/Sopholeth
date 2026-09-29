@@ -2,7 +2,8 @@
 
 The public test network and soph.stream viewer are running. The next work is
 to validate failure behavior, fix the problems it exposes, and simplify setup
-before rebuilding. A demo web application and probe simulation follow.
+before rebuilding. Fade provides the first conversation demo; room-based chat
+and a probe simulation follow.
 
 The [core principles](core-principles.md) constrain behavior, and the
 [architecture](architecture.md) describes the implementation. The
@@ -73,13 +74,15 @@ identity remain client concerns.
 
 ## Demo web application
 
-Build a small temporary conversation application: chat that behaves more
-like speech than a permanent transcript.
+[Fade](fade.md) is the first slice: a public message board at
+`sopholeth.com/fade/`, recreated from the original demo. It supports live
+messages, visible lifetimes, optional callsign/location labels, node selection,
+and key lookup on the current testnet APIs.
 
-The first experience should support invite-based rooms, live messages with
-visible remaining lifetimes, optional client-side encryption, and rooms that
-expire when participants stop refreshing them. Participants need no accounts.
-The interface should explain that readers can still copy or record messages.
+The later conversation application can add invite-based rooms, optional
+client-side encryption, and rooms that expire when participants stop refreshing
+them. Participants need no accounts. Keep explaining that readers can still
+copy or record messages.
 
 Keep the application protocol above Sopholeth:
 

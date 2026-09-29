@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An open conversation with a lifetime. Fade is an ephemeral message board on the Sopholeth testnet.">
+  <meta name="theme-color" content="#0a0a0f">
+  <title>Fade · Sopholeth</title>
+  <link rel="stylesheet" href="../colors_and_type.css">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#compose">Skip to message</a>
+  <header class="site-header"><div class="shell header-inner">
+    <a class="brand" href="../"><span>$</span> sopholeth / <strong>fade</strong></a>
+    <nav aria-label="Project"><a href="https://soph.stream/" target="_blank" rel="noopener">watch the network ↗</a><a href="https://sopholeth.io/">docs</a></nav>
+  </div></header>
+  <main class="shell">
+    <section class="hero" aria-labelledby="title">
+      <p class="eyebrow">FADE://PUBLIC CONVERSATION</p>
+      <h1 id="title">Say something.<br><em>Let it go.</em></h1>
+      <p class="lede">A message board with a short memory. Leave a thought, a hello, a signal from wherever you are. Give it a lifetime.</p>
+    </section>
+    <div class="connection-bar">
+      <p id="connection" role="status" data-state="connecting">Connecting to the testnet…</p>
+      <label class="node-choice">Listening through <select id="node" aria-label="Node"><option value="">Automatic</option></select></label>
+    </div>
+    <div class="workspace">
+      <aside>
+        <form id="compose" class="panel">
+          <div class="panel-heading"><h2>Transmit a message</h2><span>01 / OUTGOING</span></div>
+          <label for="message">Your message</label>
+          <textarea id="message" maxlength="280" rows="5" placeholder="Anyone out there?" required></textarea>
+          <p class="counter"><span id="characters">0</span> / 280</p>
+          <div class="identity-fields">
+            <div><label for="callsign">Callsign <small>optional</small></label><input id="callsign" maxlength="20" placeholder="Anonymous" autocomplete="off"></div>
+            <div><label for="location">Location <small>optional</small></label><input id="location" maxlength="30" placeholder="Somewhere" autocomplete="off"></div>
+          </div>
+          <label for="ttl">Let it live for</label>
+          <select id="ttl"><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option><option value="21600">6 hours</option><option value="86400">1 day</option></select>
+          <button id="send" class="primary" type="submit" disabled>Transmit →</button>
+          <p id="send-status" class="feedback" role="status"></p>
+          <p class="note">Public and unencrypted. Callsigns are labels, not verified identities. Readers can keep copies after a message fades.</p>
+        </form>
+        <details class="lookup panel">
+          <summary>Have a message key?</summary>
+          <form id="lookup-form">
+            <label for="lookup-key">Message key</label><input id="lookup-key" placeholder="fade:v1:…" autocomplete="off" spellcheck="false" required>
+            <button id="retrieve" type="submit" disabled>Retrieve message</button>
+          </form>
+          <p id="lookup-status" class="feedback" role="status"></p>
+          <div id="lookup-result"></div>
+        </details>
+      </aside>
+      <section class="board" aria-labelledby="board-title">
+        <div class="board-heading"><h2 id="board-title">On the air</h2><span id="count">0 messages here</span></div>
+        <p id="board-note" class="note">This is one node’s view of the conversation.</p>
+        <div id="empty" class="empty"><span aria-hidden="true">· · ·</span><h3>Listening for a signal.</h3><p>Live messages will appear here.</p></div>
+        <div id="messages" aria-label="Live messages"></div>
+      </section>
+    </div>
+  </main>
+  <footer class="shell"><span>FADE / Fast Access Distributed Ephemeral messaging</span><a href="https://github.com/TickTockBent/Sopholeth">Built on Sopholeth ↗</a></footer>
+  <noscript>Fade needs JavaScript to read and write messages on the network.</noscript>
+</body>
+</html>
