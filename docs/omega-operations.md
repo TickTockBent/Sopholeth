@@ -4,10 +4,11 @@
 encrypted TUF authorities, unattended renewal, online/membership/root-key
 rotation, root-expiry recovery, and verified publication to a local HTTPS-served
 repository on Linux. Production initialization uses encrypted custody by default.
-No production authority is created by this implementation. Vercel publication and
-its hosted disposable rehearsal are complete, as is Linux node/CLI discovery
-integration. Intended authority activation and deployed network testing remain
-in the [public-network plan](public-network-plan.md).
+The intended authority has been initialized on Kraid and its first release
+verified over HTTPS. Vercel publication, its hosted rehearsal, and Linux node/CLI
+discovery integration are complete. See the [authority record](public-network-authority.md)
+for activation progress and the [public-network plan](public-network-plan.md)
+for deployed network testing.
 
 The launch profile uses one secured connected operator workstation and a tested
 backup. The operator may use `sudo`; the renewal service runs as a separate,
@@ -193,8 +194,9 @@ Keep passphrase recovery information separately, recoverable without the origina
 workstation. Update the backup after rotations and retain current publication
 history; old keys alone cannot safely resume allocated versions.
 
-Before activation, restore with the working copies unavailable. Initial,
-unprovisioned custody can be checked at a temporary private path. After
+Before activation, verify that the restored copy works independently of the
+working homes. Initial, unprovisioned custody can be checked at a temporary
+private path; `--check-keys` reads the keys from that restored home. After
 provisioning, restore the operational home and public repository at their
 **original bound absolute paths**, on an isolated replacement or with the originals
 safely moved aside and the old publisher disabled. Restore the operator home too.
@@ -834,11 +836,11 @@ The standalone `omega` binary is retired. The old DNS signer lives only in
 [test/burnin/legacy-omega](../test/burnin/legacy-omega/README.md), for existing
 burn-in consumers awaiting TUF migration. It must not create the public network.
 
-Ordinary builds still have an unconfigured public bundle and reject public
-discovery. `make check-public-release` now compares `OMEGA_EXPECTED_SHA256`
+Builds from this checkout carry the intended public authority's bundle.
+`make check-public-release` compares `OMEGA_EXPECTED_SHA256`
 with the embedded bundle's **initial signed TUF-root fingerprint**, the same
 fingerprint reported by this suite. The node and `soph` consume that bundle;
 copying it into the release source is a deliberate authority adoption, not an
 automatic download. See [bundle adoption](discovery.md#adopting-the-public-bundle).
-The intended authority, its independently checked bundle, and the actual
-three-root deployment remain bring-up work. Private connections still work.
+The intended authority and first publication are verified; the actual three-root
+deployment remains bring-up work. Private connections still work.

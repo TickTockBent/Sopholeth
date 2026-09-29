@@ -1,8 +1,11 @@
 # Three-root public test-network bring-up
 
-Prepared for Kraid, Ridley, and Motherbrain. This is the operator procedure;
-the intended authority and public roots are not yet activated. Run commands
-as the normal login user. Only host administration and omega custody use `sudo`.
+Prepared for Kraid, Ridley, and Motherbrain. This is the operator procedure.
+The intended authority is initialized on Kraid, its restored keys are verified,
+and release 1 is published. The post-publication backup, production timer, and
+root deployment remain pending in the [authority record](public-network-authority.md).
+Run commands as the normal login user. Only host administration and omega
+custody use `sudo`.
 
 ## Hosts and public ingress
 
@@ -61,6 +64,11 @@ node container: the [ingress configuration](examples/public-network/nginx.conf)
 enforces the launch limits and excludes unsupported paths.
 
 ## Create and back up the intended authority on Kraid
+
+Initialization, the restored-backup check, and first publication below are
+complete for the recorded authority. Continue with the
+[post-publication backup](public-network-authority.md#next-operator-step) and
+renewal timer. Retain the existing authority and fingerprint.
 
 Use the installed `soph` and custody/service-account layout from the successful
 [Kraid rehearsal](omega-kraid-rehearsal.md#install-and-prepare). Update the binary

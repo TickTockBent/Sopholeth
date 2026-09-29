@@ -16,6 +16,10 @@
 
 ### Public discovery
 
+- Embed the intended `sopholeth` authority's public TUF bundle for node and CLI
+  discovery at `https://sopholeth.io/omega`. Record the initial fingerprint and
+  remaining activation steps. Restored keys and first HTTPS publication are
+  verified; production scheduling and live root deployment remain pending.
 - Prepare the three-root bring-up runbook and unprivileged container/ingress
   configuration for Kraid, Ridley, and Motherbrain. Record the approved public
   origins and Cloudflare Tunnel setup; intended authority activation remains
@@ -32,8 +36,7 @@
   their original authority, and select a healthy current root before sending
   data commands. Never implicitly retry PUT. `soph serve` follows the same
   profile and renews its viewing connection with fresh snapshots.
-  Builds remain unconfigured until the intended public bundle is adopted;
-  real-network validation and native Windows discovery remain ahead.
+  Real-network validation and native Windows discovery remain ahead.
 
 - Give newly created public repositories the operational account's ownership,
   so privileged publication can hand off to an unprivileged renewal service.

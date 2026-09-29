@@ -1,8 +1,10 @@
 # Sopholeth public discovery
 
 The Go node and `soph` use omega's HTTPS/TUF metadata. The embedded public
-bundle is deliberately unconfigured until we create the intended test-network
-authority. No public network is activated by this integration.
+bundle identifies the intended `sopholeth` test-network authority at
+`https://sopholeth.io/omega`. See the [authority record](public-network-authority.md)
+for its initial fingerprint and the remaining activation steps. The bundle alone
+does not publish metadata or start the roots.
 
 ## Trust boundary
 
@@ -53,8 +55,9 @@ make build
 The gate compares the embedded bundle's initial TUF-root fingerprint with the
 independent record. It no longer hashes the legacy DNS signing key. The checked
 bundle is embedded in both `bin/server` and `bin/soph`, including Docker builds
-from the same source. Ordinary development builds contain `{}` and reject
-public discovery; private connections still work. Bundle adoption and the
+from the same source. Builds from this checkout carry the intended public
+authority. A deliberately unconfigured `{}` bundle rejects public discovery;
+private connections still work. Bundle adoption and the
 actual host setup belong to the [bring-up runbook](public-network-plan.md#3-put-the-three-roots-on-the-available-hosts).
 
 The initial bundle stays fixed through ordinary signed key rotations. A network

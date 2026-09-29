@@ -62,9 +62,11 @@ renewal cycle has not yet been observed; observe it on the running test network.
 
 Nodes and `soph join` now use the HTTPS trust client, embedded public bundle,
 and initial TUF-root fingerprint gate. Local fixtures exercise saved-profile
-renewal, HTTPS bootstrap/gossip, and runtime expiry. The embedded bundle remains
-unconfigured: no intended test-network authority has been created and the three
-roots are not deployed. Real-network validation belongs to bring-up.
+renewal, HTTPS bootstrap/gossip, and runtime expiry. The intended authority has
+been initialized on Kraid, and its [public bundle and fingerprint](public-network-authority.md)
+are recorded for adoption. Restored keys and first HTTPS publication are
+verified. The post-publication backup, production renewal timer, and root
+deployment remain pending. Real-network validation belongs to bring-up.
 
 ## Delivery order
 
