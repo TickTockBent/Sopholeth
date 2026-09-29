@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"time"
@@ -257,10 +258,27 @@ func haiku(rng *rand.Rand, text string) string {
 	return strings.Join(words[:first], " ") + " / " + strings.Join(words[first:second], " ") + " / " + strings.Join(words[second:], " ")
 }
 
+// clockReadings returns the lag as the two clocks would report it, rounded to
+// the one decimal the phrases print. Clock rates sit within 3% of each other,
+// so the readings often round to the same value; nudge this probe's reading a
+// tenth in the direction of its drift so the clocks visibly disagree.
+func (p *probe) clockReadings(lag float64) (float64, float64) {
+	yourYears := math.Round(lag*10) / 10
+	myYears := math.Round(lag*p.clockRate*10) / 10
+	if myYears == yourYears {
+		if p.clockRate < 1 {
+			myYears -= 0.1
+		} else {
+			myYears += 0.1
+		}
+	}
+	return yourYears, myYears
+}
+
 func (p *probe) greetingText(rng *rand.Rand, recipient string) string {
-	lag := 0.5 + rng.Float64()*6
+	yourYears, myYears := p.clockReadings(0.5 + rng.Float64()*6)
 	message := fmt.Sprintf(greetings[rng.Intn(len(greetings))], recipient) + " " +
-		fmt.Sprintf(lagPhrases[rng.Intn(len(lagPhrases))], lag, lag*p.clockRate)
+		fmt.Sprintf(lagPhrases[rng.Intn(len(lagPhrases))], yourYears, myYears)
 	return p.speak(message+" — "+p.signature(), rng)
 }
 
