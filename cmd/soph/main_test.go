@@ -402,7 +402,7 @@ func TestPutRejectsBadArgs(t *testing.T) {
 	ta.mustRun(t, "", "join", addr)
 	for _, args := range [][]string{
 		{"put", "k", "--ttl", "-1"},
-		{"put", "a", "b"},
+		{"put", "a", "b", "c"},
 		{"put", "k", "--file", filepath.Join(t.TempDir(), "missing")},
 		{"put", "a/b"},
 	} {

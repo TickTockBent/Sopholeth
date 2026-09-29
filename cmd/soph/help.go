@@ -23,7 +23,7 @@ func (a *app) printCommandHelp(fs *flag.FlagSet) error {
 		"use":                     {"<name>", "Make a saved network current."},
 		"networks":                {"", "List saved networks; * marks the current one."},
 		"forget":                  {"<name>", "Remove a saved network."},
-		"put":                     {"[key] [--ttl seconds] [--file path] [--require-confirmed]", "Write stdin or a file. Generate a key if omitted; print the key to stdout."},
+		"put":                     {"[key [value]] [--ttl seconds] [--file path] [--require-confirmed]", "Write a value directly: soph put greeting \"hello world\". Without a value, read stdin or --file. Generate a key if omitted; print the key to stdout. Value and --file are mutually exclusive. Use -- before a value starting with a dash."},
 		"get":                     {"<key> [--output path]", "Write the stored value's bytes to stdout or a file."},
 		"exists":                  {"<key>", "Check presence and local TTL without the payload. Alias: head."},
 		"list":                    {"[--prefix p] [--limit n] [--cursor c] [--all]", "List live keys on the contacted node."},

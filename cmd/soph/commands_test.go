@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"sopholeth/internal/client"
@@ -98,6 +99,58 @@ func TestHumanOutputFailureIsLocalError(t *testing.T) {
 	code, _, _ := ta.run("", "networks")
 	if code != exitError {
 		t.Fatalf("empty networks: exit %d", code)
+	}
+}
+
+func TestPutInlineValue(t *testing.T) {
+	node, addr := startFakeNode(t)
+	for _, tc := range []struct {
+		name, key, value string
+		args             []string
+	}{
+		{"text", "greeting", "hello from the testnet", []string{"greeting", "hello from the testnet", "--ttl", "300"}},
+		{"empty", "empty", "", []string{"--ttl", "300", "empty", ""}},
+		{"colon and Unicode", "demo:hello", "  hello: κόσμε\n", []string{"demo:hello", "--ttl", "300", "  hello: κόσμε\n"}},
+		{"flag-like value", "literal", "--help", []string{"literal", "--ttl", "300", "--", "--help"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ta := newTestApp(t)
+			ta.mustRun(t, "", "join", addr)
+			ta.stdout.Reset()
+			ta.stderr.Reset()
+			ta.app.stdin = iotest.ErrReader(errors.New("inline put must not read stdin"))
+			code := ta.app.run(context.Background(), append([]string{"--json", "put"}, tc.args...))
+			if code != exitOK {
+				t.Fatalf("exit %d, stderr %q", code, ta.stderr.String())
+			}
+			res := decodeJSON(t, ta.stdout.String())
+			if res["key"] != tc.key || res["bytes"] != float64(len(tc.value)) || res["generated_key"] != false || res["ttl_requested"] != float64(300) {
+				t.Fatalf("put result = %v", res)
+			}
+			if got, ok := node.Value(tc.key); !ok || string(got) != tc.value {
+				t.Fatalf("stored value = %q, present %t; want %q", got, ok, tc.value)
+			}
+		})
+	}
+}
+
+func TestPutRejectsInvalidInlineArguments(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"key", "value", "--file", "missing.bin"}, "value and --file cannot be used together"},
+		{[]string{"key", "too", "many"}, "usage: soph put"},
+		{[]string{"", "value"}, "key must not be empty"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			ta := newTestApp(t)
+			ta.app.getenv = func(string) string { t.Fatal("invalid arguments accessed config"); return "" }
+			code, out, errOut := ta.run("", append([]string{"put"}, tc.args...)...)
+			if code != exitUsage || out != "" || !strings.Contains(errOut, tc.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+			}
+		})
 	}
 }
 
