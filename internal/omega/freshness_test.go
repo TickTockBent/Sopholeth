@@ -15,6 +15,7 @@ import (
 )
 
 func TestFreshnessLifetimeAndRenewalBoundary(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	var a authority
 	must(t, decodeRecord(file(t, filepath.Join(f.opts.Home, f.opts.Network, "authority.json")), &a))
@@ -78,6 +79,7 @@ func TestFreshnessLifetimeAndRenewalBoundary(t *testing.T) {
 }
 
 func TestLegacyPendingRenewalKeepsSignedBytes(t *testing.T) {
+	t.Parallel()
 	_, _, opts := renewalFixture(t, 25*time.Hour)
 	var custody renewalCustody
 	must(t, decodeRecord(file(t, filepath.Join(opts.Home, opts.Network+".renewal.json")), &custody))

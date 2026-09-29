@@ -62,7 +62,7 @@ jobs:
       run: make build
 
     - name: Test
-      run: go test -race ./...
+      run: make test-race
 
     - name: Test privileged setup and unprivileged renewal
       run: |

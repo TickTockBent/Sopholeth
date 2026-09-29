@@ -24,6 +24,7 @@ func encryptedOptions(t *testing.T) InitOptions {
 }
 
 func TestEncryptedKeyInputBounds(t *testing.T) {
+	t.Parallel()
 	codec := defaultKeyCodec()
 	binding := keyBinding{Transaction: digest([]byte("transaction")), Network: "rehearsal", Repository: "https://metadata.example.invalid", Name: "root-1", Generation: 1}
 	password := []byte("throwaway test passphrase")
@@ -50,6 +51,7 @@ func TestEncryptedKeyInputBounds(t *testing.T) {
 }
 
 func TestEncryptedKeyBindingAndAuthentication(t *testing.T) {
+	t.Parallel()
 	binding := keyBinding{Transaction: digest([]byte("transaction")), Network: "rehearsal", Repository: "https://metadata.example.invalid", Name: "root-1", Generation: 1}
 	password := []byte("throwaway test passphrase")
 	data, err := fastKeyCodec.create(context.Background(), binding, password)
@@ -83,6 +85,7 @@ func TestEncryptedKeyBindingAndAuthentication(t *testing.T) {
 }
 
 func TestEncryptedInitPublicInspectionAndBackupRestore(t *testing.T) {
+	t.Parallel()
 	opts := encryptedOptions(t)
 	report, err := initializeWithCodec(context.Background(), opts, testTime, nil, fastKeyCodec)
 	must(t, err)
@@ -157,6 +160,7 @@ func encryptedKeyNames() []string {
 }
 
 func TestEncryptedInitRecoveryBoundaries(t *testing.T) {
+	t.Parallel()
 	// Shared link/fsync/promotion and process-death behavior remains covered by
 	// the original initializer suite. These are the new encrypted boundaries.
 	for _, phase := range []string{allocationName + ":written", "root-1.key.age:written", "encrypted:allocation-retired", "promoted"} {
@@ -204,6 +208,7 @@ func TestEncryptedInitRecoveryBoundaries(t *testing.T) {
 }
 
 func TestEncryptedFirstWriteAndWrongPasswordRecovery(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"torn-first-write", "wrong-password", "damaged-committed"} {
 		t.Run(kind, func(t *testing.T) {
 			opts := encryptedOptions(t)
@@ -253,6 +258,7 @@ func TestEncryptedFirstWriteAndWrongPasswordRecovery(t *testing.T) {
 }
 
 func TestEncryptedAllocationRetainedUntilKeyFilesVerify(t *testing.T) {
+	t.Parallel()
 	opts := encryptedOptions(t)
 	_, err := initializeWithCodec(context.Background(), opts, testTime, func(phase string) error {
 		if phase == "complete.json:durable" {

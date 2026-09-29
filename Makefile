@@ -6,7 +6,7 @@ IMAGE_NAME ?= sopholeth/node:local
 # Burn-in cluster seeds — useful for `make dashboard-run-burnin` smoke tests.
 BURNIN_SEEDS ?= localhost:8091,localhost:8092,localhost:8093
 
-.PHONY: build build-dashboard build-soph run dashboard-run-burnin test check-public-release clean docker-build docker-run docker-compose-up docker-compose-down
+.PHONY: build build-dashboard build-soph run dashboard-run-burnin test test-race check-public-release clean docker-build docker-run docker-compose-up docker-compose-down
 
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/server
@@ -30,8 +30,15 @@ dashboard-run-burnin: build-dashboard
 run: build
 	./bin/$(BINARY_NAME)
 
+# Omega tests fsync every durable write. On a spinning disk that dominates
+# the run, so keep test temp directories in memory when /dev/shm exists.
+TEST_TMPDIR := $(shell [ -d /dev/shm ] && echo /dev/shm || echo $${TMPDIR:-/tmp})
+
 test:
-	go test ./...
+	TMPDIR=$(TEST_TMPDIR) go test ./...
+
+test-race:
+	TMPDIR=$(TEST_TMPDIR) go test -race ./...
 
 # The expected fingerprint comes from the authority's independent release
 # record, not from the same checkout being verified. Empty is an error.

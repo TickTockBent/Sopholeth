@@ -17,6 +17,7 @@ import (
 )
 
 func TestMembershipRotationPreservesLatestApprovalAndOfflineCustody(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	opts.Role = "targets"
 	ctx := context.Background()
@@ -91,6 +92,7 @@ func TestMembershipRotationPreservesLatestApprovalAndOfflineCustody(t *testing.T
 }
 
 func TestMembershipRotationPreparationRecovery(t *testing.T) {
+	t.Parallel()
 	// Only membership rotation reserves this separate offline signing key.
 	for _, phase := range []string{"2.targets-key.json:written", "2.targets-key.json:linked", "rotation:offline-key-durable"} {
 		t.Run(phase, func(t *testing.T) {
@@ -135,6 +137,7 @@ func TestMembershipRotationPreparationRecovery(t *testing.T) {
 }
 
 func TestMembershipRotationApplyRecovery(t *testing.T) {
+	t.Parallel()
 	// Exercise both sides of the offline handoff; common publication failures
 	// are covered by TestPublishInterruptionsReusePreparedBytes.
 	for _, phase := range []string{"rotation:apply-durable", "2.rotation-targets.json:written", "rotation:targets-durable"} {
@@ -184,6 +187,7 @@ func TestMembershipRotationApplyRecovery(t *testing.T) {
 }
 
 func TestMembershipRotationRejectsRetiredTargets(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	opts.Role = "targets"
 	ctx := context.Background()
@@ -231,6 +235,7 @@ func TestMembershipRotationRejectsRetiredTargets(t *testing.T) {
 }
 
 func TestMembershipRotationPreservesDamagedState(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"missing-key", "corrupt-key", "changed-pending-handoff", "wrong-role", "bad-approval", "missing-reservation"} {
 		t.Run(kind, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
@@ -301,6 +306,7 @@ func TestMembershipRotationPreservesDamagedState(t *testing.T) {
 }
 
 func TestMembershipRotationTornHandoffAndExpiredRecovery(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	opts.Role = "targets"
 	prepared, err := Rotate(context.Background(), opts)
@@ -341,6 +347,7 @@ func TestMembershipRotationTornHandoffAndExpiredRecovery(t *testing.T) {
 }
 
 func TestMembershipRotationLostGenerationRecovery(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	opts.Role = "targets"
 	prepared, err := Rotate(context.Background(), opts)

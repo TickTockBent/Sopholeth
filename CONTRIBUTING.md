@@ -52,7 +52,9 @@ boundaries without repeating the whole failure matrix for every command.
 - Add tests for changed behavior, including relevant failure paths. Protocol
   changes need coverage at the storage, transport, or integration boundary
   they affect.
-- For code changes, run `make build` and `go test -race ./...`, matching CI.
+- For code changes, run `make build` and `make test-race`, matching CI. Both
+  test targets keep temporary files in `/dev/shm` when it exists; omega tests
+  fsync every durable write, which is slow on spinning disks.
   For documentation changes, check links, commands, and claims against the
   current implementation.
 - Document externally visible behavior and update the changelog when relevant.

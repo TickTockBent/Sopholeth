@@ -47,6 +47,7 @@ func recordedRelease(t *testing.T, online RenewOptions, version int64) release {
 }
 
 func TestOnlineRotationPreservesApprovalAndOfflineCustody(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	ctx := context.Background()
 	bundle := fixtureBundle(t, f)
@@ -112,6 +113,7 @@ func TestOnlineRotationPreservesApprovalAndOfflineCustody(t *testing.T) {
 }
 
 func TestOnlineRotationPreparationRecovery(t *testing.T) {
+	t.Parallel()
 	// Shared rotation intent/root recovery lives here. Other roles exercise
 	// their additional offline key reservations, not this same write sequence.
 	for _, phase := range []string{"2.rotation-intent.json:written", "2.rotation-intent.json:linked", "2.rotation.json:written", "2.rotation.json:linked"} {
@@ -153,6 +155,7 @@ func TestOnlineRotationPreparationRecovery(t *testing.T) {
 }
 
 func TestOnlineRotationApplyRecovery(t *testing.T) {
+	t.Parallel()
 	// Keep rotation-specific reservations, torn releases, and root activation.
 	// TestPublishInterruptionsReusePreparedBytes covers the common publisher.
 	for _, phase := range []string{"2.rotation-apply.json:written", "2.rotation-apply.json:linked", "2.release.json:written", "public:2.root.json:visible"} {
@@ -203,6 +206,7 @@ func TestOnlineRotationApplyRecovery(t *testing.T) {
 }
 
 func TestOnlineRotationRejectsUnreviewedAndReservedApply(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"unprepared", "wrong-digest", "skipped-root", "pending-approval", "pending-renewal"} {
 		t.Run(kind, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
@@ -234,6 +238,7 @@ func TestOnlineRotationRejectsUnreviewedAndReservedApply(t *testing.T) {
 }
 
 func TestOnlineRotationRejectsRetiredKeysAndBrokenChain(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	ctx := context.Background()
 	bundle := fixtureBundle(t, f)
@@ -309,6 +314,7 @@ func TestOnlineRotationRejectsRetiredKeysAndBrokenChain(t *testing.T) {
 }
 
 func TestOnlineRotationInterruptedClientRevocation(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	ctx := context.Background()
 	bundle := fixtureBundle(t, f)
@@ -350,6 +356,7 @@ func TestOnlineRotationInterruptedClientRevocation(t *testing.T) {
 }
 
 func TestOnlineRotationExpiredReservationRecovery(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"timestamp", "membership", "torn-apply"} {
 		t.Run(kind, func(t *testing.T) {
 			age, advance := time.Duration(0), timestampLifetime(timestampDays)+time.Hour
@@ -426,6 +433,7 @@ func TestOnlineRotationExpiredReservationRecovery(t *testing.T) {
 }
 
 func TestOnlineRotationClockAndConcurrentRetries(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	preparedAt := time.Now().UTC().Add(time.Hour)
 	prepared, err := rotate(context.Background(), opts, preparedAt, nil)
@@ -455,6 +463,7 @@ func TestOnlineRotationClockAndConcurrentRetries(t *testing.T) {
 }
 
 func TestRotationProcessDeathRecovery(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SOPH_ROTATION_TEST_CHILD") == "1" {
 		home := os.Getenv("SOPH_ROTATION_TEST_HOME")
 		opts := RotateOptions{Home: home, Network: "rehearsal", Role: os.Getenv("SOPH_ROTATION_TEST_ROLE"), RootVersion: 2, Apply: os.Getenv("SOPH_ROTATION_TEST_DIGEST"), Disposable: true}
@@ -518,6 +527,7 @@ func TestRotationProcessDeathRecovery(t *testing.T) {
 }
 
 func TestOnlineRotationPreservesDamagedState(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"missing-keys", "changed-keys", "pending-keys", "pending-root", "pending-apply", "missing-apply", "unknown-public-root"} {
 		t.Run(kind, func(t *testing.T) {
 			f, renewal, opts := rotationFixture(t)
@@ -611,6 +621,7 @@ func TestOnlineRotationPreservesDamagedState(t *testing.T) {
 }
 
 func TestOnlineRotationRejectsOfflinePolicyChanges(t *testing.T) {
+	t.Parallel()
 	f, renewal, opts := rotationFixture(t)
 	_, err := Rotate(context.Background(), opts)
 	must(t, err)

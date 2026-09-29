@@ -34,6 +34,7 @@ func renewalFixture(t *testing.T, age time.Duration) (*publishFixture, Provision
 func onlineState(o RenewOptions) string { return filepath.Join(o.Home, o.Network+".publication") }
 
 func TestRenewalWithoutOfflineKeysAndNewMembership(t *testing.T) {
+	t.Parallel()
 	f, p, opts := renewalFixture(t, renewalInterval+time.Hour)
 	var authorityRecord authority
 	must(t, decodeRecord(file(t, filepath.Join(f.opts.Home, f.opts.Network, "authority.json")), &authorityRecord))
@@ -121,6 +122,7 @@ func TestRenewalWithoutOfflineKeysAndNewMembership(t *testing.T) {
 }
 
 func TestRenewalInterruptionsAndTornWrites(t *testing.T) {
+	t.Parallel()
 	// Renewal owns intent recovery and re-signing a torn release. The publisher
 	// suite covers object installation; retain one renewal activation boundary.
 	for _, phase := range []string{"2.renewal-intent.json:written", "2.renewal-intent.json:linked", "2.release.json:written", "public:timestamp.json:visible"} {
@@ -162,6 +164,7 @@ func TestRenewalInterruptionsAndTornWrites(t *testing.T) {
 }
 
 func TestProvisionRenewalRecoversHandoff(t *testing.T) {
+	t.Parallel()
 	for _, phase := range []string{"rehearsal.publisher.json:written", "renewal:bound", "renewal:journal-durable", "rehearsal.renewal.json:written", "rehearsal.renewal.json:linked"} {
 		t.Run(phase, func(t *testing.T) {
 			f := newPublishFixture(t)
@@ -195,6 +198,7 @@ func TestProvisionRenewalRecoversHandoff(t *testing.T) {
 }
 
 func TestRenewalExpiryAndPublicationFailure(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"expired-timestamp", "approval-deadline", "publisher-outage"} {
 		t.Run(kind, func(t *testing.T) {
 			age := renewalInterval + time.Hour
@@ -240,6 +244,7 @@ func TestRenewalExpiryAndPublicationFailure(t *testing.T) {
 }
 
 func TestRenewalConcurrentAndClockRollback(t *testing.T) {
+	t.Parallel()
 	_, _, opts := renewalFixture(t, renewalInterval+time.Hour)
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
@@ -259,6 +264,7 @@ func TestRenewalConcurrentAndClockRollback(t *testing.T) {
 }
 
 func TestRenewalProcessDeathRecovery(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SOPH_RENEW_TEST_CHILD") == "1" {
 		home := os.Getenv("SOPH_RENEW_TEST_HOME")
 		_, err := renew(context.Background(), RenewOptions{Home: home, Network: "rehearsal", Disposable: true}, time.Time{}, func(at string) error {
@@ -315,6 +321,7 @@ func TestRenewalProcessDeathRecovery(t *testing.T) {
 }
 
 func TestRenewalRefusesChangedCustodyAndPendingApproval(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"offline-key", "wrong-role-key", "different-home", "pending-approval", "pending-torn-approval", "tampered-pending-renewal"} {
 		t.Run(kind, func(t *testing.T) {
 			f, p, opts := renewalFixture(t, renewalInterval+time.Hour)
@@ -376,6 +383,7 @@ func TestRenewalRefusesChangedCustodyAndPendingApproval(t *testing.T) {
 }
 
 func TestRenewalHomeCannotInitializeReplacementAuthority(t *testing.T) {
+	t.Parallel()
 	for _, missingKey := range []bool{false, true} {
 		f, _, opts := renewalFixture(t, renewalInterval+time.Hour)
 		if missingKey {
@@ -394,6 +402,7 @@ func TestRenewalHomeCannotInitializeReplacementAuthority(t *testing.T) {
 }
 
 func TestProvisionPreservesConflictingPendingCustody(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	p := ProvisionRenewalOptions{Home: f.opts.Home, Network: f.opts.Network, RenewalHome: filepath.Join(filepath.Dir(f.opts.Home), "online"), Disposable: true}
 	_, err := provisionRenewal(context.Background(), p, func(at string) error {
@@ -421,6 +430,7 @@ func TestProvisionPreservesConflictingPendingCustody(t *testing.T) {
 }
 
 func TestExpiredMembershipDoesNotStrandRenewalReservation(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"complete-intent", "torn-intent", "expired-timestamp"} {
 		t.Run(kind, func(t *testing.T) {
 			age, advance := 90*24*time.Hour-time.Hour, 2*time.Hour

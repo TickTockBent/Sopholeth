@@ -28,6 +28,7 @@ func applyRoot(t *testing.T, opts RotateOptions) Report {
 }
 
 func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
+	t.Parallel()
 	// One end-to-end chain covers retries, active-key selection across repeated
 	// generations of every role, and fresh/returning clients. Role-specific tests
 	// below and in the other rotation files retain legacy plaintext coverage.
@@ -169,6 +170,7 @@ func TestRootRotationQuorumsAndAlternatingRoles(t *testing.T) {
 }
 
 func TestRootRotationExpiredAuthorityRecovery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	created := time.Now().UTC().Truncate(time.Second).Add(-366 * 24 * time.Hour)
 	f := newCustodyPublishFixture(t, created, true)
@@ -214,6 +216,7 @@ func TestRootRotationExpiredAuthorityRecovery(t *testing.T) {
 }
 
 func TestRootRotationSingleSignerLoss(t *testing.T) {
+	t.Parallel()
 	f, online, opts := rotationFixture(t)
 	applyRoot(t, opts)
 	// Lose each signer position in successive generations: every surviving pair
@@ -242,6 +245,7 @@ func TestRootRotationSingleSignerLoss(t *testing.T) {
 }
 
 func TestRootRotationPreparationRecovery(t *testing.T) {
+	t.Parallel()
 	// The root-specific transaction spans a public plan and three private keys.
 	for _, phase := range []string{"2.root-plan.json:written", "2.root-plan.json:linked", "2.root-1-key.json:written", "2.root-2-key.json:linked", "rotation:root-keys-durable"} {
 		t.Run(phase, func(t *testing.T) {
@@ -295,6 +299,7 @@ func TestRootRotationPreparationRecovery(t *testing.T) {
 }
 
 func TestRootRotationApplyRecovery(t *testing.T) {
+	t.Parallel()
 	// Root approval has its own offline-signing handoff and activation boundary.
 	for _, phase := range []string{"rotation:apply-durable", "2.rotation-targets.json:written", "public:2.root.json:visible"} {
 		t.Run(phase, func(t *testing.T) {
@@ -331,6 +336,7 @@ func TestRootRotationApplyRecovery(t *testing.T) {
 }
 
 func TestRootRotationPolicyAndCustodyIsolation(t *testing.T) {
+	t.Parallel()
 	// Prepare once; threshold and signed-policy checks only mutate memory.
 	f, online, opts := rotationFixture(t)
 	opts.Role = "root"
@@ -415,6 +421,7 @@ func TestRootRotationPolicyAndCustodyIsolation(t *testing.T) {
 }
 
 func TestRootRotationExpiredApplyAndOfflineRepair(t *testing.T) {
+	t.Parallel()
 	f, online, opts := rotationFixture(t)
 	opts.Role = "root"
 	prepared, err := Rotate(context.Background(), opts)
@@ -449,6 +456,7 @@ func TestRootRotationExpiredApplyAndOfflineRepair(t *testing.T) {
 }
 
 func TestRootRotationRejectsDamagedCustody(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"missing-plan", "changed-signer", "missing-quorum"} {
 		t.Run(kind, func(t *testing.T) {
 			f, _, opts := rotationFixture(t)

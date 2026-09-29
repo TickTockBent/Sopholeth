@@ -34,6 +34,7 @@ func encryptedLifecycleFixture(t *testing.T) (*publishFixture, RenewOptions, Rot
 	return f, online, opts
 }
 func TestNewPassphraseLength(t *testing.T) {
+	t.Parallel()
 	binding := keyBinding{Transaction: digest([]byte("test")), Network: "rehearsal", Repository: "https://metadata.example.invalid", Name: "targets", Generation: 1}
 	for _, password := range []string{"a", "12345678901", "éééééé"} {
 		if _, err := fastKeyCodec.create(context.Background(), binding, []byte(password)); err == nil {
