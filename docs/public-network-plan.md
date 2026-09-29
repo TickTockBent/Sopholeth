@@ -73,7 +73,8 @@ renewal, HTTPS bootstrap/gossip, and runtime expiry. The intended authority has
 been initialized on Kraid, and its [public bundle and fingerprint](public-network-authority.md)
 are adopted in merged #249. Restored keys, first HTTPS publication, and the first
 production renewal are verified. The full encrypted backup is retained off Kraid
-and the production timer is enabled. Root deployment and real-network validation
+and the production timer is enabled. Kraid and Ridley are healthy and have
+discovered each other. Motherbrain deployment and real-network data validation
 remain pending.
 
 ## Delivery order

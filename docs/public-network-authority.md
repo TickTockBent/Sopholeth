@@ -37,11 +37,12 @@ Activation status:
 - First production freshness renewal: release 2 verified by the service on
   2026-09-29. The production Vercel drop-in is installed and the hourly timer is
   enabled and active. The disposable rehearsal timer remains disabled.
-- Public ingress: all three tunnels are reachable with valid TLS. Kraid now
-  returns healthy public HTTPS responses; Ridley and Motherbrain await startup.
-- Root deployment: Kraid is running and reports `official root=true` from
-  verified discovery. A fresh public `soph join` selected Kraid successfully.
-  Ridley/Motherbrain deployment and cross-root validation remain pending.
+- Public ingress: all three tunnels are reachable with valid TLS. Kraid and
+  Ridley return healthy public HTTPS responses; Motherbrain awaits startup.
+- Root deployment: Kraid and Ridley report `official root=true` from verified
+  discovery and list each other at their signed HTTPS origins. A fresh public
+  `soph join` selected Kraid successfully. Motherbrain deployment and cross-root
+  data validation remain pending.
 
 ## First publication
 
@@ -82,9 +83,9 @@ run. Record the first timer-driven due renewal when it occurs.
 
 ## Next operator step
 
-Authority adoption is merged in #249 (`03ff9b2`) and Kraid is running. Build the
-same reviewed release and [start the remaining roots](public-network-bringup.md#adopt-the-bundle-and-build-the-release):
-Ridley, then Motherbrain. Then verify anonymous cross-root writes,
+Authority adoption is merged in #249 (`03ff9b2`), with Kraid and Ridley running.
+Build the same reviewed release and [start Motherbrain](public-network-bringup.md#adopt-the-bundle-and-build-the-release).
+Then verify anonymous cross-root writes,
 the admission limits, and an unlisted node joining the public network.
 
 ## Prepared deployment artifacts
@@ -92,8 +93,9 @@ the admission limits, and an unlisted node joining the public network.
 Kraid's release build and startup completed on 2026-09-29. The installed CLI
 checksum and local node image were checked directly on the host. The node is
 healthy behind the loopback ingress on port 18080; public health returns the
-correct ID/network/enclave with `Cache-Control: no-store`. Initially it has no
-peers, as the other two roots are not running yet. The topology `role` field
+correct ID/network/enclave with `Cache-Control: no-store`. Ridley joined on
+2026-09-29; both public topology views now list the other root at its signed
+HTTPS origin in the default enclave. The topology `role` field
 describes the separate WebSocket attachment role; the discovery startup log
 confirms Kraid's official root role.
 
@@ -102,6 +104,16 @@ confirms Kraid's official root role.
 | Source commit | `03ff9b2287d0d9e36893a05ceb7530a9860bdf70` |
 | Node image | `sha256:971c642c0fd86874d39a84e581c6372f1aceea80f59c6ffdb83c7af3845d93f4` |
 | Installed CLI SHA-256 | `8bd0ffd4c797bbfde7544c30c01645e704f1cdfd2225c503a4b75450ea010be9` |
+
+Ridley's running image and release record were checked on the host; local and
+public health passed. Its operator script saves the artifact details in
+`~/.local/share/sopholeth/root/release.txt`.
+
+| Ridley artifact | Value |
+| --- | --- |
+| Source commit | `03ff9b2287d0d9e36893a05ceb7530a9860bdf70` |
+| Node image | `sha256:983a3b1ae43a8100566ff75afe8888255e47b0c5e72f7a6dd8d0dba4899e61f4` |
+| Built CLI SHA-256 | `8bd0ffd4c797bbfde7544c30c01645e704f1cdfd2225c503a4b75450ea010be9` |
 
 ## Repeat the full backup
 
