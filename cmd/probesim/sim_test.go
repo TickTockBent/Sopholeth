@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/rand"
 	"net/http/httptest"
 	"strings"
@@ -136,6 +137,21 @@ func TestMutationsChangeSpeech(t *testing.T) {
 	child := newProbe(rng, map[string]bool{p.id: true}, p)
 	if !child.code.shouts || child.parentID != p.id || !strings.HasPrefix(child.name, p.name) {
 		t.Fatalf("child did not inherit: %+v", child)
+	}
+}
+
+// The two clock readings in a greeting always print differently.
+func TestClockReadingsDisagree(t *testing.T) {
+	rng := rand.New(rand.NewSource(3))
+	for _, clockRate := range []float64{0.97, 0.999, 1, 1.001, 1.03} {
+		p := newProbe(rng, map[string]bool{}, nil)
+		p.clockRate = clockRate
+		for i := 0; i < 500; i++ {
+			yourYears, myYears := p.clockReadings(0.5 + rng.Float64()*6)
+			if fmt.Sprintf("%.1f", yourYears) == fmt.Sprintf("%.1f", myYears) {
+				t.Fatalf("rate %v: clocks agree at %.1f", clockRate, yourYears)
+			}
+		}
 	}
 }
 
