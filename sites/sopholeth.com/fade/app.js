@@ -2,13 +2,18 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const prefix = 'fade:v1:', keyPattern = /^fade:v1:[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
-  const messages = new Map(), cards = new Map();
+  const messages = new Map(), cards = new Map(), sent = new Map();
   const maxMessages = 200, pollLimit = 80;
   let nodes = [], nextNode = 0, session = null, reconnect = null, failures = 0, sending = false, mutation = 0;
-  let lookup = null, lookupSerial = 0;
+  let lookup = null, lookupSerial = 0, following = true;
   const allowedTTLs = new Set([300, 900, 3600, 21600, 86400]);
   const clock = () => session ? session.epoch + performance.now() - session.anchor : Date.now();
   const active = s => session === s && !s.abort.signal.aborted;
+  const signature = entry => JSON.stringify([entry.text, entry.callsign, entry.location]);
+  const own = entry => sent.get(entry.key) === signature(entry);
+  const nearBottom = () => $('timeline').scrollHeight - $('timeline').scrollTop - $('timeline').clientHeight < 60;
+  function latest() { following = true; $('timeline').scrollTop = $('timeline').scrollHeight; $('latest').hidden = true; }
+  function openSettings() { if (!$('settings').open) $('settings').showModal(); }
   const timeLeft = ms => {
     const n = Math.max(0, Math.ceil(ms / 1000));
     return [Math.floor(n / 3600), Math.floor(n / 60) % 60, n % 60].map(v => String(v).padStart(2, '0')).join(':');
@@ -72,6 +77,7 @@
   }
   async function connect() {
     closeSession(); messages.clear(); cards.clear(); $('messages').replaceChildren(); clearLookup();
+    latest();
     const origin = $('node').value || nodes[nextNode++ % nodes.length];
     if (!origin) { status('No nodes configured.', 'disconnected'); return; }
     const s = session = { origin, abort: new AbortController(), ready: false, source: null, epoch: Date.now(), anchor: performance.now(), polling: false };
@@ -167,13 +173,15 @@
     card.querySelector('.copy-key').addEventListener('click', async e => {
       $('lookup-key').value = entry.key;
       try { await navigator.clipboard.writeText(entry.key); e.target.textContent = 'Copied'; }
-      catch { document.querySelector('.lookup').open = true; $('lookup-key').focus(); $('lookup-key').select(); e.target.textContent = 'Key ready below'; }
+      catch { openSettings(); document.querySelector('.lookup').open = true; $('lookup-key').focus(); $('lookup-key').select(); e.target.textContent = 'Key ready in details'; }
     });
     return card;
   }
   function updateCard(card, entry) {
     const remaining = Math.max(0, entry.expires - clock()), fraction = Math.min(1, remaining / (entry.ttl * 1000));
-    card.querySelector('.author').textContent = entry.callsign || 'Anonymous';
+    const isOwn = own(entry);
+    card.classList.toggle('own', isOwn);
+    card.querySelector('.author').textContent = (entry.callsign || 'Anonymous') + (isOwn ? ' · you' : '');
     card.querySelector('.place').textContent = entry.location;
     card.querySelector('.message-text').textContent = entry.text;
     card.querySelector('.message-text').style.opacity = String(.45 + fraction * .55);
@@ -183,20 +191,30 @@
     card.classList.toggle('late', fraction < .2);
   }
   function render() {
+    const timeline = $('timeline'), follow = nearBottom();
+    // Preserve the first visible message when older values expire or reorder.
+    const top = timeline.getBoundingClientRect().top;
+    const anchor = [...$('messages').children].find(card => card.getBoundingClientRect().bottom > top);
+    const anchorTop = anchor?.getBoundingClientRect().top;
     for (const [key, entry] of messages) if (entry.expires <= clock()) messages.delete(key);
     for (const [key, card] of cards) if (!messages.has(key)) { card.remove(); cards.delete(key); }
-    const ordered = [...messages.values()].sort((a, b) => b.written - a.written || a.key.localeCompare(b.key));
-    let previous = null;
+    const ordered = [...messages.values()].sort((a, b) => a.written - b.written || a.key.localeCompare(b.key));
+    let previous = null, added = false;
     for (const entry of ordered) {
       let card = cards.get(entry.key);
-      if (!card) { card = makeCard(entry); cards.set(entry.key, card); }
+      if (!card) { card = makeCard(entry); card.setAttribute('role', 'listitem'); cards.set(entry.key, card); added = true; }
       updateCard(card, entry);
       const before = previous ? previous.nextSibling : $('messages').firstChild;
       if (before !== card) $('messages').insertBefore(card, before);
       previous = card;
     }
     $('empty').hidden = ordered.length > 0;
-    $('count').textContent = ordered.length + (ordered.length === 1 ? ' message here' : ' messages here');
+    $('count').textContent = ordered.length + (ordered.length === 1 ? ' live message' : ' live messages');
+    if (follow || !ordered.length) latest();
+    else {
+      if (anchor?.isConnected) timeline.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+      if (added) $('latest').hidden = false;
+    }
     if (lookup) {
       if (lookup.entry.expires <= clock()) { clearLookup(); feedback('lookup-status', 'This message has expired on the observed node.'); }
       else updateCard(lookup.card, lookup.entry);
@@ -219,10 +237,14 @@
   $('compose').addEventListener('submit', async e => {
     e.preventDefault(); if (sending || !session?.ready) return;
     const s = session, draft = $('message').value, ttl = Number($('ttl').value);
+    const restoreFocus = document.activeElement === $('send');
     const data = { app: 'fade', schema: 1, text: draft.trim(), callsign: $('callsign').value.trim(), location: $('location').value.trim() };
     if (!payload(JSON.stringify(data)) || !allowedTTLs.has(ttl)) { feedback('send-status', 'Enter a message of 1–280 characters and choose a lifetime.', true); return; }
     const key = prefix + crypto.randomUUID(); $('lookup-key').value = key;
-    sending = true; controls(); feedback('send-status', 'Transmitting through ' + s.label + '…');
+    sent.set(key, signature(data));
+    if (sent.size > maxMessages) sent.delete(sent.keys().next().value);
+    latest();
+    sending = true; controls(); feedback('send-status', 'Sending…');
     try {
       // One fetch, with no application retry. The browser's HTTP transport may
       // retry a PUT internally; a failed response can still mean it was stored.
@@ -233,19 +255,43 @@
       });
       if (r.status !== 201 && r.status !== 202) {
         const known = [400, 413, 429, 507].includes(r.status);
-        feedback('send-status', known ? 'Not accepted (' + r.status + '). Your draft is kept.' : 'Response ' + r.status + '; delivery is unknown. Check the message key before sending again.', true);
+        feedback('send-status', known ? 'Not accepted (' + r.status + '). Your draft is kept.' : 'Response ' + r.status + '; delivery is unknown. Check the key in Channel details before sending again.', true);
         return;
       }
       if ($('message').value === draft) { $('message').value = ''; $('characters').textContent = '0'; }
-      feedback('send-status', r.status === 202 ? 'Stored on ' + s.label + ' · replication pending. Your message key is ready below.' : 'Stored on ' + s.label + ' · quorum observed. Your message key is ready below.');
+      feedback('send-status', r.status === 202 ? 'Sent · replication pending.' : 'Sent.');
       if (active(s) && !messages.has(key)) {
         const began = mutation;
         try { const entry = await readMessage(s, key); if (active(s) && (messages.get(key)?.changed || 0) <= began) { accept(entry); render(); } } catch { /* The accepted write remains successful. */ }
       }
-    } catch { feedback('send-status', 'Delivery is unknown. Your draft is kept; check the message key before sending again.', true); }
-    finally { sending = false; controls(); }
+    } catch { feedback('send-status', 'Delivery is unknown. Your draft is kept; check the key in Channel details before sending again.', true); }
+    finally {
+      sending = false; controls();
+      if (restoreFocus && document.activeElement === document.body && !$('settings').open) $('message').focus({ preventScroll: true });
+    }
   });
   $('message').addEventListener('input', () => { $('characters').textContent = String($('message').value.length); });
+  $('message').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      if (!sending && session?.ready && $('message').value.trim()) $('compose').requestSubmit();
+    }
+  });
+  $('settings-open').addEventListener('click', openSettings);
+  $('settings-close').addEventListener('click', () => $('settings').close());
+  $('latest').addEventListener('click', latest);
+  const timeline = $('timeline');
+  let timelineWidth = timeline.clientWidth, timelineHeight = timeline.clientHeight;
+  timeline.addEventListener('scroll', () => {
+    // Resizing can dispatch scroll before ResizeObserver. Keep the previous
+    // follow state until the new viewport size has been handled.
+    if (timeline.clientWidth !== timelineWidth || timeline.clientHeight !== timelineHeight) return;
+    following = nearBottom(); if (following) $('latest').hidden = true;
+  });
+  new ResizeObserver(() => {
+    timelineWidth = timeline.clientWidth; timelineHeight = timeline.clientHeight;
+    if (following) latest();
+  }).observe(timeline);
   $('node').addEventListener('change', () => {
     const u = new URL(location.href);
     if ($('node').value) u.searchParams.set('node', $('node').value); else u.searchParams.delete('node');

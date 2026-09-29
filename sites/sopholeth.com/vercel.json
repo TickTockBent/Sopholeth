@@ -6,6 +6,7 @@
   "buildCommand": "",
   "ignoreCommand": "site_ignore=$(git show HEAD:scripts/vercel-ignore.sh) || exit 1; sh -c \"$site_ignore\"",
   "outputDirectory": ".",
+  "trailingSlash": true,
   "routes": [
     {
       "handle": "filesystem"

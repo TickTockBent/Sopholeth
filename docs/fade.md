@@ -1,21 +1,35 @@
-# Fade: the public message board
+# Fade: the public chat channel
 
 Fade recreates the [original demo](https://github.com/TickTockBent/Sopholeth/tree/1fc83acf963935a2e17031077ed0a03dd4076330/web/fade)
 on the current Sopholeth API and site styling. It lives at
 `sopholeth.com/fade/`, inside the existing marketing deployment. There is no
 new Vercel project, backend, database, account system, or Discord bridge.
 
-Choose a lifetime, optionally add a callsign/location, and transmit a short
-message. The board shows the selected node's live messages with a countdown
+Choose a lifetime, optionally add a callsign, and send a short message. Fade
+turns values under `fade:v1:` into one public chat channel; unrelated keys and
+invalid message payloads do not enter the conversation. The selected node's
+live messages appear oldest first, with new messages at the bottom, a countdown,
 and fading text. Callsigns are display labels. Anyone can read or overwrite
 values, and readers can retain copies after local expiration.
+
+The composer stays below the scrollable conversation. Enter sends; Shift+Enter
+adds a new line. Composing text with an input method does not send it. Incoming
+messages follow the bottom while you are caught up; scrolling up preserves your
+place and reveals a button to return to new messages. Outgoing messages from
+this page align right and say “you.” This is in-memory display bookkeeping,
+not authenticated authorship; a changed payload at the same key loses that label.
+
+Channel details contains node selection, optional location, and key lookup.
 
 ## Use and deployment
 
 The marketing site's navigation links to Fade. Its static directory is
 [`sites/sopholeth.com/fade`](../sites/sopholeth.com/fade/); preview the entire
 marketing root using [the normal site command](../sites/README.md#local-preview),
-then visit `/fade/`. It imports the parent site's color/type tokens, including
+then visit `/fade/`. The marketing deployment enables
+[trailing slashes](https://vercel.com/docs/project-configuration/vercel-json#trailingslash)
+so `/fade` redirects to `/fade/` before relative assets load. It imports the
+parent site's color/type tokens, including
 its existing font dependency. The app itself needs no build or package install.
 
 `config.json` lists Kraid, Ridley, and Motherbrain. Automatic selection starts
@@ -51,8 +65,9 @@ A send initiates one PUT fetch without application retries. Browsers can retry
 HTTP PUTs internally after a transport failure, so this is not an exactly-once
 delivery guarantee. Timeouts, interrupted connections, and
 unexpected responses retain the draft and report an unknown outcome. The
-generated key is put in the lookup field before sending so the user can inspect
-it. A missing value on one node cannot prove that no other node stored it.
+generated key is put in the lookup field under Channel details before sending
+so the user can inspect it. A missing value on one node cannot prove that no
+other node stored it.
 Read failover or node switching never retries the PUT. A failed follow-up read
 does not turn an accepted write into a failed write.
 
@@ -85,7 +100,8 @@ node test/fade/browser.cjs
 `PLAYWRIGHT_MODULE` and `CHROMIUM_PATH` can select an existing installation, as
 with the stream tests. The fixture exercises two node origins, messages and
 literal HTML payloads, overwrite/expiry, direct lookup, pending and ambiguous
-write outcomes, stream/poll fallback, failover, and mobile layout. Set
+write outcomes, stream/poll fallback, failover, chronological chat order,
+keyboard sending, scroll behavior, and the mobile composer. Set
 `FADE_SCREENSHOT` to an external path for a screenshot; do not commit test images.
 
 Live checks should use a few clearly labeled messages at the five-minute TTL.

@@ -74,7 +74,7 @@ identity remain client concerns.
 
 ## Demo web application
 
-[Fade](fade.md) is the first slice: a public message board at
+[Fade](fade.md) is the first slice: a public chat channel at
 `sopholeth.com/fade/`, recreated from the original demo. It supports live
 messages, visible lifetimes, optional callsign/location labels, node selection,
 and key lookup on the current testnet APIs.
