@@ -6,18 +6,23 @@ IMAGE_NAME ?= sopholeth/node:local
 # Burn-in cluster seeds — useful for `make dashboard-run-burnin` smoke tests.
 BURNIN_SEEDS ?= localhost:8091,localhost:8092,localhost:8093
 
-.PHONY: build build-dashboard build-soph run dashboard-run-burnin test test-race check-public-release clean docker-build docker-run docker-compose-up docker-compose-down
+.PHONY: build build-dashboard build-soph probesim-run run dashboard-run-burnin test test-race check-public-release clean docker-build docker-run docker-compose-up docker-compose-down
 
 build:
 	go build -o bin/$(BINARY_NAME) ./cmd/server
 	go build -o bin/$(DASHBOARD_BINARY_NAME) ./cmd/dashboard
 	go build -o bin/$(CLIENT_BINARY_NAME) ./cmd/soph
+	go build -o bin/probesim ./cmd/probesim
 
 build-soph:
 	go build -o bin/$(CLIENT_BINARY_NAME) ./cmd/soph
 
 build-dashboard:
 	go build -o bin/$(DASHBOARD_BINARY_NAME) ./cmd/dashboard
+
+# Gentle probe chatter on the public testnet; Ctrl-C prints a fleet summary.
+probesim-run:
+	go run ./cmd/probesim
 
 dashboard-run-burnin: build-dashboard
 	./bin/$(DASHBOARD_BINARY_NAME) \
