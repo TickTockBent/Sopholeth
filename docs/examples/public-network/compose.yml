@@ -34,7 +34,7 @@ services:
       NODE_LOG_LEVEL: info
       NODE_INBOUND: "false"
       NODE_MAX_CHILDREN: 0
-      NODE_STREAM: "off"
+      NODE_STREAM: "on"
       NODE_PPROF_ENABLED: "false"
       GOMEMLIMIT: 384MiB
     volumes:

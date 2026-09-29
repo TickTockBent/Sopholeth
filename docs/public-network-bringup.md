@@ -183,6 +183,26 @@ leaving room for base64 and JSON around a full-size value. Raising the node's
 cap also requires raising both ingress limits; budget about 1.4 times the
 value cap plus key/metadata overhead on the peer route.
 
+Streaming is enabled with `NODE_STREAM: "on"`. The SSE ingress route disables
+buffering, allows 60 seconds between upstream reads, and limits each visitor
+to two streams. The node still has eight total stream slots and a bounded
+snapshot; large snapshots can fail under #218. Keep the initial viewer workload
+small while testing that behavior.
+
+To change this setting on an existing root, edit its installed `compose.yml`
+and recreate the node with
+`docker compose -p soph-public-root up -d --wait node` from `root_dir`.
+A container restart alone does not apply environment changes. If the ingress
+configuration also changed, recreate ingress as well. Preserve `state/` and the
+pinned image IDs; node recreation clears that node's in-memory payloads.
+
+On 2026-09-29, Kraid, Ridley, and Motherbrain were recreated one host at a time
+with streaming enabled, retaining their deployed `03ff9b2` node images and
+trust-state mounts. Public snapshots, 15-second clock events, browser CORS, and
+`no-store` passed on every root. A five-minute probe written through each root
+appeared on all three streams and was readable from all three roots. This checks
+the initial live path; #218's large-snapshot behavior remains open.
+
 The ingress also bounds header/body idle times, active requests, and worker
 connections. Start ordinary probes at 32 KiB or less. These bounds do not
 repair the deferred resource/slow-peer audits or prevent storage saturation.

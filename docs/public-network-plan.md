@@ -154,9 +154,10 @@ The runbook must contain:
 3. The exposed HTTP paths and proxy/firewall rules. Bootstrap and supported
    gossip remain open to joining nodes; no peer allowlist or shared cluster
    secret is required. Keep backend listeners behind the configured ingress so
-   proxy limits cannot be bypassed. Exclude unsupported WebSocket, dashboard,
-   and optional streaming surfaces, and verify the exclusions externally.
-   Add the viewer/stream when its path is ready to test.
+   proxy limits cannot be bypassed. Exclude unsupported WebSocket and dashboard
+   surfaces, and verify the exclusions externally. The bounded SSE route is now
+   enabled for soph.stream testing, with two streams per visitor and eight per
+   node; snapshot-growth handling remains follow-up work under #218.
 4. The reviewed, tested source commit and exact binaries deployed. Build from
    that commit and record binary checksums and the bundle fingerprint. Do not
    use a floating image tag or treat the current auto-publishing workflow as
