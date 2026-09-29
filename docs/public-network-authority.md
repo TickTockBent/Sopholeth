@@ -85,6 +85,18 @@ Authority adoption is merged in #249 (`03ff9b2`). Build the reviewed release and
 in order: Kraid, Ridley, Motherbrain. Then verify anonymous cross-root writes,
 the admission limits, and an unlisted node joining the public network.
 
+## Prepared deployment artifacts
+
+Kraid's release build completed on 2026-09-29. The installed CLI checksum and
+local node image were checked directly on the host. Port 18080 is free and the
+root deployment directory has not yet been created; startup is the next step.
+
+| Kraid artifact | Value |
+| --- | --- |
+| Source commit | `03ff9b2287d0d9e36893a05ceb7530a9860bdf70` |
+| Node image | `sha256:971c642c0fd86874d39a84e581c6372f1aceea80f59c6ffdb83c7af3845d93f4` |
+| Installed CLI SHA-256 | `8bd0ffd4c797bbfde7544c30c01645e704f1cdfd2225c503a4b75450ea010be9` |
+
 ## Repeat the full backup
 
 Take a new backup of all three homes on Kraid with the renewal timer stopped and
