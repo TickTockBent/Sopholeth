@@ -194,6 +194,31 @@ const server = http.createServer((req, res) => {
     assert.deepEqual(errors, []);
     await writePage.close();
     console.log('PASS: write toggle, generated key, confirmed/pending/rejected writes, card from write');
+
+    // Newest writes take freed slots first, and a stream that goes silent
+    // (no clock events) is rebuilt without waiting for an error.
+    const stallPage = await browser.newPage({ viewport: { width: 760, height: 620 }, reducedMotion: 'reduce' });
+    stallPage.on('pageerror', err => errors.push(err.message));
+    await stallPage.clock.install();
+    const base = clock;
+    items = Array.from({ length: 10 }, (_, i) => { clock = base + i * 1000; return entry('older-' + i, 'older value'); });
+    clock = base + 10000;
+    await stallPage.goto(origin + '/?node=' + encodeURIComponent(origin));
+    await stallPage.waitForFunction(() => document.querySelector('#connection').dataset.state === 'connected');
+    const shown = await stallPage.evaluate(() => [...document.querySelectorAll('.value-slot .value-card')].map(card => card.dataset.key).sort());
+    assert.ok(shown.length > 0 && shown.length < 10, 'grid should overflow: ' + shown);
+    assert.deepEqual(shown, Array.from({ length: shown.length }, (_, i) => 'older-' + (9 - i)).sort(), 'newest entries fill the grid first');
+    emit('put', { now: new Date(clock).toISOString(), node: 'fixture', entry: entry('newest', 'just written', '50') });
+    emit('expire', { key: shown[0], revision: '1', node: 'fixture' });
+    await stallPage.waitForFunction(() => document.querySelector('.value-slot [data-key="newest"]'));
+    const beforeStall = connectionCount;
+    await stallPage.clock.fastForward(50000);
+    await stallPage.waitForFunction(() => document.querySelector('#connection').dataset.state === 'connected');
+    for (let i = 0; i < 50 && connectionCount === beforeStall; i++) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.ok(connectionCount > beforeStall, 'silent stream was not rebuilt');
+    assert.deepEqual(errors, []);
+    await stallPage.close();
+    console.log('PASS: newest-first slot promotion, silent stream rebuilt');
   } finally {
     if (browser) await browser.close();
     for (const response of viewers) response.destroy();
