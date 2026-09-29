@@ -46,6 +46,7 @@ func assertAbsent(t *testing.T, path string) {
 }
 
 func TestAtomicInitAndIdempotence(t *testing.T) {
+	t.Parallel()
 	o := options(t)
 	first, err := initialize(context.Background(), o, testTime, nil)
 	must(t, err)
@@ -88,6 +89,7 @@ func TestAtomicInitAndIdempotence(t *testing.T) {
 }
 
 func TestEveryInterruptionIsInvisibleOrCompleteAndRecoverable(t *testing.T) {
+	t.Parallel()
 	phases := []string{"verified", "promoted", "committed"}
 	for _, name := range authorityFiles {
 		for _, phase := range []string{"written", "synced", "linked", "durable"} {
@@ -139,6 +141,7 @@ func TestEveryInterruptionIsInvisibleOrCompleteAndRecoverable(t *testing.T) {
 }
 
 func TestConcurrentInitializersShareOneAuthority(t *testing.T) {
+	t.Parallel()
 	o := options(t)
 	var wg sync.WaitGroup
 	reports := make(chan Report, 12)
@@ -172,6 +175,7 @@ func TestConcurrentInitializersShareOneAuthority(t *testing.T) {
 }
 
 func TestDamagedCommittedAuthorityIsNeverRegenerated(t *testing.T) {
+	t.Parallel()
 	for _, name := range authorityFiles {
 		t.Run(name, func(t *testing.T) {
 			o := options(t)
@@ -192,6 +196,7 @@ func TestDamagedCommittedAuthorityIsNeverRegenerated(t *testing.T) {
 }
 
 func TestTornStagingWritesRecoverWithoutPartialAuthority(t *testing.T) {
+	t.Parallel()
 	for _, name := range authorityFiles {
 		t.Run(name, func(t *testing.T) {
 			o := options(t)
@@ -220,6 +225,7 @@ func TestTornStagingWritesRecoverWithoutPartialAuthority(t *testing.T) {
 }
 
 func TestCommittedPrivateRecordCorruptionStopsRecovery(t *testing.T) {
+	t.Parallel()
 	for _, damage := range []string{"public-half", "duplicate-key", "missing", "wrong-network", "duplicate-json"} {
 		t.Run(damage, func(t *testing.T) {
 			o := options(t)
@@ -268,6 +274,7 @@ func TestCommittedPrivateRecordCorruptionStopsRecovery(t *testing.T) {
 }
 
 func TestUnsafePathsAndInvalidOptionsDoNotGenerateKeys(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"network", "repository", "production-without-prompt", "home-symlink", "home-mode", "parent-mode", "slot-file", "slot-symlink", "lock-symlink", "stage-symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			o := options(t)
@@ -305,6 +312,7 @@ func TestUnsafePathsAndInvalidOptionsDoNotGenerateKeys(t *testing.T) {
 }
 
 func TestExistingSlotCannotBeClobberedAtCommit(t *testing.T) {
+	t.Parallel()
 	o := options(t)
 	_, err := initialize(context.Background(), o, testTime, func(at string) error {
 		if at == "verified" {
@@ -326,6 +334,7 @@ func TestExistingSlotCannotBeClobberedAtCommit(t *testing.T) {
 }
 
 func TestRootExpiryAndCanceledLock(t *testing.T) {
+	t.Parallel()
 	o := options(t)
 	first, err := initialize(context.Background(), o, testTime, nil)
 	must(t, err)
@@ -345,6 +354,7 @@ func TestRootExpiryAndCanceledLock(t *testing.T) {
 // Kill a real initializer with the network lock held, then recover in another
 // process. This covers OS lock release, not merely a returned Go error.
 func TestProcessDeathRecovery(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SOPH_OMEGA_TEST_CHILD") == "1" {
 		o := InitOptions{Home: os.Getenv("SOPH_OMEGA_TEST_HOME"), Network: "rehearsal", Repository: "https://metadata.example.invalid", Disposable: true}
 		_, err := initialize(context.Background(), o, testTime, func(at string) error {
@@ -403,6 +413,7 @@ func TestProcessDeathRecovery(t *testing.T) {
 }
 
 func TestNoSecretInCorruptionErrors(t *testing.T) {
+	t.Parallel()
 	o := options(t)
 	_, err := Init(context.Background(), o)
 	must(t, err)
@@ -418,6 +429,7 @@ func TestNoSecretInCorruptionErrors(t *testing.T) {
 }
 
 func TestCompletePendingRecordIsNeverReplaced(t *testing.T) {
+	t.Parallel()
 	o := options(t)
 	_, err := initialize(context.Background(), o, testTime, func(at string) error {
 		if at == "authority.json:written" {
@@ -444,6 +456,7 @@ func TestCompletePendingRecordIsNeverReplaced(t *testing.T) {
 }
 
 func TestStagingPermissionsAndPublicOutputCannotBeBypassed(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"private-mode", "public-mode", "public-symlink", "public-mismatch", "unknown-entry"} {
 		t.Run(kind, func(t *testing.T) {
 			o := options(t)

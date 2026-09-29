@@ -19,6 +19,7 @@ import (
 // It deploys disposable metadata to the configured project. State is retained
 // at the supplied home so a failed operation can be inspected and retried.
 func TestHostedVercelRehearsal(t *testing.T) {
+	t.Parallel()
 	base, repository, stage := os.Getenv("OMEGA_HOSTED_HOME"), os.Getenv("OMEGA_HOSTED_REPOSITORY"), os.Getenv("OMEGA_HOSTED_STAGE")
 	if !filepath.IsAbs(base) || !strings.HasPrefix(repository, "https://sopholeth.io/omega/rehearsal-") {
 		t.Fatal("set an absolute OMEGA_HOSTED_HOME and a unique /omega/rehearsal-... repository")

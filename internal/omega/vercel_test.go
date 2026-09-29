@@ -20,6 +20,7 @@ import (
 )
 
 func TestVercelPublicationRecoveryAndRenewal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	config := VercelConfig{Schema: 1, ProjectID: "prj_test", TeamID: "team_test", ProjectName: "metadata-test"}
 	var mu sync.Mutex
@@ -221,6 +222,7 @@ func TestVercelPublicationRecoveryAndRenewal(t *testing.T) {
 }
 
 func TestVercelConfigAndAPIConfinement(t *testing.T) {
+	t.Parallel()
 	config := VercelConfig{Schema: 1, ProjectID: "prj_test", TeamID: "team_test", ProjectName: "metadata-test"}
 	_, err := ParseVercelConfig(record(config))
 	must(t, err)

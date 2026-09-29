@@ -104,6 +104,7 @@ func (f *publishFixture) override(path string, data []byte, code int) {
 }
 
 func TestPublishRoundTripRetryAndStatus(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	authorityPath := filepath.Join(f.opts.Home, f.opts.Network, "authority.json")
 	original := file(t, authorityPath)
@@ -167,6 +168,7 @@ func TestPublishRoundTripRetryAndStatus(t *testing.T) {
 }
 
 func TestPublishValidatesApprovalAndVersionBeforeWriting(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(*PublishOptions){
 		"empty": func(o *PublishOptions) { o.Manifest = nil },
 		"wrong-network": func(o *PublishOptions) {
@@ -234,6 +236,7 @@ func TestPublishValidatesApprovalAndVersionBeforeWriting(t *testing.T) {
 }
 
 func TestPublishInterruptionsReusePreparedBytes(t *testing.T) {
+	t.Parallel()
 	// Shared journal and repository write boundaries are exercised here, rather
 	// than repeated for renewal and every rotation role that uses this publisher.
 	phases := []string{"1.release.json:written", "1.release.json:linked", "release:durable", "public:1.root.json:written", "public:1.root.json:visible", "public:1.targets.json:durable", "public:1.snapshot.json:visible", "public:objects-ready", "public:timestamp.json:written", "public:timestamp.json:visible", "public:timestamp.json:durable", "publication:verified"}
@@ -276,6 +279,7 @@ func TestPublishInterruptionsReusePreparedBytes(t *testing.T) {
 }
 
 func TestPublishRetrySweepsOnlyMatchingPendingTwins(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	_, err := Publish(context.Background(), f.opts)
 	must(t, err)
@@ -338,6 +342,7 @@ func TestPublishRetrySweepsOnlyMatchingPendingTwins(t *testing.T) {
 }
 
 func TestInterruptedUpdateKeepsOldTimestampUntilObjectsReady(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	_, err := Publish(context.Background(), f.opts)
 	must(t, err)
@@ -364,6 +369,7 @@ func TestInterruptedUpdateKeepsOldTimestampUntilObjectsReady(t *testing.T) {
 }
 
 func TestVerificationDetectsOutageMissingAndChangedObjects(t *testing.T) {
+	t.Parallel()
 	// All cases disturb only HTTP responses. Share the signed repository and
 	// restore healthy verification after each fault, including failed assertions.
 	f := newPublishFixture(t)
@@ -418,6 +424,7 @@ func TestVerificationDetectsOutageMissingAndChangedObjects(t *testing.T) {
 }
 
 func TestPublishRejectsImmutableConflictAndLostHistory(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"immutable-conflict", "unknown-timestamp", "missing-release", "missing-binding", "lost-journal", "output-change", "private-overlap", "unknown-files"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPublishFixture(t)
@@ -472,6 +479,7 @@ func TestPublishRejectsImmutableConflictAndLostHistory(t *testing.T) {
 }
 
 func TestExpiredPreparedReleaseRequiresHigherRepair(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	_, err := publish(context.Background(), f.opts, testTime.Add(-timestampLifetime(timestampDays)-time.Hour), func(at string) error {
 		if at == "release:durable" {
@@ -496,6 +504,7 @@ func TestExpiredPreparedReleaseRequiresHigherRepair(t *testing.T) {
 }
 
 func TestConcurrentPublishersAndCanceledLock(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	var wg sync.WaitGroup
 	errs := make(chan error, 4)
@@ -519,6 +528,7 @@ func TestConcurrentPublishersAndCanceledLock(t *testing.T) {
 }
 
 func TestPublicationProcessDeathRecovery(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SOPH_PUBLISH_TEST_CHILD") == "1" {
 		opts := PublishOptions{Home: os.Getenv("SOPH_PUBLISH_TEST_HOME"), Directory: os.Getenv("SOPH_PUBLISH_TEST_REPO"), Network: "rehearsal", Version: 1, Manifest: publicationManifest, Disposable: true}
 		_, err := publish(context.Background(), opts, testTime, func(at string) error {
@@ -576,6 +586,7 @@ func TestPublicationProcessDeathRecovery(t *testing.T) {
 }
 
 func TestPublicFilesExcludePrivateKeys(t *testing.T) {
+	t.Parallel()
 	f := newPublishFixture(t)
 	report, err := Publish(context.Background(), f.opts)
 	must(t, err)
@@ -599,6 +610,7 @@ func TestPublicFilesExcludePrivateKeys(t *testing.T) {
 }
 
 func TestPublisherRefusesTLSBypassAndUnsafeDestination(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"insecure-tls", "symlink-destination", "symlink-targets", "writable-destination", "home-under-repository"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPublishFixture(t)
@@ -635,6 +647,7 @@ func TestPublisherRefusesTLSBypassAndUnsafeDestination(t *testing.T) {
 }
 
 func TestPublicationTornWritesAndConflictingPendingRelease(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"torn-release", "corrupt-pending", "torn-public", "lost-tail-without-timestamp"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPublishFixture(t)
@@ -685,6 +698,7 @@ func TestPublicationTornWritesAndConflictingPendingRelease(t *testing.T) {
 }
 
 func TestPublishWithRestrictiveUmask(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SOPH_PUBLISH_UMASK_TEST_CHILD") != "1" {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestPublishWithRestrictiveUmask$")
 		cmd.Env = append(os.Environ(), "SOPH_PUBLISH_UMASK_TEST_CHILD=1")
