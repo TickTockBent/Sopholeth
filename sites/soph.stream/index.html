@@ -19,24 +19,22 @@
     </div>
   </header>
   <main id="main" class="shell viewer">
-    <div class="viewer-heading"><div><p class="eyebrow">SOPH://STREAM</p><h1>Here, until it <em>isn’t.</em></h1></div><p class="local-scope">Temporary shared state.<br />One node’s view, in real time.</p></div>
-    <form id="connect-form" class="connection-controls">
-      <label for="node">Node</label><input id="node" type="text" placeholder="localhost:8080" autocomplete="off" spellcheck="false" />
-      <button type="submit">connect ↗</button>
-    </form>
-    <div class="stream-toolbar">
-      <p id="connection" class="status" role="status" data-state="idle">Choose a node to begin</p>
-      <label class="search-label" for="query">Filter</label><input id="query" type="search" placeholder="keys + payload previews" autocomplete="off" />
+    <div class="viewer-bar">
+      <form id="connect-form" class="connection-controls">
+        <label for="node">Node</label><input id="node" type="text" placeholder="localhost:8080" autocomplete="off" spellcheck="false" /><button type="submit">connect ↗</button>
+      </form>
+      <label class="search-label" for="query">Filter</label><input id="query" type="search" placeholder="filter keys + payloads" autocomplete="off" />
     </div>
-    <div class="node-identity"><span id="identity">No node selected</span><span><b id="count">0</b> live <span id="queue"></span></span></div>
+    <div class="stream-status">
+      <p id="connection" class="status" role="status" data-state="idle">Choose a node to begin</p>
+      <p class="node-identity"><span id="identity">No node selected</span><span><b id="count">0</b> live<span id="queue"></span></span></p>
+    </div>
     <div id="viewport" class="stream-viewport">
       <div id="grid" class="live-grid" aria-label="Live values"></div>
       <div id="empty" class="stream-empty"><span class="empty-mark" aria-hidden="true">[ &nbsp; ]</span><h2 id="empty-title">A window into temporary memory.</h2><p id="empty-message">Connect to a running node. Values arrive, count down, and disappear.</p></div>
     </div>
-    <p class="stream-note">Read-only · lifetimes are local to this node · select a value to inspect it</p>
     <noscript>This viewer needs JavaScript to connect to a node.</noscript>
   </main>
-  <footer class="site-footer"><div class="shell footer-inner"><p>Sopholeth / SOF-oh-leth<br />Wisdom through intentional forgetting.</p><a href="https://github.com/TickTockBent/Sopholeth">Source on GitHub ↗</a></div></footer>
   <template id="card-template"><button class="value-card" type="button"><span class="card-key"></span><span class="card-payload"></span><span class="card-size"></span><span class="lifetime"><span class="ttl-track"><span class="ttl-fill"></span></span><span class="ttl-left"></span></span></button></template>
   <dialog id="detail" aria-labelledby="detail-key"><div class="detail-body"><button id="close-detail" class="close-detail" aria-label="Close value details">×</button><p class="eyebrow">LOCAL OBSERVATION</p><h2 id="detail-key"></h2><dl id="detail-meta"></dl><p id="detail-status" role="status"></p><pre id="detail-payload" tabindex="0"></pre><p class="note">The full-value read observes the current key and may differ from the stream preview.</p></div></dialog>
 </body>
