@@ -46,9 +46,7 @@ func TestEveryStepWritesAtMostOnce(t *testing.T) {
 	sim := newSimulation(cfg, rand.New(rand.NewSource(1)), clock.now, []network{store}, &bytes.Buffer{})
 	for i := 0; i < 2000; i++ {
 		before := store.puts
-		if !sim.Step(context.Background()) {
-			break
-		}
+		sim.Step(context.Background())
 		if writes := store.puts - before; writes > 1 {
 			t.Fatalf("step %d made %d writes", i, writes)
 		}
@@ -137,6 +135,31 @@ func TestMutationsChangeSpeech(t *testing.T) {
 	child := newProbe(rng, map[string]bool{p.id: true}, p)
 	if !child.code.shouts || child.parentID != p.id || !strings.HasPrefix(child.name, p.name) {
 		t.Fatalf("child did not inherit: %+v", child)
+	}
+}
+
+// Dead probes don't count against the replication cap, and an extinct
+// population is replaced by a fresh launch instead of ending the run.
+func TestPopulationOutlivesItsProbes(t *testing.T) {
+	clock := &fakeClock{current: time.Unix(1_800_000_000, 0)}
+	store := newMemoryNetwork(clock.now)
+	cfg := defaultConfig()
+	cfg.probes, cfg.maxProbes = 2, 3
+	cfg.radiation, cfg.mortality, cfg.replication = 0, 0.05, 0.2
+	var log bytes.Buffer
+	sim := newSimulation(cfg, rand.New(rand.NewSource(5)), clock.now, []network{store}, &log)
+	for i := 0; i < 3000; i++ {
+		sim.Step(context.Background())
+		if living := len(sim.alive()); living > cfg.maxProbes {
+			t.Fatalf("step %d: %d living probes", i, living)
+		}
+		clock.advance(time.Second)
+	}
+	if births := strings.Count(log.String(), "birth "); births <= cfg.maxProbes {
+		t.Fatalf("only %d births; dead probes are holding replication at the cap", births)
+	}
+	if !strings.Contains(log.String(), "launches from home") {
+		t.Fatal("population never went extinct; raise mortality so the relaunch path runs")
 	}
 }
 
