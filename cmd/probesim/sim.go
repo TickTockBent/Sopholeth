@@ -96,18 +96,22 @@ func (s *simulation) alive() []*probe {
 	return living
 }
 
-// Step advances the simulation by one action of the next living probe.
-// It returns false once every probe is gone.
-func (s *simulation) Step(ctx context.Context) bool {
+// Step advances the simulation by one action of the next living probe. If
+// every probe has gone silent, home launches a fresh fleet first.
+func (s *simulation) Step(ctx context.Context) {
 	living := s.alive()
 	if len(living) == 0 {
-		return false
+		for i := 0; i < s.cfg.probes; i++ {
+			fresh := newProbe(s.rng, s.taken, nil)
+			s.add(fresh)
+			s.logf("🚀  %s launches from home with a clean codebase", fresh.name)
+		}
+		living = s.alive()
 	}
 	s.step++
 	p := living[s.next%len(living)]
 	s.next++
 	s.act(ctx, p)
-	return true
 }
 
 func (s *simulation) act(ctx context.Context, p *probe) {
@@ -132,7 +136,7 @@ func (s *simulation) act(ctx context.Context, p *probe) {
 		s.write(ctx, p, "lost", p.findingKey(), p.lostContactText(lostName, silentFor))
 		return
 	}
-	if s.rng.Float64() < s.cfg.replication && len(s.probes) < s.cfg.maxProbes {
+	if s.rng.Float64() < s.cfg.replication && len(s.alive()) < s.cfg.maxProbes {
 		child := newProbe(s.rng, s.taken, p)
 		s.add(child)
 		p.findingCount++

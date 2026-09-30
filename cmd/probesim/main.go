@@ -49,7 +49,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	seed := flags.Int64("seed", 0, "random seed (0 picks one from the clock)")
 	dryRun := flags.Bool("dry-run", false, "simulate against an in-memory store instead of real nodes")
 	flags.IntVar(&cfg.probes, "probes", cfg.probes, "starting number of probes")
-	flags.IntVar(&cfg.maxProbes, "max-probes", cfg.maxProbes, "population cap for self-replication")
+	flags.IntVar(&cfg.maxProbes, "max-probes", cfg.maxProbes, "cap on living probes for self-replication")
 	flags.IntVar(&cfg.ttlSeconds, "ttl", cfg.ttlSeconds, "TTL in seconds for every write")
 	flags.Float64Var(&cfg.radiation, "radiation", cfg.radiation, "chance per action of a codebase mutation")
 	flags.Float64Var(&cfg.mortality, "mortality", cfg.mortality, "chance per action that a probe goes silent")
@@ -106,10 +106,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	ticker := time.NewTicker(time.Duration(float64(time.Second) / *rate))
 	defer ticker.Stop()
 	for {
-		if !sim.Step(ctx) {
-			fmt.Fprintln(stderr, "probesim: every probe has gone silent")
-			return nil
-		}
+		sim.Step(ctx)
 		select {
 		case <-ctx.Done():
 			summarize(sim, stderr)
