@@ -300,3 +300,52 @@ func TestRotateAndPublishReportActiveKeyFiles(t *testing.T) {
 	}
 	assertKeyFiles("failed publish", failed)
 }
+
+// Check-keys on a restored operator home fails closed when its bound renewal
+// home or that home's publication history is unavailable, and says to restore
+// that home rather than blaming the passphrase or key files (#235).
+func TestCheckKeysPointsAtUnavailableRenewalHome(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f, online, opts := encryptedLifecycleFixture(t)
+	const keyAction = "Check the passphrase and restore matching encrypted key files"
+	restoreAction := "Restore the bound renewal home and its publication history at their original path " + online.Home + ";"
+
+	wrongPassphrase := func(context.Context, bool) ([]byte, error) { return []byte("wrong password"), nil }
+	failed, err := checkKeys(ctx, f.opts.Home, opts.Network, wrongPassphrase, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, keyAction) {
+		t.Fatalf("wrong passphrase action: %v %+v", err, failed)
+	}
+
+	must(t, os.Rename(online.Home, online.Home+"-unavailable"))
+	unprompted := func(context.Context, bool) ([]byte, error) {
+		t.Fatal("check-keys prompted without its renewal home")
+		return nil, nil
+	}
+	failed, err = checkKeys(ctx, f.opts.Home, opts.Network, unprompted, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.Contains(failed.Problem, online.Home) {
+		t.Fatalf("missing renewal home problem: %v %+v", err, failed)
+	}
+	if !strings.HasPrefix(failed.Action, restoreAction) || strings.Contains(failed.Action, "passphrase") {
+		t.Fatalf("missing renewal home action: %q", failed.Action)
+	}
+	for _, state := range failed.KeyFiles {
+		if state == "verified" {
+			t.Fatal("check-keys verified a key without its renewal home")
+		}
+	}
+	must(t, os.Rename(online.Home+"-unavailable", online.Home))
+
+	history := onlineState(online)
+	must(t, os.Rename(history, history+"-unavailable"))
+	must(t, os.WriteFile(history, nil, 0600))
+	failed, err = checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, restoreAction) {
+		t.Fatalf("unopenable publication history: %v %+v", err, failed)
+	}
+	must(t, os.Remove(history))
+	must(t, os.Rename(history+"-unavailable", history))
+
+	_, err = checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	must(t, err)
+}

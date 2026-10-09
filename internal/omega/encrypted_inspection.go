@@ -17,15 +17,21 @@ func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle,
 	}
 	var rootGeneration, targetsGeneration, onlineGeneration *rotationIntent
 	var latest release
+	historyUnavailable := func(err error) error {
+		if online == home {
+			return err
+		}
+		return renewalUnavailableError{home: online.root.Name(), err: err}
+	}
 	state, _, err := openPublication(online, bundle, nil, false)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return report, err
+		return report, historyUnavailable(err)
 	}
 	if err == nil {
 		defer state.close()
 		history, err := loadReleases(state, bundle)
 		if err != nil {
-			return report, err
+			return report, historyUnavailable(err)
 		}
 		if len(history) > 0 {
 			latest = history[len(history)-1]
