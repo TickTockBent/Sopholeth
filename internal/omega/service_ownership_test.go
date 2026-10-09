@@ -150,29 +150,53 @@ func TestPrivilegedRunKeepsLinkedFileOwners(t *testing.T) {
 		info, err := os.Stat(path)
 		must(t, err)
 		if stat := info.Sys().(*syscall.Stat_t); stat.Uid != 0 || stat.Gid != 0 {
-			t.Errorf("%s was handed to %d:%d through a hard link", path, stat.Uid, stat.Gid)
+			t.Errorf("%s was handed to %d:%d", path, stat.Uid, stat.Gid)
+		}
+	}
+
+	assertRefused := func(err error, lock string) {
+		t.Helper()
+		if err == nil || !strings.Contains(err.Error(), "existing "+lock) {
+			t.Errorf("a root-owned %s was not refused: %v", lock, err)
 		}
 	}
 
 	online := serviceDir("online", 0700)
+	networkLock := filepath.Join(online, "rehearsal.lock")
 	networkLockTarget := rootOwned("network-lock-target", nil)
-	must(t, os.Link(networkLockTarget, filepath.Join(online, "rehearsal.lock")))
-	// Renewal fails later (nothing is provisioned); the lock is opened first.
-	_, _ = Renew(ctx, RenewOptions{Home: online, Network: "rehearsal"})
+	must(t, os.Link(networkLockTarget, networkLock))
+	_, err := Renew(ctx, RenewOptions{Home: online, Network: "rehearsal"})
+	assertRefused(err, "rehearsal.lock")
 	assertRootOwned(networkLockTarget)
+	// The account can unlink its own name after root opens the file, leaving
+	// a link count of one; an existing lock is never chowned, however linked.
+	must(t, os.Remove(networkLock))
+	rootOwned("online/rehearsal.lock", nil)
+	_, err = openHome(ctx, online, "rehearsal", false)
+	assertRefused(err, "rehearsal.lock")
+	assertRootOwned(networkLock)
 
-	must(t, os.Remove(filepath.Join(online, "rehearsal.lock")))
+	must(t, os.Remove(networkLock))
 	home, err := openHome(ctx, online, "rehearsal", false)
 	must(t, err)
 	defer home.close()
 
 	repository := serviceDir("repository", 0755)
+	publishLock := filepath.Join(repository, ".omega-publish.lock")
 	publishLockTarget := rootOwned("publish-lock-target", nil)
-	must(t, os.Link(publishLockTarget, filepath.Join(repository, ".omega-publish.lock")))
+	must(t, os.Link(publishLockTarget, publishLock))
+	_, err = openRepository(ctx, repository, home)
+	assertRefused(err, ".omega-publish.lock")
+	assertRootOwned(publishLockTarget)
+	must(t, os.Remove(publishLock))
+	rootOwned("repository/.omega-publish.lock", nil)
+	_, err = openRepository(ctx, repository, home)
+	assertRefused(err, ".omega-publish.lock")
+	assertRootOwned(publishLock)
+	must(t, os.Remove(publishLock))
 	repo, err := openRepository(ctx, repository, home)
 	must(t, err)
 	repo.close()
-	assertRootOwned(publishLockTarget)
 
 	// A matching pending twin may be reused, but never one with another name.
 	data := []byte("pending bytes")

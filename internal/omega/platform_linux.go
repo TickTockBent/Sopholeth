@@ -58,9 +58,9 @@ func (s *store) promote(staging, final string) error {
 
 // Privileged operator commands may maintain a separate renewal account's home.
 // New objects belong to that home, so the unprivileged scheduler can use them.
-// That account can hard-link a file it does not own into its home (#236), so a
-// regular file with another name keeps its owner. Directories cannot be hard
-// links; their link count includes their subdirectories.
+// That account can hard-link a file it does not own into its home (#236), so
+// callers pass only files this run created with O_EXCL, or directories, which
+// cannot be hard links.
 func inheritOwnership(file *os.File, parent os.FileInfo) error {
 	if os.Geteuid() != 0 {
 		return nil
@@ -68,13 +68,6 @@ func inheritOwnership(file *os.File, parent os.FileInfo) error {
 	stat, ok := parent.Sys().(*syscall.Stat_t)
 	if !ok {
 		return errors.New("omega: cannot determine custody owner")
-	}
-	info, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() && !singleLink(info) {
-		return nil
 	}
 	return file.Chown(int(stat.Uid), int(stat.Gid))
 }
