@@ -428,6 +428,19 @@ func TestCheckKeysRequiresHistoryAfterRotation(t *testing.T) {
 		}
 	}
 	must(t, os.Rename(rotations+"-unavailable", rotations))
+	// A journal that opens but records no releases is no better.
+	must(t, os.Mkdir(history, 0700))
+	must(t, os.WriteFile(filepath.Join(history, "binding.json"), file(t, filepath.Join(history+"-unavailable", "binding.json")), 0600))
+	failed, err := checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.Contains(failed.Problem, history) || !strings.HasPrefix(failed.Action, restoreAction) {
+		t.Fatalf("empty journal did not fail closed: %v %+v", err, failed)
+	}
+	for name, state := range failed.KeyFiles {
+		if state == "verified" {
+			t.Fatalf("empty journal: verified %s without its history", name)
+		}
+	}
+	must(t, os.RemoveAll(history))
 	must(t, os.Rename(history+"-unavailable", history))
 	verified, err = checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
 	must(t, err)

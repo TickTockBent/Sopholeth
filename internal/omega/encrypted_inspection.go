@@ -29,46 +29,47 @@ func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle,
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return report, historyUnavailable(err)
 	}
-	// A renewal home provisioned before its first publish has no journal, and
-	// its active keys are the initial ones. Once keys have rotated, a missing
-	// journal would select retired keys, so key verification fails closed.
-	if err != nil && session != nil && online != home {
+	var history []release
+	if err == nil {
+		defer state.close()
+		history, err = loadReleases(state, bundle)
+		if err != nil {
+			return report, historyUnavailable(err)
+		}
+	}
+	// A renewal home provisioned before its first publish has no releases, and
+	// its active keys are the initial ones. Once keys have rotated, an absent or
+	// empty journal would select retired keys, so key verification fails closed.
+	if len(history) == 0 && session != nil && online != home {
 		rotated, evidenceErr := rotationRecorded(home, online, bundle.Network)
 		if evidenceErr != nil {
 			return report, historyUnavailable(evidenceErr)
 		}
 		if rotated {
-			return report, historyUnavailable(fmt.Errorf("omega: publication history %s is absent, but key rotations are recorded; restore it", filepath.Join(online.root.Name(), bundle.Network+".publication")))
+			return report, historyUnavailable(fmt.Errorf("omega: publication history %s has no releases, but key rotations are recorded; restore it", filepath.Join(online.root.Name(), bundle.Network+".publication")))
 		}
 	}
-	if err == nil {
-		defer state.close()
-		history, err := loadReleases(state, bundle)
-		if err != nil {
-			return report, historyUnavailable(err)
+	if len(history) > 0 {
+		latest = history[len(history)-1]
+		if err := applyReleaseRoot(&report, bundle, latest); err != nil {
+			return report, err
 		}
-		if len(history) > 0 {
-			latest = history[len(history)-1]
-			if err := applyReleaseRoot(&report, bundle, latest); err != nil {
-				return report, err
+		intents, err := rotationHistory(state, bundle, latest.currentRoot(bundle))
+		if err != nil {
+			return report, err
+		}
+		for i := range intents {
+			intent := &intents[i]
+			if intent.Custody != encryptedCustody || intent.Mode != p.Mode {
+				return report, errors.New("omega: active history has a different custody profile")
 			}
-			intents, err := rotationHistory(state, bundle, latest.currentRoot(bundle))
-			if err != nil {
-				return report, err
-			}
-			for i := range intents {
-				intent := &intents[i]
-				if intent.Custody != encryptedCustody || intent.Mode != p.Mode {
-					return report, errors.New("omega: active history has a different custody profile")
-				}
-				switch intent.Schema {
-				case 2:
-					targetsGeneration = intent
-				case 3:
-					rootGeneration = intent
-				case 4:
-					onlineGeneration = intent
-				}
+			switch intent.Schema {
+			case 2:
+				targetsGeneration = intent
+			case 3:
+				rootGeneration = intent
+			case 4:
+				onlineGeneration = intent
 			}
 		}
 	}

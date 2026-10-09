@@ -219,8 +219,8 @@ present for that check. Wrong passwords, missing/corrupt active keys, or identit
 mismatches return a problem and action. A bound renewal home that is missing or
 incomplete, or publication history that cannot be opened, also fails closed; its
 action is to restore that home at its original path, since active generations
-depend on it. Once keys have rotated, a missing journal fails the same way. A
-renewal home provisioned before its first publish has no journal, and its
+depend on it. Once keys have rotated, a missing or empty journal fails the same
+way. A renewal home provisioned before its first publish has no journal, and its
 initial keys are checked. No metadata is signed or published.
 An expired root can have matching keys but still returns an expiry error; stale
 timestamps do not prevent checking recovered keys. HTTPS verification is separate.
