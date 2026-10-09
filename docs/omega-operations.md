@@ -216,10 +216,12 @@ identity can remain initialized with an unavailable signer.
 `--check-keys` prompts once and verifies all six **active** keys against the
 current root. Retired encrypted files are not fallback signers and need not be
 present for that check. Wrong passwords, missing/corrupt active keys, or identity
-mismatches return a problem and action. A bound renewal home or publication
-history that cannot be opened also fails closed; its action is to restore that
-home at its original path, since active generations depend on it. No metadata is
-signed or published.
+mismatches return a problem and action. A bound renewal home that is missing or
+incomplete, or publication history that cannot be opened, also fails closed; its
+action is to restore that home at its original path, since active generations
+depend on it. Once keys have rotated, a missing journal fails the same way. A
+renewal home provisioned before its first publish has no journal, and its
+initial keys are checked. No metadata is signed or published.
 An expired root can have matching keys but still returns an expiry error; stale
 timestamps do not prevent checking recovered keys. HTTPS verification is separate.
 
