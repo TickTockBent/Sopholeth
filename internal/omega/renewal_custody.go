@@ -130,17 +130,25 @@ func operationalHome(ctx context.Context, home *store, bundle bootstrap.Bundle, 
 		return nil, func() {}, errors.New("omega: authority and operational homes must be disjoint")
 	}
 	online, err := openHome(ctx, binding.Home, bundle.Network, false)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, func() {}, err // Lock wait, not a missing home.
+	}
 	if err != nil {
 		return nil, func() {}, renewalUnavailableError{home: binding.Home, err: err}
 	}
 	cleanup := func() { online.close() }
 	c, err := readRenewal(online, bundle.Network)
-	if err == nil && (c.Mode != mode || !bytes.Equal(record(c.Bundle), record(bundle))) {
+	foreign := err == nil && (c.Mode != mode || !bytes.Equal(record(c.Bundle), record(bundle)))
+	if foreign {
 		err = errors.New("omega: operational home belongs to a different authority")
 	}
 	if err != nil {
 		cleanup()
-		return nil, func() {}, fmt.Errorf("omega: incomplete or damaged renewal custody; rerun provision-renewal or restore it: %w", err)
+		err = fmt.Errorf("omega: incomplete or damaged renewal custody; rerun provision-renewal or restore it: %w", err)
+		if !foreign {
+			err = renewalUnavailableError{home: binding.Home, err: err}
+		}
+		return nil, func() {}, err
 	}
 	online.hook = home.hook
 	return online, cleanup, nil
