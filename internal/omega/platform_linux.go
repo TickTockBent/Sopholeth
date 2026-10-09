@@ -18,6 +18,7 @@ func owned(info os.FileInfo) error {
 	}
 	return nil
 }
+
 func sameOwner(first, second os.FileInfo) bool {
 	a, aOK := first.Sys().(*syscall.Stat_t)
 	b, bOK := second.Sys().(*syscall.Stat_t)
@@ -51,6 +52,9 @@ func (s *store) promote(staging, final string) error {
 
 // Privileged operator commands may maintain a separate renewal account's home.
 // New objects belong to that home, so the unprivileged scheduler can use them.
+// That account can hard-link a file it does not own into its home (#236), so
+// callers pass only files this run created with O_EXCL, or directories, which
+// cannot be hard links.
 func inheritOwnership(file *os.File, parent os.FileInfo) error {
 	if os.Geteuid() != 0 {
 		return nil

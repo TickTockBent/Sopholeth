@@ -117,18 +117,8 @@ func openRepository(ctx context.Context, path string, home *store) (*repositoryS
 	if !sameOwner(info, owner) {
 		return fail(fmt.Errorf("omega: repository %s must belong to the operational home's owner; repair ownership of this public repository and its contents before retrying", canonical))
 	}
-	if info, err := root.Lstat(".omega-publish.lock"); err == nil {
-		if err := safeFile(info); err != nil {
-			return fail(err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fail(err)
-	}
-	s.lock, err = root.OpenFile(".omega-publish.lock", os.O_CREATE|os.O_RDWR, 0600)
+	s.lock, err = s.openLock(ctx, ".omega-publish.lock")
 	if err != nil {
-		return fail(err)
-	}
-	if err := s.inherit(s.lock); err != nil {
 		return fail(err)
 	}
 	if err := waitForLock(ctx, s.lock); err != nil {

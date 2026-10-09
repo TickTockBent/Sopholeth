@@ -455,6 +455,35 @@ func TestCompletePendingRecordIsNeverReplaced(t *testing.T) {
 	assertAbsent(t, finalPath(o))
 }
 
+// A leftover pending twin is rewritten, never committed in place: the home's
+// owner can swap its name for a link to a file elsewhere (#236).
+func TestInstallRewritesMatchingPendingTwin(t *testing.T) {
+	t.Parallel()
+	o := options(t)
+	home, err := openHome(context.Background(), o.Home, o.Network, true)
+	must(t, err)
+	defer home.close()
+	data := []byte("pending bytes")
+	pending := filepath.Join(o.Home, "record.json.pending")
+	must(t, os.WriteFile(pending, data, 0600))
+	// The open twin keeps its inode allocated, so a match is not reuse.
+	twin, err := os.Open(pending)
+	must(t, err)
+	defer twin.Close()
+	before, err := twin.Stat()
+	must(t, err)
+	must(t, home.install("record.json", data))
+	installed, err := os.Stat(filepath.Join(o.Home, "record.json"))
+	must(t, err)
+	if os.SameFile(before, installed) {
+		t.Fatal("committed the existing pending twin in place")
+	}
+	if !bytes.Equal(data, file(t, filepath.Join(o.Home, "record.json"))) {
+		t.Fatal("installed the wrong bytes")
+	}
+	assertAbsent(t, pending)
+}
+
 func TestStagingPermissionsAndPublicOutputCannotBeBypassed(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"private-mode", "public-mode", "public-symlink", "public-mismatch", "unknown-entry"} {

@@ -19,8 +19,8 @@ import (
 	"time"
 )
 
-// CI runs this single test as root, then renewal in a child with a different
-// real UID. Ordinary tests cannot expose privileged creation of root-owned files.
+// CI runs this test as root, then renewal in a child with a different real UID.
+// Ordinary tests cannot expose privileged creation of root-owned files.
 func TestRenewalWithServiceOwnership(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -115,5 +115,103 @@ func TestRenewalWithServiceOwnership(t *testing.T) {
 			}
 			return nil
 		}))
+	}
+}
+
+// A renewal account can pre-place hard links to files it does not own in its
+// own home or repository (#236). Privileged commands that maintain that home
+// must not hand the linked files to it.
+func TestPrivilegedRunKeepsLinkedFileOwners(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() != 0 {
+		t.Skip("run the compiled test as root to exercise privileged ownership inheritance")
+	}
+	const uid, gid = 65534, 65534
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	base := t.TempDir()
+	rootOwned := func(name string, data []byte) string {
+		t.Helper()
+		path := filepath.Join(base, name)
+		must(t, os.WriteFile(path, data, 0600))
+		must(t, os.Chmod(path, 0600))
+		return path
+	}
+	serviceDir := func(name string, mode os.FileMode) string {
+		t.Helper()
+		path := filepath.Join(base, name)
+		must(t, os.Mkdir(path, mode))
+		must(t, os.Chmod(path, mode))
+		must(t, os.Chown(path, uid, gid))
+		return path
+	}
+	assertRootOwned := func(path string) {
+		t.Helper()
+		info, err := os.Stat(path)
+		must(t, err)
+		if stat := info.Sys().(*syscall.Stat_t); stat.Uid != 0 || stat.Gid != 0 {
+			t.Errorf("%s was handed to %d:%d", path, stat.Uid, stat.Gid)
+		}
+	}
+
+	assertRefused := func(err error, lock string) {
+		t.Helper()
+		if err == nil || !strings.Contains(err.Error(), "existing "+lock) {
+			t.Errorf("a root-owned %s was not refused: %v", lock, err)
+		}
+	}
+
+	online := serviceDir("online", 0700)
+	networkLock := filepath.Join(online, "rehearsal.lock")
+	networkLockTarget := rootOwned("network-lock-target", nil)
+	must(t, os.Link(networkLockTarget, networkLock))
+	_, err := Renew(ctx, RenewOptions{Home: online, Network: "rehearsal"})
+	assertRefused(err, "rehearsal.lock")
+	assertRootOwned(networkLockTarget)
+	// The account can unlink its own name after root opens the file, leaving
+	// a link count of one; an existing lock is never chowned, however linked.
+	must(t, os.Remove(networkLock))
+	rootOwned("online/rehearsal.lock", nil)
+	_, err = openHome(ctx, online, "rehearsal", false)
+	assertRefused(err, "rehearsal.lock")
+	assertRootOwned(networkLock)
+
+	must(t, os.Remove(networkLock))
+	home, err := openHome(ctx, online, "rehearsal", false)
+	must(t, err)
+	defer home.close()
+
+	repository := serviceDir("repository", 0755)
+	publishLock := filepath.Join(repository, ".omega-publish.lock")
+	publishLockTarget := rootOwned("publish-lock-target", nil)
+	must(t, os.Link(publishLockTarget, publishLock))
+	_, err = openRepository(ctx, repository, home)
+	assertRefused(err, ".omega-publish.lock")
+	assertRootOwned(publishLockTarget)
+	must(t, os.Remove(publishLock))
+	rootOwned("repository/.omega-publish.lock", nil)
+	_, err = openRepository(ctx, repository, home)
+	assertRefused(err, ".omega-publish.lock")
+	assertRootOwned(publishLock)
+	must(t, os.Remove(publishLock))
+	repo, err := openRepository(ctx, repository, home)
+	must(t, err)
+	repo.close()
+
+	// A matching pending twin is rewritten, never committed in place.
+	data := []byte("pending bytes")
+	pendingTarget := rootOwned("pending-target", data)
+	must(t, os.Link(pendingTarget, filepath.Join(online, "record.json.pending")))
+	must(t, home.install("record.json", data))
+	assertRootOwned(pendingTarget)
+	installed, err := os.Stat(filepath.Join(online, "record.json"))
+	must(t, err)
+	target, err := os.Stat(pendingTarget)
+	must(t, err)
+	if os.SameFile(installed, target) {
+		t.Error("installed record aliases a file outside the home")
+	}
+	if stat := installed.Sys().(*syscall.Stat_t); stat.Uid != uid || stat.Gid != gid {
+		t.Errorf("installed record is owned by %d:%d, want %d:%d", stat.Uid, stat.Gid, uid, gid)
 	}
 }
