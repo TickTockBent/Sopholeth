@@ -141,3 +141,16 @@ func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle,
 	}
 	return report, nil
 }
+
+// Reports from commands that change active generations list the same key file
+// states status shows. The inventory is informational only: it never changes
+// the command's outcome, Problem or Action, and an inspection failure leaves
+// the authority's own states in place, as status does.
+func reportActiveKeyFiles(report *Report, home, current, online *store, bundle bootstrap.Bundle) {
+	if report.Custody != encryptedCustody {
+		return
+	}
+	if inspected, err := inspectEncryptedKeys(home, current, online, bundle, Report{}, nil); err == nil {
+		report.KeyFiles = inspected.KeyFiles
+	}
+}

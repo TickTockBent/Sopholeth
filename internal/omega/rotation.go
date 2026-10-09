@@ -92,16 +92,17 @@ func rotate(ctx context.Context, opts RotateOptions, now time.Time, hook func(st
 	if bundle.Network != opts.Network {
 		return report, errors.New("omega: authority network mismatch")
 	}
-	session, err := openOperatorKeys(ctx, home, current, bundle, opts.Passphrase, opts.codec)
-	if err != nil {
-		return report, err
-	}
-	defer session.close()
 	online, cleanup, err := operationalHome(ctx, home, bundle, report.Mode)
 	if err != nil {
 		return report, err
 	}
 	defer cleanup()
+	defer func() { reportActiveKeyFiles(&report, home, current, online, bundle) }()
+	session, err := openOperatorKeys(ctx, home, current, bundle, opts.Passphrase, opts.codec)
+	if err != nil {
+		return report, err
+	}
+	defer session.close()
 	if online == home {
 		return report, errors.New("omega: provision a separate operational home before rotating keys")
 	}

@@ -239,3 +239,64 @@ func assertCustodySecretSeparation(t *testing.T, f *publishFixture, online Renew
 		}))
 	}
 }
+
+// Rotate and publish reports list the active generations' key files, the same
+// states status shows, never the retired initialization files (#234).
+func TestRotateAndPublishReportActiveKeyFiles(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f, _, opts := encryptedLifecycleFixture(t)
+	for opts.RootVersion = 2; opts.RootVersion <= 4; opts.RootVersion++ {
+		applyRoot(t, opts)
+	}
+	must(t, os.Remove(filepath.Join(f.opts.Home, opts.Network+".rotations", encryptedGenerationName(4, "root-1"))))
+	want := map[string]string{"root-1": "missing", "root-2": "locked", "root-3": "locked", "targets": "locked", "snapshot": "protected", "timestamp": "protected"}
+	assertKeyFiles := func(step string, report Report) {
+		t.Helper()
+		if !bytes.Equal(record(report.KeyFiles), record(want)) {
+			t.Fatalf("%s key_files = %v, want %v", step, report.KeyFiles, want)
+		}
+		status, err := Status(ctx, f.opts.Home, opts.Network)
+		must(t, err)
+		if !bytes.Equal(record(report.KeyFiles), record(status.KeyFiles)) {
+			t.Fatalf("%s key_files = %v, status shows %v", step, report.KeyFiles, status.KeyFiles)
+		}
+	}
+	status, err := Status(ctx, f.opts.Home, opts.Network)
+	must(t, err)
+	if !bytes.Equal(record(status.KeyFiles), record(want)) {
+		t.Fatalf("status key_files = %v, want %v", status.KeyFiles, want)
+	}
+	opts.Role = "online"
+	prepared, err := Rotate(ctx, opts)
+	must(t, err)
+	assertKeyFiles("prepare", prepared)
+	opts.Apply = prepared.Rotation.RootSHA256
+	applied, err := Rotate(ctx, opts)
+	must(t, err)
+	if applied.Rotation.State != "applied" || applied.RootVersion != 5 {
+		t.Fatalf("online rotation did not apply on the surviving root keys: %+v", applied)
+	}
+	assertKeyFiles("apply", applied)
+	f.opts.Version = 6
+	f.changeRoot()
+	published, err := Publish(ctx, f.opts)
+	must(t, err)
+	assertKeyFiles("publish", published)
+
+	// The inventory never replaces a failed command's own diagnosis.
+	unprepared := opts
+	unprepared.RootVersion, unprepared.Apply = 6, digest([]byte("unprepared"))
+	failed, err := Rotate(ctx, unprepared)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, "Preserve both custody homes") {
+		t.Fatalf("failed rotation lost its diagnosis: %v %+v", err, failed)
+	}
+	assertKeyFiles("failed rotate", failed)
+	skipped := f.opts
+	skipped.Version = 8
+	failed, err = Publish(ctx, skipped)
+	if err == nil || failed.Problem != err.Error() || failed.Publication != "failed" || !strings.HasPrefix(failed.Action, "Preserve publication history") {
+		t.Fatalf("failed publish lost its diagnosis: %v %+v", err, failed)
+	}
+	assertKeyFiles("failed publish", failed)
+}

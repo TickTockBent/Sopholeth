@@ -211,7 +211,8 @@ Compare the initial fingerprint and current root/release versions with independe
 operator notes and trustworthy published history. Ordinary status inspects public
 identity without unlocking. Its active `key_files` inventory reports `locked`
 (matching encrypted bytes), `protected` (service-owned online files), `missing`,
-or `damaged`. Public identity can remain initialized with an unavailable signer.
+or `damaged`; `rotate` and `publish` reports show the same inventory. Public
+identity can remain initialized with an unavailable signer.
 `--check-keys` prompts once and verifies all six **active** keys against the
 current root. Retired encrypted files are not fallback signers and need not be
 present for that check. Wrong passwords, missing/corrupt active keys, or identity
