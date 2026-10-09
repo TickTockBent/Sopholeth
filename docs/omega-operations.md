@@ -361,8 +361,10 @@ Immutable filenames are never overwritten with different bytes. Public data
 files use mode `0644`. Newly created repository and `targets/` directories use
 mode `0755`, including under `umask 077`. A new repository inherits its owner and
 group from the operational home, even when a privileged operator publishes it.
-Its lock and public objects inherit that owner. Existing repository ownership
-must match the operational home; it is not silently reassigned. Before handing
+Its new lock and public objects inherit that owner. Existing repository ownership
+must match the operational home; it is not silently reassigned. An existing
+`.omega-publish.lock` is never reassigned either: if it is not a `0600` file
+owned by the repository's owner, the command stops and asks you to remove it. Before handing
 an existing publication to another account, explicitly transfer the public
 repository and its contents to that account. Existing directory modes are preserved;
 the operator must configure access through those directories and their parents
@@ -438,7 +440,9 @@ sudo install -d -o soph-omega -g soph-omega -m 0755 /srv/omega-public
 Initialize the authority at `/srv/omega-offline` with the earlier command and
 approved network/repository values. Privileged operator commands can maintain
 both homes; newly created files and directories retain their destination home's
-ownership. Unprivileged commands still require ownership. The renewal account
+ownership. Existing files are not reassigned: a `<network>.lock` owned by another
+account stops the command until you remove it. Unprivileged commands still
+require ownership. The renewal account
 cannot traverse the root-owned operator home and receives no passphrase. The
 HTTPS server needs read access only to `/srv/omega-public`. The term *offline*
 here means outside unattended renewal; the workstation can remain connected.

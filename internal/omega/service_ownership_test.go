@@ -19,8 +19,8 @@ import (
 	"time"
 )
 
-// CI runs this single test as root, then renewal in a child with a different
-// real UID. Ordinary tests cannot expose privileged creation of root-owned files.
+// CI runs this test as root, then renewal in a child with a different real UID.
+// Ordinary tests cannot expose privileged creation of root-owned files.
 func TestRenewalWithServiceOwnership(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
