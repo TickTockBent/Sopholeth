@@ -198,7 +198,7 @@ func TestPrivilegedRunKeepsLinkedFileOwners(t *testing.T) {
 	must(t, err)
 	repo.close()
 
-	// A matching pending twin may be reused, but never one with another name.
+	// A matching pending twin is rewritten, never committed in place.
 	data := []byte("pending bytes")
 	pendingTarget := rootOwned("pending-target", data)
 	must(t, os.Link(pendingTarget, filepath.Join(online, "record.json.pending")))

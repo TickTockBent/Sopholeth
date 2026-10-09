@@ -246,31 +246,17 @@ func (s *store) install(name string, data []byte) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	// A leftover twin is never committed in place, even with matching bytes:
+	// the home's owner can swap its name for a link to a file elsewhere (#236).
 	pending := name + ".pending"
-	existing, readErr := s.read(pending)
-	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return readErr
-	}
-	reuse := readErr == nil && bytes.Equal(existing, data)
-	if reuse {
-		// A twin with another name is not this run's output: committing it
-		// would alias a file outside the home. Rewrite it instead.
-		info, err := s.root.Lstat(pending)
-		if err != nil {
-			return err
-		}
-		reuse = singleLink(info)
-	}
-	if readErr == nil && !reuse {
+	if _, err := s.read(pending); err == nil {
 		if err := s.root.Remove(pending); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	flags := os.O_CREATE | os.O_EXCL | os.O_WRONLY
-	if reuse {
-		flags = os.O_WRONLY
-	}
-	f, err := s.root.OpenFile(pending, flags, 0600)
+	f, err := s.root.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -278,10 +264,8 @@ func (s *store) install(name string, data []byte) error {
 	if err := s.inherit(f); err != nil {
 		return err
 	}
-	if !reuse {
-		if _, err := f.Write(data); err != nil {
-			return err
-		}
+	if _, err := f.Write(data); err != nil {
+		return err
 	}
 	if err := s.phase(name + ":written"); err != nil {
 		return err

@@ -12,7 +12,6 @@ func supportedPlatform() error {
 }
 func owned(os.FileInfo) error                 { return supportedPlatform() }
 func safeAncestor(os.FileInfo) error          { return supportedPlatform() }
-func singleLink(os.FileInfo) bool             { return false }
 func sameOwner(os.FileInfo, os.FileInfo) bool { return false }
 func tryLock(*os.File) (bool, error)          { return false, supportedPlatform() }
 

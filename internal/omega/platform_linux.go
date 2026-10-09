@@ -19,12 +19,6 @@ func owned(info os.FileInfo) error {
 	return nil
 }
 
-// singleLink reports whether a file has no other name. Another name may live
-// outside the custody tree and belong to someone else.
-func singleLink(info os.FileInfo) bool {
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	return ok && stat.Nlink == 1
-}
 func sameOwner(first, second os.FileInfo) bool {
 	a, aOK := first.Sys().(*syscall.Stat_t)
 	b, bOK := second.Sys().(*syscall.Stat_t)
