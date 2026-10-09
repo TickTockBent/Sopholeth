@@ -104,6 +104,7 @@ func publish(ctx context.Context, opts PublishOptions, now time.Time, hook func(
 		return report, err
 	}
 	defer cleanup()
+	defer func() { reportActiveKeyFiles(&report, home, current, operational, bundle) }()
 	if liveClock {
 		now = time.Now().UTC().Truncate(time.Second)
 	}
