@@ -214,6 +214,15 @@ func (s *store) install(name string, data []byte) error {
 		return readErr
 	}
 	reuse := readErr == nil && bytes.Equal(existing, data)
+	if reuse {
+		// A twin with another name is not this run's output: committing it
+		// would alias a file outside the home. Rewrite it instead.
+		info, err := s.root.Lstat(pending)
+		if err != nil {
+			return err
+		}
+		reuse = singleLink(info)
+	}
 	if readErr == nil && !reuse {
 		if err := s.root.Remove(pending); err != nil {
 			return err

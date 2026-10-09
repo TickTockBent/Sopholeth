@@ -117,3 +117,77 @@ func TestRenewalWithServiceOwnership(t *testing.T) {
 		}))
 	}
 }
+
+// A renewal account can pre-place hard links to files it does not own in its
+// own home or repository (#236). Privileged commands that maintain that home
+// must not hand the linked files to it.
+func TestPrivilegedRunKeepsLinkedFileOwners(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() != 0 {
+		t.Skip("run the compiled test as root to exercise privileged ownership inheritance")
+	}
+	const uid, gid = 65534, 65534
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	base := t.TempDir()
+	rootOwned := func(name string, data []byte) string {
+		t.Helper()
+		path := filepath.Join(base, name)
+		must(t, os.WriteFile(path, data, 0600))
+		must(t, os.Chmod(path, 0600))
+		return path
+	}
+	serviceDir := func(name string, mode os.FileMode) string {
+		t.Helper()
+		path := filepath.Join(base, name)
+		must(t, os.Mkdir(path, mode))
+		must(t, os.Chmod(path, mode))
+		must(t, os.Chown(path, uid, gid))
+		return path
+	}
+	assertRootOwned := func(path string) {
+		t.Helper()
+		info, err := os.Stat(path)
+		must(t, err)
+		if stat := info.Sys().(*syscall.Stat_t); stat.Uid != 0 || stat.Gid != 0 {
+			t.Errorf("%s was handed to %d:%d through a hard link", path, stat.Uid, stat.Gid)
+		}
+	}
+
+	online := serviceDir("online", 0700)
+	networkLockTarget := rootOwned("network-lock-target", nil)
+	must(t, os.Link(networkLockTarget, filepath.Join(online, "rehearsal.lock")))
+	// Renewal fails later (nothing is provisioned); the lock is opened first.
+	_, _ = Renew(ctx, RenewOptions{Home: online, Network: "rehearsal"})
+	assertRootOwned(networkLockTarget)
+
+	must(t, os.Remove(filepath.Join(online, "rehearsal.lock")))
+	home, err := openHome(ctx, online, "rehearsal", false)
+	must(t, err)
+	defer home.close()
+
+	repository := serviceDir("repository", 0755)
+	publishLockTarget := rootOwned("publish-lock-target", nil)
+	must(t, os.Link(publishLockTarget, filepath.Join(repository, ".omega-publish.lock")))
+	repo, err := openRepository(ctx, repository, home)
+	must(t, err)
+	repo.close()
+	assertRootOwned(publishLockTarget)
+
+	// A matching pending twin may be reused, but never one with another name.
+	data := []byte("pending bytes")
+	pendingTarget := rootOwned("pending-target", data)
+	must(t, os.Link(pendingTarget, filepath.Join(online, "record.json.pending")))
+	must(t, home.install("record.json", data))
+	assertRootOwned(pendingTarget)
+	installed, err := os.Stat(filepath.Join(online, "record.json"))
+	must(t, err)
+	target, err := os.Stat(pendingTarget)
+	must(t, err)
+	if os.SameFile(installed, target) {
+		t.Error("installed record aliases a file outside the home")
+	}
+	if stat := installed.Sys().(*syscall.Stat_t); stat.Uid != uid || stat.Gid != gid {
+		t.Errorf("installed record is owned by %d:%d, want %d:%d", stat.Uid, stat.Gid, uid, gid)
+	}
+}

@@ -18,6 +18,13 @@ func owned(info os.FileInfo) error {
 	}
 	return nil
 }
+
+// singleLink reports whether a file has no other name. Another name may live
+// outside the custody tree and belong to someone else.
+func singleLink(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Nlink == 1
+}
 func sameOwner(first, second os.FileInfo) bool {
 	a, aOK := first.Sys().(*syscall.Stat_t)
 	b, bOK := second.Sys().(*syscall.Stat_t)
@@ -51,6 +58,9 @@ func (s *store) promote(staging, final string) error {
 
 // Privileged operator commands may maintain a separate renewal account's home.
 // New objects belong to that home, so the unprivileged scheduler can use them.
+// That account can hard-link a file it does not own into its home (#236), so a
+// regular file with another name keeps its owner. Directories cannot be hard
+// links; their link count includes their subdirectories.
 func inheritOwnership(file *os.File, parent os.FileInfo) error {
 	if os.Geteuid() != 0 {
 		return nil
@@ -58,6 +68,13 @@ func inheritOwnership(file *os.File, parent os.FileInfo) error {
 	stat, ok := parent.Sys().(*syscall.Stat_t)
 	if !ok {
 		return errors.New("omega: cannot determine custody owner")
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() && !singleLink(info) {
+		return nil
 	}
 	return file.Chown(int(stat.Uid), int(stat.Gid))
 }
