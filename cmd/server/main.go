@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -719,44 +718,54 @@ func (s *HTTPServer) getHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) keysHandler(w http.ResponseWriter, r *http.Request) {
-	keys := s.clusterNode.Scan()
+	// Keys come back in lexicographic order from the store's ordered index,
+	// so a request costs about its page size rather than a full keyspace
+	// scan and sort (#220).
+	const maxKeysLimit = storage.MaxScanPageLimit
 
-	// Optional prefix filter
-	if prefix := r.URL.Query().Get("prefix"); prefix != "" {
-		var filtered []string
-		for _, k := range keys {
-			if strings.HasPrefix(k, prefix) {
-				filtered = append(filtered, k)
-			}
-		}
-		keys = filtered
-	}
-
-	// Sort for stable cursor-based pagination
-	sort.Strings(keys)
-
-	// Cursor: skip keys <= cursor value (cursor is the last key from previous page)
-	if cursor := r.URL.Query().Get("cursor"); cursor != "" {
-		idx := sort.SearchStrings(keys, cursor)
-		// Skip past the cursor key itself
-		if idx < len(keys) && keys[idx] == cursor {
-			idx++
-		}
-		keys = keys[idx:]
-	}
-
-	// Limit: cap the number of returned keys
 	limit := 0
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
 			limit = parsed
 		}
 	}
+	if limit > maxKeysLimit {
+		limit = maxKeysLimit
+	}
 
+	prefix := r.URL.Query().Get("prefix")
+	cursor := r.URL.Query().Get("cursor")
+
+	var keys []string
 	var nextCursor string
-	if limit > 0 && len(keys) > limit {
-		nextCursor = keys[limit-1]
-		keys = keys[:limit]
+
+	if limit > 0 {
+		// Request limit + 1 keys to detect whether another page follows without a full scan
+		keys = s.clusterNode.ScanPage(prefix, cursor, limit+1)
+		if len(keys) > limit {
+			nextCursor = keys[limit-1]
+			keys = keys[:limit]
+		}
+	} else {
+		// Unbounded: no limit specified in query parameters, return all matching keys (#220).
+		// Loop in pages of maxKeysLimit, releasing the read lock between batches so large
+		// keyspaces do not stall concurrent writers.
+		pageCursor := cursor
+		for {
+			page := s.clusterNode.ScanPage(prefix, pageCursor, maxKeysLimit)
+			if len(page) == 0 {
+				break
+			}
+			keys = append(keys, page...)
+			if len(page) < maxKeysLimit {
+				break
+			}
+			pageCursor = page[len(page)-1]
+		}
+	}
+
+	if keys == nil {
+		keys = []string{}
 	}
 
 	resp := map[string]interface{}{
