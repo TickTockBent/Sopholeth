@@ -135,8 +135,8 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 
 func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) error {
 	transport := gossip.NewHTTPTransport(cn.localNode, cn.clusterSecret)
-	if cn.httpClient != nil {
-		transport.SetHTTPClient(cn.httpClient)
+	if err := transport.SetHTTPClient(cn.httpClient); err != nil {
+		return fmt.Errorf("gossip HTTP client: %w", err)
 	}
 	cn.protocol.SetTransport(transport)
 	cn.protocol.SetMessageHandler(cn.handleGossipMessage)
@@ -268,10 +268,16 @@ func (cn *ClusterNode) SetRootBindings(bindings map[gossip.NodeID]gossip.PeerBin
 func (cn *ClusterNode) SetHTTPOrigin(origin string) { cn.localNode.HTTPOrigin = origin }
 
 // ConfigureBootstrap must be called before Start. nil uses the system CA store
-// and the ordinary private/explicit bootstrap behavior.
-func (cn *ClusterNode) ConfigureBootstrap(client *http.Client, check func(string, []*gossip.Node) error) {
+// and the ordinary private/explicit bootstrap behavior. It returns an error,
+// and changes nothing, when client disables certificate or hostname
+// verification or uses a custom TLS dialer. The same client later backs gossip
+// sends; Start verifies that copy once more before any send.
+func (cn *ClusterNode) ConfigureBootstrap(client *http.Client, check func(string, []*gossip.Node) error) error {
+	if err := cn.protocol.ConfigureBootstrap(client, check); err != nil {
+		return err
+	}
 	cn.httpClient = client
-	cn.protocol.ConfigureBootstrap(client, check)
+	return nil
 }
 
 // SetRoot updates the root flag. Call after each verified refresh of the

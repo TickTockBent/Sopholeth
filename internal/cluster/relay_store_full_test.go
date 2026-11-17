@@ -148,27 +148,10 @@ func postGossipPut(t *testing.T, node *testNode, sender gossip.NodeID, key strin
 	return response.StatusCode
 }
 
-// warmDefaultTransport completes one round trip on http.DefaultTransport
-// before the test starts concurrent gossip sends. endpoint.Client reads the
-// shared transport's TLS fields while net/http's first RoundTrip on it
-// writes them once, so concurrent first sends race under -race. That race
-// predates #163 and is not what these tests cover.
-func warmDefaultTransport(t *testing.T) {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	defer server.Close()
-	response, err := http.Get(server.URL)
-	if err != nil {
-		t.Fatalf("warm default transport: %v", err)
-	}
-	response.Body.Close()
-}
-
 // startFullRelay starts a relay whose store holds occupantKey and has no room
 // for any other key.
 func startFullRelay(t *testing.T, ctx context.Context) (*testNode, *childRecorder) {
 	t.Helper()
-	warmDefaultTransport(t)
 	relay := newTestNodeWithStorage(t, "relay", "default", 3, relayStoreCapacity)
 	children := &childRecorder{}
 	relay.node.SetChildBroadcaster(children)
@@ -365,7 +348,6 @@ func TestInvalidRelayedPutIsNeitherStoredNorForwarded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	warmDefaultTransport(t)
 	relay := newTestNode(t, "relay", "default", 3)
 	if err := relay.node.SetWriteLimits(WriteLimits{MaxValueBytes: 16, MaxKeyBytes: 16, MinTTLSeconds: MinTTLSeconds, MaxTTLSeconds: DefaultMaxTTLSeconds}); err != nil {
 		t.Fatalf("SetWriteLimits: %v", err)

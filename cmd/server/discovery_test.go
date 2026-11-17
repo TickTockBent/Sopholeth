@@ -50,7 +50,9 @@ func TestHTTPSDiscoveryNodeJoining(t *testing.T) {
 		if err := configurePublicDiscovery(cn, s, id, origin, "default"); err != nil {
 			t.Fatal(err)
 		}
-		cn.ConfigureBootstrap(repo.Server.Client(), publicSeedCheck(s))
+		if err := cn.ConfigureBootstrap(repo.Server.Client(), publicSeedCheck(s)); err != nil {
+			t.Fatal(err)
+		}
 		return s
 	}
 	rootDiscovery := open(root, "root-one", rootHTTP.URL)

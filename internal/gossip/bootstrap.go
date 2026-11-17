@@ -12,6 +12,21 @@ import (
 	"sopholeth/internal/logging"
 )
 
+// bootstrapTimeout bounds one bootstrap request regardless of the caller's
+// client timeout.
+const bootstrapTimeout = 5 * time.Second
+
+// newBootstrapClient verifies client with endpoint.Client and applies the
+// bootstrap timeout. Call it at configuration time only (see #285).
+func newBootstrapClient(client *http.Client) (*http.Client, error) {
+	verifiedClient, err := endpoint.Client(client)
+	if err != nil {
+		return nil, err
+	}
+	verifiedClient.Timeout = bootstrapTimeout
+	return verifiedClient, nil
+}
+
 // BootstrapRequest is sent when a node wants to join the cluster
 type BootstrapRequest struct {
 	NodeID     string `json:"node_id"`
@@ -127,12 +142,7 @@ func (p *Protocol) sendBootstrapRequest(ctx context.Context, seedAddr string, re
 		httpReq.Header.Set(SignatureHeader, SignBody(p.clusterSecret, jsonData))
 	}
 
-	client, err := endpoint.Client(p.bootstrapClient)
-	if err != nil {
-		return nil, err
-	}
-	client.Timeout = 5 * time.Second
-	resp, err := client.Do(httpReq)
+	resp, err := p.bootstrapClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
