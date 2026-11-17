@@ -49,10 +49,13 @@ type ClusterNode struct {
 	// transient children that originated a relayed PUT (#135).
 	ackRouter AckRouter
 
-	// childBroadcaster, when set, receives every successfully-stored PUT
-	// so it can fan the replica out to attached transients (#135). Nil
-	// outside substrate mode.
+	// childBroadcaster, when set, receives every new valid relayed PUT,
+	// whether or not the local store kept it (#163), so it can fan the
+	// replica out to attached transients (#135). Nil outside substrate mode.
 	childBroadcaster ChildBroadcaster
+
+	// relayMetrics is nil until Start enables Prometheus metrics.
+	relayMetrics *relayMetrics
 }
 
 // AckRouter forwards an ACK to a non-peer originator. The substrate's
@@ -138,6 +141,7 @@ func (cn *ClusterNode) Start(ctx context.Context, bootstrapAddresses []string) e
 	cn.protocol.SetTransport(transport)
 	cn.protocol.SetMessageHandler(cn.handleGossipMessage)
 	cn.protocol.EnableMetrics()
+	cn.relayMetrics = newRelayMetrics()
 
 	// Start the gossip protocol
 	if err := cn.protocol.Start(ctx); err != nil {
@@ -408,12 +412,45 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 	}
 
 	logging.Debug("[%s] Received PUT message for key %s from %s", cn.localNode.ID, msg.Key, msg.From)
-	if err := cn.store.Put(msg.Key, msg.Data, ttl); err != nil {
-		return fmt.Errorf("failed to store replicated data: %w", err)
-	}
-	logging.Debug("[%s] Successfully stored replicated data for key %s", cn.localNode.ID, msg.Key)
 
-	// Send ACK directly to the originator
+	// Relaying does not depend on holding a copy (#163). The message is
+	// already marked seen, so this node is its only handler on this branch of
+	// the epidemic tree: skipping the forwards when the store refuses the
+	// value would cut off every downstream peer, including peers with room.
+	// Only the ACK depends on the store, because an ACK tells the originator
+	// "I hold a copy" and counts toward its quorum.
+	storeErr := cn.store.Put(msg.Key, msg.Data, ttl)
+	if storeErr != nil {
+		cn.relayMetrics.countStoreFailure()
+		logging.Debug("[%s] Could not store replicated key %s (%v); relaying without ACK", cn.localNode.ID, msg.Key, storeErr)
+	} else {
+		logging.Debug("[%s] Successfully stored replicated data for key %s", cn.localNode.ID, msg.Key)
+		cn.queueAck(msg)
+	}
+
+	// Continue epidemic forwarding to other enclave peers. Like the ACK, the
+	// forwards are queued, not sent inline, so this handler returns to the
+	// upstream sender without waiting on any peer (#167).
+	cn.protocol.ForwardToEnclave(msg)
+
+	// Fan the replica out to attached transient children so they see other
+	// agents' writes in their local store. The broadcaster gates on enclave;
+	// cross-enclave traffic is dropped.
+	if cn.childBroadcaster != nil {
+		cn.childBroadcaster.BroadcastToChildren(msg)
+	}
+
+	// Report the store failure only after relaying, so the upstream sender's
+	// log and the gossip handler's status still say this node holds no copy.
+	if storeErr != nil {
+		return fmt.Errorf("failed to store replicated data: %w", storeErr)
+	}
+	return nil
+}
+
+// queueAck queues an ACK for msg to its originator. Call it only after the
+// local store accepted the value.
+func (cn *ClusterNode) queueAck(msg *gossip.Message) {
 	ack := &gossip.Message{
 		Type:      gossip.MessageTypeAck,
 		From:      cn.localNode.ID,
@@ -423,34 +460,18 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 		Timestamp: time.Now(),
 	}
 
-	// The ACK and the epidemic forwards are queued, not sent inline, so this
-	// handler returns to the upstream sender right after the local store and
-	// MarkSeen. Waiting on them here chained per-hop timeouts across the
-	// fanout tree and piled up handler goroutines (#167).
-	queuedToPeer := cn.protocol.QueueToPeer(msg.From, ack)
-	if queuedToPeer {
+	// The ACK is queued, not sent inline. Waiting on it here chained per-hop
+	// timeouts across the fanout tree and piled up handler goroutines (#167).
+	if cn.protocol.QueueToPeer(msg.From, ack) {
 		logging.Debug("[%s] Queued ACK for key %s to %s", cn.localNode.ID, msg.Key, msg.From)
+		return
 	}
 	// If the originator isn't in the HTTP peer list, it may be a transient
 	// child attached via WS. The substrate's AckRouter looks up the
 	// originating connection by messageId and writes the ACK to that pipe.
-	if !queuedToPeer && cn.ackRouter != nil {
-		if cn.ackRouter.RouteAck(ack) {
-			logging.Debug("[%s] Routed ACK for key %s back through WS attachment", cn.localNode.ID, msg.Key)
-		}
+	if cn.ackRouter != nil && cn.ackRouter.RouteAck(ack) {
+		logging.Debug("[%s] Routed ACK for key %s back through WS attachment", cn.localNode.ID, msg.Key)
 	}
-
-	// Continue epidemic forwarding to other enclave peers
-	cn.protocol.ForwardToEnclave(msg)
-
-	// Fan the stored replica out to attached transient children so they
-	// see other agents' writes in their local store. The broadcaster
-	// gates on enclave; cross-enclave traffic is dropped.
-	if cn.childBroadcaster != nil {
-		cn.childBroadcaster.BroadcastToChildren(msg)
-	}
-
-	return nil
 }
 
 func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {

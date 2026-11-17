@@ -29,8 +29,15 @@ the [`soph` client](cli.md) is a separate executable.
 2. The receiving node stores the value in memory and begins its local TTL.
 3. When replication peers are known, it queues the write for enclave gossip,
    whatever the quorum size. It does not wait for the sends.
-4. Each accepting replica stores the value with a new local TTL, queues an ACK
-   to the origin and any epidemic forwards, and answers its sender.
+4. Each receiving replica checks the write against its key and value limits
+   and drops duplicates by message ID. It then stores the value with a new
+   local TTL, queues any epidemic forwards and child fan-out, and answers its
+   sender. It queues an ACK to the origin only if its store accepted the
+   value, because an ACK means it holds a copy. A replica whose store refuses
+   the value (for example, store full) still forwards it, so peers past it
+   with room still receive it; it sends no ACK, answers its sender with the
+   store error, and counts the miss in `gossip_relay_store_failed_total`. A
+   write over the limits is rejected before any of this and is not forwarded.
 5. The origin reports whether it observed the quorum threshold before its
    write timeout.
 6. Reads and listings exclude a value at local expiration. A periodic sweep

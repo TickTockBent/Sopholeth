@@ -26,6 +26,13 @@ type testNode struct {
 // production server does, so the full wire protocol is exercised.
 func newTestNode(t *testing.T, nodeID, enclave string, replicationFactor int) *testNode {
 	t.Helper()
+	return newTestNodeWithStorage(t, nodeID, enclave, replicationFactor, 0)
+}
+
+// newTestNodeWithStorage is newTestNode with a store capacity in bytes, the
+// NODE_MAX_STORAGE_MB equivalent. 0 means unlimited.
+func newTestNodeWithStorage(t *testing.T, nodeID, enclave string, replicationFactor int, maxStorageBytes int64) *testNode {
+	t.Helper()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -33,7 +40,7 @@ func newTestNode(t *testing.T, nodeID, enclave string, replicationFactor int) *t
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 
-	cn := NewClusterNode(nodeID, "127.0.0.1", port, port, replicationFactor, 0, 2*time.Second, "", enclave)
+	cn := NewClusterNode(nodeID, "127.0.0.1", port, port, replicationFactor, maxStorageBytes, 2*time.Second, "", enclave)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/gossip/message", makeGossipHandler(cn))
