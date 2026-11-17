@@ -191,6 +191,9 @@ func (a *app) printOmegaReport(r omega.Report) error {
 				fmt.Fprintf(&out, "%s key file: %s\n", name, state)
 			}
 		}
+		if r.KeyFilesError != "" {
+			fmt.Fprintf(&out, "Key file inventory incomplete: %s\n", r.KeyFilesError)
+		}
 	}
 	if r.OperationalHome != "" {
 		fmt.Fprintf(&out, "Operational home: %s\n", r.OperationalHome)

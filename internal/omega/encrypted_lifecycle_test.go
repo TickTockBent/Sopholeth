@@ -239,3 +239,253 @@ func assertCustodySecretSeparation(t *testing.T, f *publishFixture, online Renew
 		}))
 	}
 }
+
+// Rotate and publish reports list the active generations' key files, the same
+// states status shows, never the retired initialization files (#234).
+func TestRotateAndPublishReportActiveKeyFiles(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f, _, opts := encryptedLifecycleFixture(t)
+	for opts.RootVersion = 2; opts.RootVersion <= 4; opts.RootVersion++ {
+		applyRoot(t, opts)
+	}
+	must(t, os.Remove(filepath.Join(f.opts.Home, opts.Network+".rotations", encryptedGenerationName(4, "root-1"))))
+	want := map[string]string{"root-1": "missing", "root-2": "locked", "root-3": "locked", "targets": "locked", "snapshot": "protected", "timestamp": "protected"}
+	assertKeyFiles := func(step string, report Report) {
+		t.Helper()
+		if !bytes.Equal(record(report.KeyFiles), record(want)) {
+			t.Fatalf("%s key_files = %v, want %v", step, report.KeyFiles, want)
+		}
+		status, err := Status(ctx, f.opts.Home, opts.Network)
+		must(t, err)
+		if !bytes.Equal(record(report.KeyFiles), record(status.KeyFiles)) {
+			t.Fatalf("%s key_files = %v, status shows %v", step, report.KeyFiles, status.KeyFiles)
+		}
+	}
+	status, err := Status(ctx, f.opts.Home, opts.Network)
+	must(t, err)
+	if !bytes.Equal(record(status.KeyFiles), record(want)) {
+		t.Fatalf("status key_files = %v, want %v", status.KeyFiles, want)
+	}
+	opts.Role = "online"
+	prepared, err := Rotate(ctx, opts)
+	must(t, err)
+	assertKeyFiles("prepare", prepared)
+	opts.Apply = prepared.Rotation.RootSHA256
+	applied, err := Rotate(ctx, opts)
+	must(t, err)
+	if applied.Rotation.State != "applied" || applied.RootVersion != 5 {
+		t.Fatalf("online rotation did not apply on the surviving root keys: %+v", applied)
+	}
+	assertKeyFiles("apply", applied)
+	f.opts.Version = 6
+	f.changeRoot()
+	published, err := Publish(ctx, f.opts)
+	must(t, err)
+	assertKeyFiles("publish", published)
+
+	// The inventory never replaces a failed command's own diagnosis.
+	unprepared := opts
+	unprepared.RootVersion, unprepared.Apply = 6, digest([]byte("unprepared"))
+	failed, err := Rotate(ctx, unprepared)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, "Preserve both custody homes") {
+		t.Fatalf("failed rotation lost its diagnosis: %v %+v", err, failed)
+	}
+	assertKeyFiles("failed rotate", failed)
+	skipped := f.opts
+	skipped.Version = 8
+	failed, err = Publish(ctx, skipped)
+	if err == nil || failed.Problem != err.Error() || failed.Publication != "failed" || !strings.HasPrefix(failed.Action, "Preserve publication history") {
+		t.Fatalf("failed publish lost its diagnosis: %v %+v", err, failed)
+	}
+	assertKeyFiles("failed publish", failed)
+}
+
+// When the active generations cannot be established, status, rotate and
+// publish reports drop the initialization-generation states instead of showing
+// them as active, and say why. The commands' own diagnoses are unchanged (#234).
+func TestFailedInspectionReportsNoRetiredKeyFiles(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f, online, opts := encryptedLifecycleFixture(t)
+	applyRoot(t, opts)
+	// The rotated root's encrypted files are the active ones now; the
+	// initialization files would still read as locked.
+	release := filepath.Join(onlineState(online), releaseName(1))
+	must(t, os.WriteFile(release, []byte("{}"), 0600))
+	assertUninspected := func(step string, report Report, err error) {
+		t.Helper()
+		if err == nil || report.Problem != err.Error() {
+			t.Fatalf("%s lost its diagnosis: %v %+v", step, err, report)
+		}
+		if report.KeyFiles != nil {
+			t.Fatalf("%s reported key files without an active inventory: %v", step, report.KeyFiles)
+		}
+		if !strings.Contains(report.KeyFilesError, "publication history") {
+			t.Fatalf("%s key_files_error = %q, want the unreadable history", step, report.KeyFilesError)
+		}
+	}
+	status, err := Status(ctx, f.opts.Home, opts.Network)
+	assertUninspected("status", status, err)
+	if status.Publication != "failed" || !strings.HasPrefix(status.Action, "Preserve the journal") {
+		t.Fatalf("status action changed: %+v", status)
+	}
+	opts.RootVersion, opts.Role = 3, "online"
+	rotated, err := Rotate(ctx, opts)
+	assertUninspected("rotate", rotated, err)
+	f.opts.Version = 3
+	f.changeRoot()
+	published, err := Publish(ctx, f.opts)
+	assertUninspected("publish", published, err)
+	if published.Publication != "failed" {
+		t.Fatalf("publish outcome changed: %+v", published)
+	}
+}
+
+// Check-keys on a restored operator home fails closed when its bound renewal
+// home or that home's publication history is unavailable, and says to restore
+// that home rather than blaming the passphrase or key files (#235).
+func TestCheckKeysPointsAtUnavailableRenewalHome(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f, online, opts := encryptedLifecycleFixture(t)
+	const keyAction = "Check the passphrase and restore matching encrypted key files"
+	restoreAction := "Restore the bound renewal home and its publication history at their original path " + online.Home + ";"
+
+	wrongPassphrase := func(context.Context, bool) ([]byte, error) { return []byte("wrong password"), nil }
+	failed, err := checkKeys(ctx, f.opts.Home, opts.Network, wrongPassphrase, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, keyAction) {
+		t.Fatalf("wrong passphrase action: %v %+v", err, failed)
+	}
+
+	must(t, os.Rename(online.Home, online.Home+"-unavailable"))
+	unprompted := func(context.Context, bool) ([]byte, error) {
+		t.Fatal("check-keys prompted without its renewal home")
+		return nil, nil
+	}
+	failed, err = checkKeys(ctx, f.opts.Home, opts.Network, unprompted, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.Contains(failed.Problem, online.Home) {
+		t.Fatalf("missing renewal home problem: %v %+v", err, failed)
+	}
+	if !strings.HasPrefix(failed.Action, restoreAction) || strings.Contains(failed.Action, "passphrase") {
+		t.Fatalf("missing renewal home action: %q", failed.Action)
+	}
+	for _, state := range failed.KeyFiles {
+		if state == "verified" {
+			t.Fatal("check-keys verified a key without its renewal home")
+		}
+	}
+	must(t, os.Rename(online.Home+"-unavailable", online.Home))
+
+	history := onlineState(online)
+	must(t, os.Rename(history, history+"-unavailable"))
+	must(t, os.WriteFile(history, nil, 0600))
+	failed, err = checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, restoreAction) {
+		t.Fatalf("unopenable publication history: %v %+v", err, failed)
+	}
+	must(t, os.Remove(history))
+	must(t, os.Rename(history+"-unavailable", history))
+
+	// A journal that opens but whose releases cannot be loaded.
+	release := filepath.Join(history, releaseName(1))
+	recorded := file(t, release)
+	must(t, os.WriteFile(release, []byte("{}"), 0600))
+	failed, err = checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, restoreAction) {
+		t.Fatalf("unloadable publication history: %v %+v", err, failed)
+	}
+	must(t, os.WriteFile(release, recorded, 0600))
+
+	// A recreated but still empty renewal home is not yet restored.
+	must(t, os.Rename(online.Home, online.Home+"-unavailable"))
+	must(t, os.Mkdir(online.Home, 0700))
+	failed, err = checkKeys(ctx, f.opts.Home, opts.Network, unprompted, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.HasPrefix(failed.Action, restoreAction) {
+		t.Fatalf("empty renewal home: %v %+v", err, failed)
+	}
+	must(t, os.RemoveAll(online.Home))
+	must(t, os.Rename(online.Home+"-unavailable", online.Home))
+
+	// Waiting for a busy renewal home is not a missing one.
+	held, err := openHome(ctx, online.Home, opts.Network, false)
+	must(t, err)
+	waiting, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	failed, err = checkKeys(waiting, f.opts.Home, opts.Network, unprompted, fastKeyCodec)
+	cancel()
+	held.close()
+	if !errors.Is(err, context.DeadlineExceeded) || strings.HasPrefix(failed.Action, restoreAction) {
+		t.Fatalf("lock wait: %v %+v", err, failed)
+	}
+
+	_, err = checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	must(t, err)
+}
+
+// A renewal home provisioned before its first publish has no journal and its
+// initial keys are active. After a rotation a lost journal would make
+// check-keys verify retired keys, so it fails closed instead (#235).
+func TestCheckKeysRequiresHistoryAfterRotation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	unpublished := newCustodyPublishFixture(t, time.Now().UTC().Truncate(time.Second), true)
+	renewalHome := filepath.Join(t.TempDir(), "online")
+	_, err := ProvisionRenewal(ctx, ProvisionRenewalOptions{Home: unpublished.opts.Home, Network: unpublished.opts.Network, RenewalHome: renewalHome, Passphrase: testKeyPassphrase, codec: fastKeyCodec})
+	must(t, err)
+	assertAbsent(t, filepath.Join(renewalHome, unpublished.opts.Network+".publication"))
+	verified, err := checkKeys(ctx, unpublished.opts.Home, unpublished.opts.Network, testKeyPassphrase, fastKeyCodec)
+	must(t, err)
+	for name, state := range verified.KeyFiles {
+		if state != "verified" {
+			t.Fatalf("never-published %s key is %s", name, state)
+		}
+	}
+
+	f, online, opts := encryptedLifecycleFixture(t)
+	opts.Role = "online"
+	prepared, err := Rotate(ctx, opts)
+	must(t, err)
+	opts.Apply = prepared.Rotation.RootSHA256
+	_, err = Rotate(ctx, opts)
+	must(t, err)
+	history := onlineState(online)
+	rotations := filepath.Join(f.opts.Home, opts.Network+".rotations")
+	restoreAction := "Restore the bound renewal home and its publication history at their original path " + online.Home + ";"
+	must(t, os.Rename(history, history+"-unavailable"))
+	// Either the authority's rotation records or the rotated online keys
+	// prove the journal existed.
+	for _, step := range []string{"authority rotation records", "rotated online keys"} {
+		failed, err := checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+		if err == nil || failed.Problem != err.Error() || !strings.Contains(failed.Problem, history) || !strings.HasPrefix(failed.Action, restoreAction) {
+			t.Fatalf("%s: lost journal did not fail closed: %v %+v", step, err, failed)
+		}
+		for name, state := range failed.KeyFiles {
+			if state == "verified" {
+				t.Fatalf("%s: verified %s without its history", step, name)
+			}
+		}
+		if step == "authority rotation records" {
+			must(t, os.Rename(rotations, rotations+"-unavailable"))
+		}
+	}
+	must(t, os.Rename(rotations+"-unavailable", rotations))
+	// A journal that opens but records no releases is no better.
+	must(t, os.Mkdir(history, 0700))
+	must(t, os.WriteFile(filepath.Join(history, "binding.json"), file(t, filepath.Join(history+"-unavailable", "binding.json")), 0600))
+	failed, err := checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	if err == nil || failed.Problem != err.Error() || !strings.Contains(failed.Problem, history) || !strings.HasPrefix(failed.Action, restoreAction) {
+		t.Fatalf("empty journal did not fail closed: %v %+v", err, failed)
+	}
+	for name, state := range failed.KeyFiles {
+		if state == "verified" {
+			t.Fatalf("empty journal: verified %s without its history", name)
+		}
+	}
+	must(t, os.RemoveAll(history))
+	must(t, os.Rename(history+"-unavailable", history))
+	verified, err = checkKeys(ctx, f.opts.Home, opts.Network, testKeyPassphrase, fastKeyCodec)
+	must(t, err)
+	if verified.RootVersion != 2 {
+		t.Fatalf("restored history root = %d, want 2", verified.RootVersion)
+	}
+}

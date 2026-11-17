@@ -66,12 +66,15 @@ type RoleStatus struct {
 
 // Report contains public information only. Local initialization cannot report
 // publication health; that requires a separate verified publication workflow.
+// KeyFilesError says why the active key file inventory is incomplete; KeyFiles
+// then lists only the files that inspection reached, if any.
 type Report struct {
 	Schema          int                   `json:"schema"`
 	State           string                `json:"state"`
 	Mode            string                `json:"mode,omitempty"`
 	Custody         string                `json:"custody,omitempty"`
 	KeyFiles        map[string]string     `json:"key_files,omitempty"`
+	KeyFilesError   string                `json:"key_files_error,omitempty"`
 	Network         string                `json:"network,omitempty"`
 	Repository      string                `json:"repository,omitempty"`
 	Fingerprint     string                `json:"fingerprint,omitempty"`

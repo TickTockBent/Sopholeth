@@ -211,11 +211,21 @@ Compare the initial fingerprint and current root/release versions with independe
 operator notes and trustworthy published history. Ordinary status inspects public
 identity without unlocking. Its active `key_files` inventory reports `locked`
 (matching encrypted bytes), `protected` (service-owned online files), `missing`,
-or `damaged`. Public identity can remain initialized with an unavailable signer.
+or `damaged`; `rotate` and `publish` reports show the same inventory. If the
+active generations cannot be established (for example, the renewal home's
+publication history is unreadable), the inventory lists only the files it
+reached and `key_files_error` says why; the initialization files are never
+shown in their place. Public identity can remain initialized with an
+unavailable signer.
 `--check-keys` prompts once and verifies all six **active** keys against the
 current root. Retired encrypted files are not fallback signers and need not be
 present for that check. Wrong passwords, missing/corrupt active keys, or identity
-mismatches return a problem and action. No metadata is signed or published.
+mismatches return a problem and action. A bound renewal home that is missing or
+incomplete, or publication history that cannot be opened, also fails closed; its
+action is to restore that home at its original path, since active generations
+depend on it. Once keys have rotated, a missing or empty journal fails the same
+way. A renewal home provisioned before its first publish has no journal, and its
+initial keys are checked. No metadata is signed or published.
 An expired root can have matching keys but still returns an expiry error; stale
 timestamps do not prevent checking recovered keys. HTTPS verification is separate.
 
@@ -361,8 +371,10 @@ Immutable filenames are never overwritten with different bytes. Public data
 files use mode `0644`. Newly created repository and `targets/` directories use
 mode `0755`, including under `umask 077`. A new repository inherits its owner and
 group from the operational home, even when a privileged operator publishes it.
-Its lock and public objects inherit that owner. Existing repository ownership
-must match the operational home; it is not silently reassigned. Before handing
+Its new lock and public objects inherit that owner. Existing repository ownership
+must match the operational home; it is not silently reassigned. An existing
+`.omega-publish.lock` is never reassigned either: if it is not a `0600` file
+owned by the repository's owner, the command stops and asks you to remove it. Before handing
 an existing publication to another account, explicitly transfer the public
 repository and its contents to that account. Existing directory modes are preserved;
 the operator must configure access through those directories and their parents
@@ -438,7 +450,9 @@ sudo install -d -o soph-omega -g soph-omega -m 0755 /srv/omega-public
 Initialize the authority at `/srv/omega-offline` with the earlier command and
 approved network/repository values. Privileged operator commands can maintain
 both homes; newly created files and directories retain their destination home's
-ownership. Unprivileged commands still require ownership. The renewal account
+ownership. Existing files are not reassigned: a `<network>.lock` owned by another
+account stops the command until you remove it. Unprivileged commands still
+require ownership. The renewal account
 cannot traverse the root-owned operator home and receives no passphrase. The
 HTTPS server needs read access only to `/srv/omega-public`. The term *offline*
 here means outside unattended renewal; the workstation can remain connected.

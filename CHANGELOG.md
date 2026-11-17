@@ -43,6 +43,23 @@
 
 ### Public discovery
 
+- `soph omega rotate` and `publish` reports list the active generations' key
+  file states, the same inventory `status` shows, instead of the retired
+  initialization files (#234). When the active generations cannot be
+  established, `status`, `rotate` and `publish` drop those stale states and
+  report why in `key_files_error` ("Key file inventory incomplete" in text
+  output). The commands' outcome, Problem and Action are unchanged.
+- `soph omega status --check-keys` fails closed when the bound renewal home is
+  missing or incomplete, its publication history cannot be opened, or its
+  journal is missing or empty after a key rotation. The action is to restore
+  that home at its original path, not to check the passphrase or wait for a
+  lock (#235).
+- Privileged `soph omega` runs no longer chown files they did not create
+  (#236). Only locks created by the run take the home's owner; an existing
+  publish or network lock with the wrong owner or mode stops the command and
+  asks you to remove it. Leftover pending files are always rewritten, never
+  committed in place.
+
 - Embed the intended `sopholeth` authority's public TUF bundle for node and CLI
   discovery at `https://sopholeth.io/omega`. Record the initial fingerprint and
   remaining activation steps. Restored keys and first HTTPS publication are

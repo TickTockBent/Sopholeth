@@ -352,6 +352,10 @@ func checkKeys(ctx context.Context, homePath, network string, passphrase func(co
 		if resultErr != nil && !errors.Is(resultErr, errRootExpired) {
 			report.Problem = resultErr.Error()
 			report.Action = "Check the passphrase and restore matching encrypted key files; preserve the existing public authority."
+			var unavailable renewalUnavailableError
+			if errors.As(resultErr, &unavailable) {
+				report.Action = fmt.Sprintf("Restore the bound renewal home and its publication history at their original path %s; active key generations cannot be established without them. Preserve the existing public authority.", unavailable.home)
+			}
 		}
 	}()
 	if report.Network != network || report.Custody != encryptedCustody {
