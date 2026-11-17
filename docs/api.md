@@ -26,12 +26,15 @@ peer writes. Oversized writes are rejected before storage or replication.
 
 | Response | Meaning |
 | --- | --- |
-| `201 Created` | Stored locally; the node observed its dynamic quorum. |
+| `201 Created` | Stored locally; the node observed enough distinct peers report a stored copy to meet the quorum it fixed when the write started. |
 | `202 Accepted` | Stored locally; quorum was not confirmed within the write timeout. |
 | `413 Request Entity Too Large` | The value, key, or ingress request body exceeds its configured limit. |
 | `507 Insufficient Storage` | The local payload capacity limit prevented the write. |
 
-Quorum is an acknowledgement threshold, not proof of global agreement.
+Quorum is an acknowledgement threshold, not proof of global agreement. Each
+peer is counted once per write, and only peers in the node's own enclave peer
+table count. Peer IDs are unauthenticated in an open mesh, so a `201` does
+not prove independent copies.
 Neither success response guarantees eventual delivery to every peer. A failed
 or interrupted request can also have stored data before its response was
 lost; retries are new writes and restart TTL.

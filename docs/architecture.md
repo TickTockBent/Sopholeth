@@ -44,8 +44,9 @@ the [`soph` client](cli.md) is a separate executable.
 The origin gives each write a message ID of 128 random bits, independent of
 the key, the node and the clock, so two writes to one key in the same clock
 tick, on one node or on two, never share an ID. Forwards, ACKs and the
-WebSocket envelope carry the origin's ID unchanged; the origin counts an ACK
-toward a write's quorum by that ID.
+WebSocket envelope carry the origin's ID unchanged; the origin matches an ACK
+to a write by that ID, then counts it once per sender (see
+[Replication and quorum](#replication-and-quorum)).
 6. Reads and listings exclude a value at local expiration. A periodic sweep
    removes the expired entry from the store.
 
@@ -85,19 +86,31 @@ effective = min(known enclave nodes including self, replication factor)
 quorum = max(1, floor(effective / 2) + 1)
 ```
 
-The local write supplies the first confirmation. A single-node enclave can
-therefore confirm a write locally. The replication factor controls the
-confirmation threshold, not a fixed placement set.
+The origin computes the quorum once, from its peer table when the write
+starts; peers joining or leaving mid-write do not move it. The local write
+supplies the first confirmation, under the origin's own node ID. A
+single-node enclave can therefore confirm a write locally. The replication
+factor controls the confirmation threshold, not a fixed placement set.
 
-HTTP returns `201` when the node observes quorum and `202` when its quorum
-wait expires after local storage. MCP reports `confirmed` or `pending`.
-There is no durable retry queue behind `202`.
+Each further confirmation is an ACK from a distinct sender ID, counted once
+per write. The origin counts an ACK only if its sender is a replication peer
+in the origin's own peer table: a peer in the origin's enclave now, or when
+the write started (so a peer evicted mid-write still counts). Above the
+fanout threshold that includes relays the origin never sent to, since they
+ACK the origin directly. A repeated ACK from one sender, an ACK from an ID
+the origin has no peer record for, one from another enclave, and one
+claiming the origin's own ID are not counted. ACKs arriving after the write
+completed or timed out are ignored.
 
-The current acknowledgement handler counts confirmations without keeping a
-set of distinct senders, and can recalculate the threshold as topology
-changes. Auditing sender eligibility, duplicate ACKs, and an in-flight
-write's quorum target is a [public-alpha gate](roadmap.md#before-public-alpha).
-Treat current confirmation as the implementation's observation, not a
+HTTP returns `201` when the node observed enough distinct peers report a
+stored copy to meet that quorum, and `202` when its quorum wait expires after
+local storage. MCP reports `confirmed` or `pending`. There is no durable
+retry queue behind `202`.
+
+This is replication bookkeeping from the origin's local peer table, not
+authentication. Without `NODE_CLUSTER_SECRET`, a sender ID is an unchecked
+claim, and a host that joins under several IDs can supply several ACKs. A
+`201` is the origin's observation, not proof of independent copies and not a
 consensus certificate.
 
 ## Same-key writes and time
