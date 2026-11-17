@@ -31,6 +31,16 @@
 
 ### Replication
 
+- Forward gossip when the local store is full (#163). A node that received a
+  PUT it could not store used to return before forwarding it, after already
+  marking it seen, so above the fanout threshold every peer behind it lost
+  the write even with room to spare. Now a receiving node forwards the PUT
+  to its enclave peers and attached children whatever its store does. It
+  ACKs only a value it stored, so a full node never counts toward the
+  originator's quorum, and it still answers its sender with the store error.
+  Redelivered copies are still dropped as duplicates, and writes over the
+  key/value limits are still rejected without forwarding. New metric:
+  `gossip_relay_store_failed_total`. No wire change.
 - Send gossip through a bounded asynchronous dispatcher, so a slow, dead or
   unanswering peer no longer delays a write or delivery to healthy peers
   (#212, #167). A client PUT stores locally, queues the broadcast and answers
