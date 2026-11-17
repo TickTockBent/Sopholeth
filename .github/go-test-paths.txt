@@ -1,0 +1,21 @@
+# Changes that run the Go build and race tests (the Test workflow).
+# GitHub path-filter syntax; scripts/ci-changed.py reads this file.
+# Lines starting with '!' exclude; the last matching pattern wins.
+**/*.go
+**/testdata/**
+internal/discovery/bundle.json
+go.mod
+go.sum
+go.work
+go.work.sum
+vendor/**
+Makefile
+.github/workflows/test.yml
+.github/workflows/go-tests.yml
+.github/go-test-paths.txt
+scripts/ci-changed.py
+cmd/dashboard/web/**
+sites/soph.stream/index.html
+sites/soph.stream/styles.css
+sites/soph.stream/viewer.js
+sites/soph.stream/config.json

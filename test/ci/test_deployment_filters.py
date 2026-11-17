@@ -1,6 +1,7 @@
 """Exercise real Vercel ignore commands and the workflow path contract."""
 
 import ast
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 SITES = ("sopholeth.com", "sopholeth.io", "sopholeth.dev", "soph.stream")
+GO_TEST_PATHS = ROOT / ".github/go-test-paths.txt"
+_spec = importlib.util.spec_from_file_location("ci_changed", ROOT / "scripts/ci-changed.py")
+ci_changed = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ci_changed)
 
 
 class VercelIgnoreTests(unittest.TestCase):
@@ -155,14 +160,7 @@ def event_paths(workflow, event):
 
 
 def matches(paths, filename):
-    included = False
-    for pattern in paths:
-        exclude = pattern.startswith("!")
-        pattern = pattern.removeprefix("!")
-        regex = re.escape(pattern).replace(r"\*\*/", "(?:.*/)?").replace(r"\*\*", ".*").replace(r"\*", "[^/]*")
-        if re.fullmatch(regex, filename):
-            included = not exclude
-    return included
+    return ci_changed.matches(paths, filename)
 
 
 class WorkflowFilterTests(unittest.TestCase):
@@ -198,19 +196,87 @@ class WorkflowFilterTests(unittest.TestCase):
             "Dockerfile": (False, True),
             ".dockerignore": (False, True),
             ".github/workflows/test.yml": (True, False),
+            ".github/workflows/go-tests.yml": (True, False),
+            ".github/go-test-paths.txt": (True, False),
+            "scripts/ci-changed.py": (True, False),
             ".github/workflows/docker-build.yml": (False, True),
             "test/burnin/Dockerfile.go-node": (False, False),
             "internal/trust/bootstrap/client.go": (True, True),
             "internal/trust/bootstrap/client_test.go": (True, False),
             "test/burnin/README.md": (False, False),
         }
+        go_paths = ci_changed.load_patterns(GO_TEST_PATHS)
         for event in ("push", "pull_request"):
-            go_paths = event_paths("test.yml", event)
             docker_paths = event_paths("docker-build.yml", event)
             for path, expected in cases.items():
                 with self.subTest(event=event, path=path):
                     self.assertEqual((matches(go_paths, path), matches(docker_paths, path)), expected)
 
+
+    def test_required_test_gate_always_reports(self):
+        # Branch protection requires "Test gate". A natively path-filtered
+        # workflow reports no check on a skipped PR, which blocks the merge.
+        text = (ROOT / ".github/workflows/test.yml").read_text()
+        self.assertNotRegex(text, r"(?m)^    paths(-ignore)?:")
+        self.assertIn("name: Test gate", text)
+
+
+class ChangeDetectionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.repo = Path(self.temp.name)
+        self.git("init", "-b", "main")
+        self.git("config", "user.name", "CI fixture")
+        self.git("config", "user.email", "ci@example.invalid")
+        self.base = self.change("README.md")
+
+    def git(self, *args):
+        return subprocess.check_output(["git", *args], cwd=self.repo, text=True).strip()
+
+    def change(self, path):
+        target = self.repo / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(path + "\n")
+        self.git("add", ".")
+        self.git("commit", "-m", path, "--quiet")
+        return self.git("rev-parse", "HEAD")
+
+    def detect(self, base, head, *extra):
+        return subprocess.check_output(
+            ["python3", str(ROOT / "scripts/ci-changed.py"), str(GO_TEST_PATHS), base, head, *extra],
+            cwd=self.repo, text=True,
+        ).strip()
+
+    def test_docs_only_push_skips(self):
+        head = self.change("docs/guide.md")
+        self.assertEqual(self.detect(self.base, head), "false")
+
+    def test_any_go_change_in_push_runs(self):
+        self.change("internal/storage/store.go")
+        head = self.change("docs/guide.md")
+        self.assertEqual(self.detect(self.base, head), "true")
+
+    def test_unknown_or_new_base_runs(self):
+        head = self.change("docs/guide.md")
+        self.assertEqual(self.detect("0" * 40, head), "true")
+        self.assertEqual(self.detect("", head), "true")
+        self.assertEqual(self.detect("1" * 40, head), "true")
+
+    def test_pull_request_ignores_changes_only_on_base(self):
+        self.git("checkout", "-q", "-b", "feature")
+        head = self.change("docs/guide.md")
+        self.git("checkout", "-q", "main")
+        main_tip = self.change("cmd/server/main.go")
+        self.assertEqual(self.detect(main_tip, head, "--merge-base"), "false")
+        self.assertEqual(self.detect(main_tip, head), "true")
+
+    def test_deleted_go_file_runs(self):
+        self.change("internal/old/old.go")
+        base = self.git("rev-parse", "HEAD")
+        self.git("rm", "-q", "internal/old/old.go")
+        self.git("commit", "-m", "remove", "--quiet")
+        self.assertEqual(self.detect(base, self.git("rev-parse", "HEAD")), "true")
 
 
 if __name__ == "__main__":

@@ -1,42 +1,14 @@
 name: Test
 
+# Runs on every main push and pull request so the "Test gate" check always
+# reports; branch protection requires it. Only changes matching
+# .github/go-test-paths.txt run the Go suite. A natively path-filtered workflow
+# would report no check at all on a skipped PR and block the merge.
 on:
   push:
     branches: [ main ]
-    paths:
-      - '**/*.go'
-      - '**/testdata/**'
-      - 'internal/discovery/bundle.json'
-      - 'go.mod'
-      - 'go.sum'
-      - 'go.work'
-      - 'go.work.sum'
-      - 'vendor/**'
-      - 'Makefile'
-      - '.github/workflows/test.yml'
-      - 'cmd/dashboard/web/**'
-      - 'sites/soph.stream/index.html'
-      - 'sites/soph.stream/styles.css'
-      - 'sites/soph.stream/viewer.js'
-      - 'sites/soph.stream/config.json'
   pull_request:
     branches: [ main ]
-    paths:
-      - '**/*.go'
-      - '**/testdata/**'
-      - 'internal/discovery/bundle.json'
-      - 'go.mod'
-      - 'go.sum'
-      - 'go.work'
-      - 'go.work.sum'
-      - 'vendor/**'
-      - 'Makefile'
-      - '.github/workflows/test.yml'
-      - 'cmd/dashboard/web/**'
-      - 'sites/soph.stream/index.html'
-      - 'sites/soph.stream/styles.css'
-      - 'sites/soph.stream/viewer.js'
-      - 'sites/soph.stream/config.json'
 
 permissions:
   contents: read
@@ -46,25 +18,55 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  changes:
     runs-on: ubuntu-latest
-
+    outputs:
+      go: ${{ steps.detect.outputs.go }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
       with:
-        go-version: '1.27.1'
+        fetch-depth: 0
 
-    - name: Build
-      run: make build
-
-    - name: Test
-      run: make test-race
-
-    - name: Test privileged setup and unprivileged renewal
+    - name: Detect Go-relevant changes
+      id: detect
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD: ${{ github.event.pull_request.head.sha }}
       run: |
-        go test -race -c -o "$RUNNER_TEMP/omega-ownership.test" ./internal/omega
-        sudo "$RUNNER_TEMP/omega-ownership.test" -test.run '^TestRenewalWithServiceOwnership$' -test.v
+        if [ "$EVENT_NAME" = pull_request ]; then
+          go_changed=$(scripts/ci-changed.py .github/go-test-paths.txt "$PR_BASE" "$PR_HEAD" --merge-base)
+        else
+          go_changed=$(scripts/ci-changed.py .github/go-test-paths.txt "$PUSH_BEFORE" "$GITHUB_SHA")
+        fi
+        echo "Go tests needed: $go_changed"
+        echo "go=$go_changed" >> "$GITHUB_OUTPUT"
+
+  tests:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    uses: ./.github/workflows/go-tests.yml
+
+  gate:
+    name: Test gate
+    needs: [ changes, tests ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Require tests when Go-relevant paths changed
+      env:
+        CHANGES_RESULT: ${{ needs.changes.result }}
+        GO_CHANGED: ${{ needs.changes.outputs.go }}
+        TESTS_RESULT: ${{ needs.tests.result }}
+      run: |
+        echo "changes=$CHANGES_RESULT go=$GO_CHANGED tests=$TESTS_RESULT"
+        if [ "$CHANGES_RESULT" != success ]; then
+          echo "::error::Change detection did not succeed"
+          exit 1
+        fi
+        if [ "$GO_CHANGED" = true ] && [ "$TESTS_RESULT" != success ]; then
+          echo "::error::Go tests were required and did not pass"
+          exit 1
+        fi
