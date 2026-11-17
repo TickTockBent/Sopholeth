@@ -121,9 +121,16 @@ The node binary embeds the omega trust anchor, so publishing is gated (#223):
   `:latest`. Before that, the **Verify release** job checks that the tagged
   commit is reachable from `main` and runs `make check-public-release`. That job
   uses the `release` environment, which holds `OMEGA_EXPECTED_SHA256`, requires
-  a reviewer, and accepts only `v*` tags. A repository variable of the same name
-  is not enough: the job fails when the environment value is empty.
+  a reviewer, and accepts only `v*` tags. The job fails when the value is empty.
+  `vars.*` falls back to a repository or organization variable when the
+  environment has none, so no variable of that name may exist outside
+  `release`.
 - Manual runs on any other ref publish nothing.
+- `DOCKER_USERNAME` and `DOCKER_TOKEN` are secrets on the `publish`
+  environment, whose deployment policy allows only `main` and `v*` tags. They
+  must not exist as repository secrets: otherwise a pushed branch, or a
+  same-repository PR that edits a workflow, could push an image past every gate
+  above.
 
 Repository settings that back this up are kept as JSON in
 [`.github/rulesets/`](.github/rulesets/):
@@ -143,7 +150,8 @@ gh api -X POST repos/TickTockBent/Sopholeth/rulesets --input .github/rulesets/ma
 gh api -X PUT repos/TickTockBent/Sopholeth/rulesets/<id> --input .github/rulesets/main.json
 ```
 
-Create the `release` environment before pushing any `v*` tag. A workflow that
-names a missing environment creates it with no protection.
+Create the `publish` and `release` environments before the first run that
+uses them (the first Docker-relevant `main` push, or any `v*` tag). A workflow
+that names a missing environment creates it with no protection.
 See [site deployment filtering](sites/README.md#deploy-only-changed-sites) for
 Vercel comparison and first-deployment behavior.

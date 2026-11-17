@@ -20,6 +20,8 @@
   `:sha-<short>`; only `v*` release tags publish `:latest`, after the tagged
   commit is shown to be on `main` and the trust anchor is checked against
   `OMEGA_EXPECTED_SHA256` from the reviewer-protected `release` environment.
+  Registry credentials move to a `publish` environment limited to `main` and
+  `v*` tags.
   The Test workflow now always reports a required **Test gate** check. The
   `main` and `v*` tag rulesets are kept in `.github/rulesets/`.
 - Remove archived burn-in output, completed rehearsal/audit reports, the old
