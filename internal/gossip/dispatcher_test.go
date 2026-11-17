@@ -1,0 +1,440 @@
+package gossip
+
+import (
+	"context"
+	"fmt"
+	"math/rand"
+	"runtime"
+	"sync"
+	"testing"
+	"time"
+)
+
+// peerBehavior describes how scriptedTransport answers sends to one peer.
+type peerBehavior struct {
+	dead  bool          // accept the send and never answer; honor ctx only
+	delay time.Duration // answer after this long (slow peer)
+}
+
+// scriptedTransport records deliveries and simulates dead and slow peers.
+// Every send honors its context, like the HTTP transport.
+type scriptedTransport struct {
+	mu              sync.Mutex
+	behaviors       map[NodeID]peerBehavior
+	deliveredAt     map[NodeID][]time.Time
+	deliveredByID   map[string]time.Time
+	inFlight        int
+	maxInFlight     int
+	inFlightPerPeer map[NodeID]int
+	maxPerPeer      int
+	cancelledSends  int
+}
+
+func newScriptedTransport() *scriptedTransport {
+	return &scriptedTransport{
+		behaviors:       make(map[NodeID]peerBehavior),
+		deliveredAt:     make(map[NodeID][]time.Time),
+		deliveredByID:   make(map[string]time.Time),
+		inFlightPerPeer: make(map[NodeID]int),
+	}
+}
+
+func (st *scriptedTransport) Start(ctx context.Context) error        { return nil }
+func (st *scriptedTransport) Stop() error                            { return nil }
+func (st *scriptedTransport) SetMessageHandler(func(*Message) error) {}
+func (st *scriptedTransport) setBehavior(id NodeID, behavior peerBehavior) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.behaviors[id] = behavior
+}
+
+func (st *scriptedTransport) Send(ctx context.Context, node *Node, msg *Message) error {
+	st.mu.Lock()
+	behavior := st.behaviors[node.ID]
+	st.inFlight++
+	st.inFlightPerPeer[node.ID]++
+	if st.inFlight > st.maxInFlight {
+		st.maxInFlight = st.inFlight
+	}
+	if st.inFlightPerPeer[node.ID] > st.maxPerPeer {
+		st.maxPerPeer = st.inFlightPerPeer[node.ID]
+	}
+	st.mu.Unlock()
+
+	defer func() {
+		st.mu.Lock()
+		st.inFlight--
+		st.inFlightPerPeer[node.ID]--
+		st.mu.Unlock()
+	}()
+
+	var answer <-chan time.Time
+	if !behavior.dead {
+		answer = time.After(behavior.delay)
+	}
+	select {
+	case <-answer:
+		st.mu.Lock()
+		st.deliveredAt[node.ID] = append(st.deliveredAt[node.ID], time.Now())
+		st.deliveredByID[msg.MessageID] = time.Now()
+		st.mu.Unlock()
+		return nil
+	case <-ctx.Done():
+		st.mu.Lock()
+		st.cancelledSends++
+		st.mu.Unlock()
+		return ctx.Err()
+	}
+}
+
+func (st *scriptedTransport) deliveries(id NodeID) []time.Time {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return append([]time.Time(nil), st.deliveredAt[id]...)
+}
+
+func (st *scriptedTransport) deliveredAtByID(messageID string) (time.Time, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	deliveredAt, delivered := st.deliveredByID[messageID]
+	return deliveredAt, delivered
+}
+
+func (st *scriptedTransport) snapshot() (inFlight, maxInFlight, maxPerPeer, cancelled int) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.inFlight, st.maxInFlight, st.maxPerPeer, st.cancelledSends
+}
+
+func newScriptedProtocol(t *testing.T, limits sendLimits) (*Protocol, *scriptedTransport) {
+	t.Helper()
+	localNode := &Node{ID: "local", Address: "localhost", Port: 9090, HTTPPort: 8080, Enclave: "default"}
+	protocol := NewProtocol(localNode, 3, "")
+	protocol.setSendLimits(limits)
+	transport := newScriptedTransport()
+	protocol.SetTransport(transport)
+	t.Cleanup(func() { protocol.dispatcher.stop() })
+	return protocol, transport
+}
+
+func addTestPeer(t *testing.T, protocol *Protocol, id NodeID) {
+	t.Helper()
+	if !protocol.addPeer(&Node{ID: id, Address: string(id), Port: 9090, HTTPPort: 8080, Enclave: "default"}) {
+		t.Fatalf("addPeer(%s) rejected", id)
+	}
+}
+
+// waitForSendsIdle waits until nothing is queued or in flight.
+func waitForSendsIdle(t *testing.T, protocol *Protocol) {
+	t.Helper()
+	waitUntil(t, 2*time.Second, "sends idle", func() bool { return protocol.dispatcher.pending.Load() == 0 })
+}
+
+func waitUntil(t *testing.T, timeout time.Duration, what string, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %v waiting for %s", timeout, what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func putMessage(id string) *Message {
+	return &Message{Type: MessageTypePut, From: "local", Key: "k-" + id, MessageID: id}
+}
+
+// One and two unanswering peers, inserted in shuffled order among healthy
+// peers: the broadcast returns at once and every healthy peer gets the write
+// promptly, whatever the peer order.
+func TestBroadcastDeadPeersDoNotDelayHealthyPeers(t *testing.T) {
+	for _, deadCount := range []int{1, 2} {
+		for round := 0; round < 5; round++ {
+			t.Run(fmt.Sprintf("dead=%d/round=%d", deadCount, round), func(t *testing.T) {
+				protocol, transport := newScriptedProtocol(t, defaultSendLimits())
+
+				var peerIDs []NodeID
+				for i := 0; i < deadCount; i++ {
+					deadID := NodeID(fmt.Sprintf("dead-%d", i))
+					transport.setBehavior(deadID, peerBehavior{dead: true})
+					peerIDs = append(peerIDs, deadID)
+				}
+				healthyIDs := []NodeID{"healthy-0", "healthy-1", "healthy-2"}
+				peerIDs = append(peerIDs, healthyIDs...)
+				rand.Shuffle(len(peerIDs), func(i, j int) { peerIDs[i], peerIDs[j] = peerIDs[j], peerIDs[i] })
+				for _, id := range peerIDs {
+					addTestPeer(t, protocol, id)
+				}
+
+				startedAt := time.Now()
+				if err := protocol.BroadcastToEnclave(putMessage("m1")); err != nil {
+					t.Fatalf("BroadcastToEnclave: %v", err)
+				}
+				if elapsed := time.Since(startedAt); elapsed > 50*time.Millisecond {
+					t.Fatalf("BroadcastToEnclave took %v; it must only queue", elapsed)
+				}
+
+				for _, id := range healthyIDs {
+					waitUntil(t, 500*time.Millisecond, "delivery to "+string(id), func() bool {
+						return len(transport.deliveries(id)) == 1
+					})
+				}
+			})
+		}
+	}
+}
+
+// A slow peer (answers after 2s) does not delay delivery to healthy peers,
+// and still receives the write itself.
+func TestBroadcastSlowPeerDoesNotDelayHealthyPeers(t *testing.T) {
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
+	transport.setBehavior("slow", peerBehavior{delay: 2 * time.Second})
+	for _, id := range []NodeID{"slow", "healthy-0", "healthy-1"} {
+		addTestPeer(t, protocol, id)
+	}
+
+	startedAt := time.Now()
+	if err := protocol.BroadcastToEnclave(putMessage("m1")); err != nil {
+		t.Fatalf("BroadcastToEnclave: %v", err)
+	}
+	for _, id := range []NodeID{"healthy-0", "healthy-1"} {
+		waitUntil(t, 500*time.Millisecond, "delivery to "+string(id), func() bool {
+			return len(transport.deliveries(id)) == 1
+		})
+		if latency := transport.deliveries(id)[0].Sub(startedAt); latency > 250*time.Millisecond {
+			t.Fatalf("delivery to %s took %v behind a slow peer", id, latency)
+		}
+	}
+	waitUntil(t, 4*time.Second, "delivery to slow peer", func() bool {
+		return len(transport.deliveries("slow")) == 1
+	})
+}
+
+// Above the fanout threshold, forwarding to dead targets returns at once.
+func TestForwardAboveThresholdDoesNotWaitOnDeadTargets(t *testing.T) {
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
+	peerCount := FanoutThreshold + 6
+	for i := 0; i < peerCount; i++ {
+		id := NodeID(fmt.Sprintf("dead-%d", i))
+		transport.setBehavior(id, peerBehavior{dead: true})
+		addTestPeer(t, protocol, id)
+	}
+
+	startedAt := time.Now()
+	protocol.ForwardToEnclave(&Message{Type: MessageTypePut, From: "dead-0", Key: "k", MessageID: "fwd-1"})
+	if elapsed := time.Since(startedAt); elapsed > 50*time.Millisecond {
+		t.Fatalf("ForwardToEnclave took %v; it must only queue", elapsed)
+	}
+	waitUntil(t, time.Second, "forwards in flight", func() bool {
+		inFlight, _, _, _ := transport.snapshot()
+		return inFlight == fanoutSize(peerCount)
+	})
+}
+
+// A burst toward a dead peer fills its bounded queue and then drops and
+// counts, rather than queuing or spawning without limit.
+func TestSendQueueFullDropsAndCounts(t *testing.T) {
+	const queueDepth = 8
+	const burst = 500
+	limits := defaultSendLimits()
+	limits.queueDepth = queueDepth
+	protocol, transport := newScriptedProtocol(t, limits)
+	transport.setBehavior("dead", peerBehavior{dead: true})
+	addTestPeer(t, protocol, "dead")
+
+	// Occupy every worker first so the counts below are exact.
+	for i := 0; i < limits.sendsPerPeer; i++ {
+		protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("first-%d", i)))
+	}
+	waitUntil(t, time.Second, "every worker busy", func() bool {
+		inFlight, _, _, _ := transport.snapshot()
+		return inFlight == limits.sendsPerPeer
+	})
+
+	goroutinesBefore := runtime.NumGoroutine()
+	for i := 0; i < burst; i++ {
+		if !protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("burst-%d", i))) {
+			t.Fatal("QueueToPeer reported a known peer as unknown")
+		}
+	}
+	if grown := runtime.NumGoroutine() - goroutinesBefore; grown > 2 {
+		t.Fatalf("goroutines grew by %d during a burst to one peer", grown)
+	}
+	if dropped := protocol.dispatcher.dropped.Load(); dropped != burst-queueDepth {
+		t.Fatalf("dropped = %d, want %d", dropped, burst-queueDepth)
+	}
+	if pending := protocol.dispatcher.pending.Load(); pending != int64(queueDepth+limits.sendsPerPeer) {
+		t.Fatalf("pending = %d, want %d (queue depth plus the sends in flight)", pending, queueDepth+limits.sendsPerPeer)
+	}
+}
+
+// The global cap bounds sends in flight across peers.
+func TestSendGlobalConcurrencyCap(t *testing.T) {
+	limits := defaultSendLimits()
+	limits.maxConcurrent = 3
+	protocol, transport := newScriptedProtocol(t, limits)
+	for i := 0; i < 8; i++ {
+		id := NodeID(fmt.Sprintf("dead-%d", i))
+		transport.setBehavior(id, peerBehavior{dead: true})
+		addTestPeer(t, protocol, id)
+	}
+	for i := 0; i < 4; i++ {
+		if err := protocol.BroadcastToEnclave(putMessage(fmt.Sprintf("m%d", i))); err != nil {
+			t.Fatalf("BroadcastToEnclave: %v", err)
+		}
+	}
+	waitUntil(t, time.Second, "global cap reached", func() bool {
+		inFlight, _, _, _ := transport.snapshot()
+		return inFlight == limits.maxConcurrent
+	})
+	time.Sleep(50 * time.Millisecond)
+	if _, maxInFlight, _, _ := transport.snapshot(); maxInFlight != limits.maxConcurrent {
+		t.Fatalf("max in flight = %d, want %d", maxInFlight, limits.maxConcurrent)
+	}
+}
+
+// One peer has at most sendsPerPeer sends in flight, however much is queued.
+func TestSendPerPeerConcurrencyLimit(t *testing.T) {
+	limits := defaultSendLimits()
+	protocol, transport := newScriptedProtocol(t, limits)
+	transport.setBehavior("dead", peerBehavior{dead: true})
+	addTestPeer(t, protocol, "dead")
+	for i := 0; i < 3*limits.sendsPerPeer; i++ {
+		protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("m%d", i)))
+	}
+	waitUntil(t, time.Second, "per-peer limit reached", func() bool {
+		inFlight, _, _, _ := transport.snapshot()
+		return inFlight == limits.sendsPerPeer
+	})
+	time.Sleep(50 * time.Millisecond)
+	if _, _, maxPerPeer, _ := transport.snapshot(); maxPerPeer != limits.sendsPerPeer {
+		t.Fatalf("max in flight to one peer = %d, want %d", maxPerPeer, limits.sendsPerPeer)
+	}
+}
+
+// A WAN-latency peer (200ms per send) under a steady write rate: below
+// sendsPerPeer / RTT (20 msg/s with the defaults) nothing is dropped and the
+// queue does not build up. A single worker per peer manages only 5 msg/s
+// here, so its queue would grow by 10 messages a second.
+func TestSteadyWritesToWANLatencyPeerAreNotDropped(t *testing.T) {
+	const (
+		peerLatency  = 200 * time.Millisecond
+		writesPerSec = 15
+		duration     = 2 * time.Second
+	)
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
+	transport.setBehavior("wan", peerBehavior{delay: peerLatency})
+	addTestPeer(t, protocol, "wan")
+
+	writeCount := int(duration.Seconds() * writesPerSec)
+	queuedAt := make([]time.Time, writeCount)
+	ticker := time.NewTicker(time.Second / writesPerSec)
+	defer ticker.Stop()
+	for writeIndex := 0; writeIndex < writeCount; writeIndex++ {
+		<-ticker.C
+		queuedAt[writeIndex] = time.Now()
+		if err := protocol.BroadcastToEnclave(putMessage(fmt.Sprintf("steady-%d", writeIndex))); err != nil {
+			t.Fatalf("BroadcastToEnclave: %v", err)
+		}
+	}
+	// Generous drain wait so a regression reports the latency, not a timeout.
+	waitUntil(t, 15*time.Second, "steady writes delivered", func() bool { return protocol.dispatcher.pending.Load() == 0 })
+
+	if dropped := protocol.dispatcher.dropped.Load(); dropped != 0 {
+		t.Fatalf("dropped %d of %d writes at %d/s to a %v peer", dropped, writeCount, writesPerSec, peerLatency)
+	}
+	var worstLatency time.Duration
+	for writeIndex := 0; writeIndex < writeCount; writeIndex++ {
+		deliveredAt, delivered := transport.deliveredAtByID(fmt.Sprintf("steady-%d", writeIndex))
+		if !delivered {
+			t.Fatalf("write %d was not delivered", writeIndex)
+		}
+		if latency := deliveredAt.Sub(queuedAt[writeIndex]); latency > worstLatency {
+			worstLatency = latency
+		}
+	}
+	t.Logf("%d writes at %d/s to a %v peer: worst queue-to-delivery %v", writeCount, writesPerSec, peerLatency, worstLatency)
+	if worstLatency > 3*peerLatency {
+		t.Fatalf("worst queue-to-delivery latency %v; the queue is building up", worstLatency)
+	}
+}
+
+// Each send has its own deadline: a dead peer's sends time out one by one
+// instead of blocking its queue forever.
+func TestSendDeadlinePerMessage(t *testing.T) {
+	limits := defaultSendLimits()
+	limits.sendTimeout = 50 * time.Millisecond
+	protocol, transport := newScriptedProtocol(t, limits)
+	transport.setBehavior("dead", peerBehavior{dead: true})
+	addTestPeer(t, protocol, "dead")
+	for i := 0; i < 3; i++ {
+		protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("m%d", i)))
+	}
+	waitUntil(t, time.Second, "all three sends to time out", func() bool {
+		_, _, _, cancelled := transport.snapshot()
+		return cancelled == 3
+	})
+	waitForSendsIdle(t, protocol)
+}
+
+// Stop aborts in-flight sends, discards queued ones, and leaves no workers.
+func TestStopAbortsInFlightSendsWithoutLeaks(t *testing.T) {
+	goroutinesBefore := runtime.NumGoroutine()
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
+	for i := 0; i < 5; i++ {
+		id := NodeID(fmt.Sprintf("dead-%d", i))
+		transport.setBehavior(id, peerBehavior{dead: true})
+		addTestPeer(t, protocol, id)
+	}
+	for i := 0; i < 10; i++ {
+		if err := protocol.BroadcastToEnclave(putMessage(fmt.Sprintf("m%d", i))); err != nil {
+			t.Fatalf("BroadcastToEnclave: %v", err)
+		}
+	}
+	waitUntil(t, time.Second, "sends in flight", func() bool {
+		inFlight, _, _, _ := transport.snapshot()
+		return inFlight == 5*DefaultMaxSendsPerPeer
+	})
+
+	startedAt := time.Now()
+	if err := protocol.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > time.Second {
+		t.Fatalf("Stop took %v with sends in flight", elapsed)
+	}
+	if pending := protocol.dispatcher.pending.Load(); pending != 0 {
+		t.Fatalf("pending after Stop = %d, want 0", pending)
+	}
+	waitUntil(t, time.Second, "goroutines to return to baseline", func() bool {
+		return runtime.NumGoroutine() <= goroutinesBefore
+	})
+	protocol.QueueToPeer("dead-0", putMessage("after-stop"))
+	if pending := protocol.dispatcher.pending.Load(); pending != 0 {
+		t.Fatalf("a message was queued after Stop (pending = %d)", pending)
+	}
+}
+
+// Removing a peer stops its workers and aborts its in-flight sends.
+func TestRemovePeerStopsItsWorkers(t *testing.T) {
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
+	transport.setBehavior("dead", peerBehavior{dead: true})
+	addTestPeer(t, protocol, "dead")
+	for i := 0; i < DefaultMaxSendsPerPeer+3; i++ {
+		protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("m%d", i)))
+	}
+	waitUntil(t, time.Second, "sends in flight", func() bool {
+		inFlight, _, _, _ := transport.snapshot()
+		return inFlight == DefaultMaxSendsPerPeer
+	})
+
+	protocol.removePeer("dead")
+	waitForSendsIdle(t, protocol)
+	if _, _, _, cancelled := transport.snapshot(); cancelled != DefaultMaxSendsPerPeer {
+		t.Fatalf("cancelled sends = %d, want %d (the in-flight ones; queued ones are discarded unsent)", cancelled, DefaultMaxSendsPerPeer)
+	}
+	if protocol.QueueToPeer("dead", putMessage("late")) {
+		t.Fatal("QueueToPeer accepted a removed peer")
+	}
+}
