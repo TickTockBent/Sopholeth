@@ -706,6 +706,16 @@ func (p *Protocol) GetReplicationPeers() []*Node {
 	return peers
 }
 
+// IsReplicationPeer reports whether id is currently in the peer table and in
+// the local node's enclave, that is, whether GetReplicationPeers would list it.
+// The local node is never in its own peer table, so its ID reports false.
+func (p *Protocol) IsReplicationPeer(id NodeID) bool {
+	p.peersMutex.RLock()
+	defer p.peersMutex.RUnlock()
+	peer := p.peers[id]
+	return peer != nil && peer.Enclave == p.localNode.Enclave
+}
+
 // PeerFailureCount returns the number of consecutive ping failures for a peer.
 func (p *Protocol) PeerFailureCount(id NodeID) int {
 	p.peersMutex.RLock()

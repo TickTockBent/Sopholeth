@@ -60,6 +60,11 @@ type ClusterNode struct {
 	// clock stamps originated messages. It is time.Now outside tests; tests
 	// freeze it to show that message IDs do not depend on the clock (#166).
 	clock func() time.Time
+
+	// isReplicationPeer reports whether a node ID is currently a same-enclave
+	// peer. It is protocol.IsReplicationPeer outside tests; tests replace it
+	// to evict a peer mid-write without waiting out health checks (#164).
+	isReplicationPeer func(gossip.NodeID) bool
 }
 
 // AckRouter forwards an ACK to a non-peer originator. The substrate's
@@ -83,25 +88,42 @@ type ChildBroadcaster interface {
 const IsolationRecoveryInterval = 30 * time.Second
 
 type WriteOperation struct {
-	Key           string
-	Data          []byte
-	TTL           time.Duration
-	Confirmations int
-	// signalComplete is guarded by signalOnce so the local-quorum path,
-	// the gossip-ACK path, and any racing late ACK can all signal once
-	// without panicking on close-of-closed-channel. Pendant of the
-	// MessageID dedup that keys pendingWrites: there can still be more
-	// than one goroutine that observes "quorum reached" within a single
-	// write's lifetime.
+	Key  string
+	Data []byte
+	TTL  time.Duration
+
+	// The fields below are replication bookkeeping for one write (#164).
+	// ClusterNode.writesMutex guards them.
+
+	// quorumTarget is fixed when Put starts. A peer joining or leaving
+	// mid-write does not move it.
+	quorumTarget int
+	// countedSenders holds the node IDs whose stored copy has been counted,
+	// starting with the local node for the local store. Its size is the
+	// confirmation count, so one sender is counted at most once.
+	countedSenders map[gossip.NodeID]struct{}
+	// replicationPeersAtStart is the set of same-enclave peer IDs in the
+	// peer table when Put started, so a peer evicted mid-write still counts.
+	replicationPeersAtStart map[gossip.NodeID]struct{}
+	// completed is set, and the write removed from pendingWrites, in the
+	// same critical section that counts the ACK reaching quorumTarget.
+	completed bool
+
+	// Complete is closed once, by markComplete, when quorum is reached.
 	Complete   chan bool
 	signalOnce sync.Once
 	Error      error
 }
 
-// markComplete signals the write as quorum-reached at most once. Safe
-// to call from any goroutine that observes the quorum threshold.
+// markComplete signals the write as quorum-reached at most once.
 func (w *WriteOperation) markComplete() {
 	w.signalOnce.Do(func() { close(w.Complete) })
+}
+
+// confirmations returns how many distinct senders, the local node included,
+// have been counted. Call it with writesMutex held.
+func (w *WriteOperation) confirmations() int {
+	return len(w.countedSenders)
 }
 
 type Store interface {
@@ -135,6 +157,7 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 		writeLimits:       DefaultWriteLimits(),
 		pendingWrites:     make(map[string]*WriteOperation),
 		clock:             time.Now,
+		isReplicationPeer: protocol.IsReplicationPeer,
 	}
 }
 
@@ -296,7 +319,16 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		return err
 	}
 	ttl = cn.clampTTL(int64(ttl / time.Second))
-	quorum := cn.quorumSize()
+
+	// One snapshot of the replication peers fixes this write's quorum target
+	// and the peers whose ACKs count even if they are evicted mid-write
+	// (#164). Neither moves while the write is pending.
+	replicationPeersAtStart := cn.protocol.GetReplicationPeers()
+	quorumTarget := quorumForEnclaveSize(len(replicationPeersAtStart)+1, cn.replicationFactor)
+	replicationPeerIDsAtStart := make(map[gossip.NodeID]struct{}, len(replicationPeersAtStart))
+	for _, peer := range replicationPeersAtStart {
+		replicationPeerIDsAtStart[peer.ID] = struct{}{}
+	}
 
 	msg := &gossip.Message{
 		Type:      gossip.MessageTypePut,
@@ -313,11 +345,14 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 	}
 
 	writeOp := &WriteOperation{
-		Key:           key,
-		Data:          data,
-		TTL:           ttl,
-		Confirmations: 1, // Count local write
-		Complete:      make(chan bool, 1),
+		Key:          key,
+		Data:         data,
+		TTL:          ttl,
+		quorumTarget: quorumTarget,
+		// The local store is the first confirmation, under this node's ID.
+		countedSenders:          map[gossip.NodeID]struct{}{cn.localNode.ID: {}},
+		replicationPeersAtStart: replicationPeerIDsAtStart,
+		Complete:                make(chan bool, 1),
 	}
 
 	// Key on MessageID so concurrent writes to the same key don't
@@ -327,9 +362,7 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 	cn.writesMutex.Unlock()
 
 	if err := cn.store.Put(key, data, ttl); err != nil {
-		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, msg.MessageID)
-		cn.writesMutex.Unlock()
+		cn.removePendingWrite(msg.MessageID, writeOp)
 		return fmt.Errorf("local write failed: %w", err)
 	}
 
@@ -345,33 +378,44 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 
 	// The local write is the first confirmation; a quorum of one is met now
 	// (single-node enclave, or RF=1).
-	if quorum <= 1 {
-		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, msg.MessageID)
-		cn.writesMutex.Unlock()
+	if quorumTarget <= 1 {
+		cn.removePendingWrite(msg.MessageID, writeOp)
 		writeOp.markComplete()
-		logging.Debug("Write completed locally (quorum=%d)", quorum)
+		logging.Debug("Write completed locally (quorum=%d)", quorumTarget)
 		return nil
 	}
 
 	select {
 	case <-writeOp.Complete:
-		cn.writesMutex.Lock()
+		// countAckLocked removed the write when it counted the last ACK.
+		cn.writesMutex.RLock()
 		err := writeOp.Error
-		delete(cn.pendingWrites, msg.MessageID)
-		cn.writesMutex.Unlock()
+		cn.writesMutex.RUnlock()
 		return err
 	case <-time.After(cn.writeTimeout):
-		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, msg.MessageID)
-		cn.writesMutex.Unlock()
+		if cn.removePendingWrite(msg.MessageID, writeOp) {
+			return nil // the last ACK was counted as the timeout fired
+		}
 		return ErrQuorumTimeout
 	case <-ctx.Done():
-		cn.writesMutex.Lock()
-		delete(cn.pendingWrites, msg.MessageID)
-		cn.writesMutex.Unlock()
+		if cn.removePendingWrite(msg.MessageID, writeOp) {
+			return nil
+		}
 		return ctx.Err()
 	}
+}
+
+// removePendingWrite removes writeOp from pendingWrites under the lock that
+// counts ACKs, so each ACK either was counted before the removal or finds the
+// write gone and is ignored. It reports whether the write had already reached
+// quorum.
+func (cn *ClusterNode) removePendingWrite(messageID string, writeOp *WriteOperation) bool {
+	cn.writesMutex.Lock()
+	defer cn.writesMutex.Unlock()
+	if cn.pendingWrites[messageID] == writeOp {
+		delete(cn.pendingWrites, messageID)
+	}
+	return writeOp.completed
 }
 
 func (cn *ClusterNode) Get(key string) ([]byte, bool) {
@@ -489,31 +533,93 @@ func (cn *ClusterNode) queueAck(msg *gossip.Message) {
 	}
 }
 
+// ackOutcome is what handleAckMessage did with an ACK for a pending write.
+type ackOutcome int
+
+const (
+	ackCounted            ackOutcome = iota // counted; quorum not yet reached
+	ackReachedQuorum                        // counted, and it completed the write
+	ackFromSelf                             // claims the local node's ID; never counted
+	ackNotReplicationPeer                   // sender is not a same-enclave peer, now or at start
+	ackDuplicateSender                      // sender already counted for this write
+)
+
+func (outcome ackOutcome) String() string {
+	switch outcome {
+	case ackCounted:
+		return "counted"
+	case ackReachedQuorum:
+		return "counted, quorum reached"
+	case ackFromSelf:
+		return "ignored: claims the local node's ID"
+	case ackNotReplicationPeer:
+		return "ignored: sender is not a replication peer"
+	case ackDuplicateSender:
+		return "ignored: sender already counted"
+	}
+	return "unknown"
+}
+
 func (cn *ClusterNode) handleAckMessage(msg *gossip.Message) error {
 	cn.writesMutex.Lock()
-	writeOp, exists := cn.pendingWrites[msg.MessageID]
-	cn.writesMutex.Unlock()
-
-	if exists {
-		cn.writesMutex.Lock()
-		writeOp.Confirmations++
-		reached := writeOp.Confirmations >= cn.quorumSize()
+	writeOp, pending := cn.pendingWrites[msg.MessageID]
+	if pending {
+		outcome := cn.countAckLocked(msg.MessageID, writeOp, msg.From)
 		cn.writesMutex.Unlock()
-		if reached {
-			writeOp.markComplete()
-		}
+		logging.Debug("[%s] ACK for key %s from %s: %s", cn.localNode.ID, msg.Key, msg.From, outcome)
 		return nil
 	}
+	cn.writesMutex.Unlock()
 
-	// Not our pending write — possibly an ACK for a PUT we relayed on
-	// behalf of a transient child. The substrate's AckRouter table maps
-	// messageId → originating WS pipe; if we relayed this message, forward
-	// the ACK upstream so the transient's quorum tally advances.
+	// Not a pending write of ours: either a write that already completed or
+	// timed out (the ACK is ignored), or a PUT we relayed on behalf of a
+	// transient child. The substrate's AckRouter table maps messageId →
+	// originating WS pipe; if we relayed this message, forward the ACK
+	// upstream so the transient's quorum tally advances.
 	if cn.ackRouter != nil {
 		cn.ackRouter.RouteAck(msg)
 	}
 
 	return nil
+}
+
+// countAckLocked counts one ACK toward writeOp's fixed quorum target. Call it
+// with writesMutex held: the lookup in handleAckMessage, the sender check, the
+// duplicate check, the count, the completion decision and the removal from
+// pendingWrites are one critical section, so concurrent ACKs complete a write
+// exactly once and an ACK after removal is never counted (#164).
+//
+// A sender counts once per write, and only if it is a replication peer: in
+// this node's peer table and enclave now, or when Put started. Above the
+// fanout threshold, relays the origin never sent to ACK it directly, so this
+// cannot be limited to the peers Put sent to. This is replication
+// bookkeeping from the local peer table, not authentication: without
+// NODE_CLUSTER_SECRET a sender ID is an unchecked claim, and a host that
+// joins the mesh under several IDs can supply several ACKs. It stops double
+// counting and ACKs from IDs this node has no peer record for; it does not
+// prove independent copies.
+//
+// The peer check takes the gossip peer-table read lock inside writesMutex.
+// The gossip package never calls back into the cluster under that lock, so
+// the order cannot invert.
+func (cn *ClusterNode) countAckLocked(messageID string, writeOp *WriteOperation, sender gossip.NodeID) ackOutcome {
+	if sender == cn.localNode.ID {
+		return ackFromSelf
+	}
+	if _, peerAtStart := writeOp.replicationPeersAtStart[sender]; !peerAtStart && !cn.isReplicationPeer(sender) {
+		return ackNotReplicationPeer
+	}
+	if _, alreadyCounted := writeOp.countedSenders[sender]; alreadyCounted {
+		return ackDuplicateSender
+	}
+	writeOp.countedSenders[sender] = struct{}{}
+	if writeOp.confirmations() < writeOp.quorumTarget {
+		return ackCounted
+	}
+	writeOp.completed = true
+	delete(cn.pendingWrites, messageID)
+	writeOp.markComplete()
+	return ackReachedQuorum
 }
 
 func (cn *ClusterNode) Scan() []string {
@@ -524,20 +630,19 @@ func (cn *ClusterNode) HandleBootstrap(req *gossip.BootstrapRequest) *gossip.Boo
 	return cn.protocol.HandleBootstrap(req)
 }
 
-// quorumSize calculates the current quorum based on enclave peer count.
-// Quorum = (min(enclaveNodes, replicationFactor) / 2) + 1
-// where enclaveNodes includes the local node.
-func (cn *ClusterNode) quorumSize() int {
-	enclaveNodes := len(cn.protocol.GetReplicationPeers()) + 1 // +1 for self
+// quorumForEnclaveSize returns a write's confirmation threshold:
+// (min(enclaveNodes, replicationFactor) / 2) + 1, at least 1, where
+// enclaveNodes includes the local node. Put computes it once per write.
+func quorumForEnclaveSize(enclaveNodes, replicationFactor int) int {
 	effective := enclaveNodes
-	if cn.replicationFactor < effective {
-		effective = cn.replicationFactor
+	if replicationFactor < effective {
+		effective = replicationFactor
 	}
-	q := (effective / 2) + 1
-	if q < 1 {
-		q = 1
+	quorum := (effective / 2) + 1
+	if quorum < 1 {
+		quorum = 1
 	}
-	return q
+	return quorum
 }
 
 // ClusterSecret returns the configured cluster secret (empty string if open mode).

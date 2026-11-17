@@ -31,6 +31,22 @@
 
 ### Replication
 
+- Count each peer's ACK once per write, and only from replication peers
+  (#164). The originator kept a bare counter: a peer re-sending its ACK, or
+  any host putting any ID in `From`, counted again, so one real replica could
+  reach quorum alone. The target was also recomputed from the live peer table
+  on every ACK, so peers joining mid-write moved it. Each pending write now
+  fixes its quorum target when `Put` starts and keeps the set of sender IDs
+  already counted, starting with the local node. One critical section looks
+  up the write, checks the sender, drops a repeat, counts, and completes and
+  removes the write at the target; the timeout and cancel paths remove it
+  under the same lock, so a late ACK is ignored. A sender counts if it is a
+  same-enclave peer in the originator's peer table now or when the write
+  started; above the fanout threshold that covers relays that ACK directly.
+  An ACK under the originator's own ID never counts. This is bookkeeping from
+  the local peer table, not authentication: in an open mesh sender IDs are
+  unchecked claims, and a `201` does not prove independent copies. No wire
+  change.
 - Give every gossip message an opaque random ID (#166). A client PUT's ID was
   the key plus the local nanosecond clock, so two writes to one key in one
   clock tick, on one node or on two, shared an ID: peers dropped the second

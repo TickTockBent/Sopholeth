@@ -714,3 +714,25 @@ func TestEvictionMetrics(t *testing.T) {
 		t.Fatalf("peersActive after rejoin = %v, want 1", v)
 	}
 }
+
+// IsReplicationPeer matches GetReplicationPeers: same-enclave peers in the
+// table, not other enclaves, unknown IDs, the local node, or evicted peers.
+func TestIsReplicationPeer(t *testing.T) {
+	p, mt := newTestProtocol() // local node is in "default" enclave
+	p.addPeer(&Node{ID: "same", Address: "same", Port: 9090, HTTPPort: 8080, Enclave: "default"})
+	p.addPeer(&Node{ID: "diff", Address: "diff", Port: 9090, HTTPPort: 8080, Enclave: "other"})
+
+	for id, want := range map[NodeID]bool{"same": true, "diff": false, "unknown": false, p.localNode.ID: false} {
+		if got := p.IsReplicationPeer(id); got != want {
+			t.Errorf("IsReplicationPeer(%q) = %v, want %v", id, got, want)
+		}
+	}
+
+	mt.setFail("same", true)
+	for i := 0; i < MaxPingFailures; i++ {
+		p.pingPeers(context.Background())
+	}
+	if p.IsReplicationPeer("same") {
+		t.Error("evicted peer still reported as a replication peer")
+	}
+}
