@@ -135,7 +135,7 @@ type Protocol struct {
 	clusterSecret     string
 	messageHandler    func(*Message) error
 	transport         Transport
-	bootstrapClient   *http.Client
+	bootstrapClient   *http.Client // verified once in NewProtocol/ConfigureBootstrap
 	checkSeed         func(string, []*Node) error
 	topologyTicker    *time.Ticker
 	stopChan          chan struct{}
@@ -154,8 +154,17 @@ type Transport interface {
 
 // ConfigureBootstrap installs optional transport and signed-root checks before
 // Start. Peer referrals remain ordinary routing information, not credentials.
-func (p *Protocol) ConfigureBootstrap(client *http.Client, check func(string, []*Node) error) {
-	p.bootstrapClient, p.checkSeed = client, check
+// The client is verified here, once, and the verified copy is reused for every
+// bootstrap request (#285). A client that disables certificate or hostname
+// verification, or uses a custom TLS dialer, is rejected with an error and
+// nothing is changed. nil uses a private transport with the system CA store.
+func (p *Protocol) ConfigureBootstrap(client *http.Client, check func(string, []*Node) error) error {
+	verifiedClient, err := newBootstrapClient(client)
+	if err != nil {
+		return err
+	}
+	p.bootstrapClient, p.checkSeed = verifiedClient, check
+	return nil
 }
 
 func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *Protocol {
@@ -170,6 +179,13 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 		stopChan:          make(chan struct{}),
 		seenMessages:      make(map[string]time.Time),
 	}
+	defaultBootstrapClient, err := newBootstrapClient(nil)
+	if err != nil {
+		// A client without a transport gets a fresh default transport,
+		// which always passes verification.
+		panic(fmt.Sprintf("gossip: default bootstrap client failed verification: %v", err))
+	}
+	protocol.bootstrapClient = defaultBootstrapClient
 	protocol.setSendLimits(defaultSendLimits())
 	return protocol
 }

@@ -30,7 +30,9 @@ func TestBootstrapHTTPSVerificationAndRedirects(t *testing.T) {
 	if _, err := p.sendBootstrapRequest(context.Background(), tls.URL, req); err == nil || hits.Load() != 0 {
 		t.Fatal("accepted untrusted TLS certificate")
 	}
-	p.ConfigureBootstrap(tls.Client(), nil)
+	if err := p.ConfigureBootstrap(tls.Client(), nil); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := p.sendBootstrapRequest(context.Background(), tls.URL, req); err != nil {
 		t.Fatal(err)
 	}
@@ -41,11 +43,15 @@ func TestBootstrapHTTPSVerificationAndRedirects(t *testing.T) {
 		return (&net.Dialer{}).DialContext(ctx, network, u.Host)
 	}
 	wrong.Transport = transport
-	p.ConfigureBootstrap(&wrong, nil)
+	if err := p.ConfigureBootstrap(&wrong, nil); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := p.sendBootstrapRequest(context.Background(), "https://wrong.invalid", req); err == nil {
 		t.Fatal("accepted wrong TLS hostname")
 	}
-	p.ConfigureBootstrap(tls.Client(), nil)
+	if err := p.ConfigureBootstrap(tls.Client(), nil); err != nil {
+		t.Fatal(err)
+	}
 	redirect.Store(true)
 	if _, err := p.sendBootstrapRequest(context.Background(), tls.URL, req); err == nil || redirected.Load() != 0 {
 		t.Fatal("followed bootstrap redirect/downgrade")

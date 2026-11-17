@@ -92,6 +92,5 @@ func configurePublicDiscovery(cn *cluster.ClusterNode, s *discovery.Session, id,
 		}
 		cn.SetRootBindings(bindings)
 	})
-	cn.ConfigureBootstrap(nil, publicSeedCheck(s))
-	return nil
+	return cn.ConfigureBootstrap(nil, publicSeedCheck(s))
 }

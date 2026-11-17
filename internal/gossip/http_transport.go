@@ -36,38 +36,57 @@ type SimpleNodeInfo struct {
 	Enclave    string `json:"enclave,omitempty"` // Empty treated as "default" for backwards compat
 }
 
+// defaultGossipTimeout bounds one gossip send when the caller sets none.
+const defaultGossipTimeout = 5 * time.Second
+
 // HTTPTransport implements gossip communication over HTTP
 type HTTPTransport struct {
 	localNode      *Node
 	messageHandler func(*Message) error
-	client         *http.Client
-	clusterSecret  string
-	mu             sync.RWMutex
+	// client is verified by endpoint.Client once, when the transport is built
+	// or reconfigured, and reused by every Send. Re-verifying per send would
+	// inspect the transport while concurrent sends initialize it (#285).
+	client        *http.Client
+	clusterSecret string
+	mu            sync.RWMutex
 }
 
 // NewHTTPTransport creates a new HTTP-based transport.
 // If clusterSecret is non-empty, all outgoing messages are HMAC-signed.
+// It sends through a private clone of http.DefaultTransport.
 func NewHTTPTransport(localNode *Node, clusterSecret string) *HTTPTransport {
+	verifiedClient, err := endpoint.Client(&http.Client{Timeout: defaultGossipTimeout})
+	if err != nil {
+		// A client without a transport gets a fresh default transport,
+		// which always passes verification.
+		panic(fmt.Sprintf("gossip: default HTTP client failed verification: %v", err))
+	}
 	return &HTTPTransport{
 		localNode:     localNode,
 		clusterSecret: clusterSecret,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		client:        verifiedClient,
 	}
 }
 
-// SetHTTPClient configures CA roots for an HTTPS deployment before use.
-// Send still enforces certificate/hostname validation and refuses redirects.
-func (t *HTTPTransport) SetHTTPClient(client *http.Client) {
+// SetHTTPClient configures CA roots for an HTTPS deployment. Call it before
+// Start, never while sends are in flight. The client is verified here, once:
+// a client that disables certificate or hostname verification, or uses a
+// custom TLS dialer, is rejected with an error and the transport keeps its
+// previous client. The stored copy refuses redirects, has no cookie jar, and
+// keeps the caller's Timeout (5s when unset). nil keeps the current client.
+func (t *HTTPTransport) SetHTTPClient(client *http.Client) error {
 	if client == nil {
-		return
+		return nil
 	}
-	copy := *client
-	if copy.Timeout <= 0 {
-		copy.Timeout = 5 * time.Second
+	verifiedClient, err := endpoint.Client(client)
+	if err != nil {
+		return err
 	}
-	t.client = &copy
+	if verifiedClient.Timeout <= 0 {
+		verifiedClient.Timeout = defaultGossipTimeout
+	}
+	t.client = verifiedClient
+	return nil
 }
 
 // Start initializes the transport (no-op for HTTP as we use the main HTTP server)
@@ -128,11 +147,7 @@ func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) erro
 		req.Header.Set(SignatureHeader, SignBody(t.clusterSecret, jsonData))
 	}
 
-	client, err := endpoint.Client(t.client)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send message to %s: %w", url, err)
 	}

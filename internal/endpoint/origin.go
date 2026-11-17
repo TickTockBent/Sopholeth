@@ -60,24 +60,40 @@ func Normalize(raw string) (string, error) {
 	return u.Scheme + "://" + host, nil
 }
 
-// Client preserves certificate and hostname validation and refuses redirects.
-// Public callers can supply additional CA roots, never a verification bypass.
+// Client returns a copy of hc that preserves certificate and hostname
+// validation, refuses redirects, and drops any cookie jar. Public callers can
+// supply additional CA roots, never a verification bypass.
+//
+// Client inspects the caller's transport, so call it once at configuration
+// time, before any request uses that transport, and reuse the result:
+// net/http initializes a Transport's TLS settings on its first RoundTrip, and
+// inspecting a transport while another goroutine sends on it is a data race
+// (#285). When hc has no Transport, the result gets a private clone of
+// http.DefaultTransport; the shared global is never inspected or handed out.
 func Client(hc *http.Client) (*http.Client, error) {
-	c := &http.Client{}
+	verifiedClient := &http.Client{}
 	if hc != nil {
-		*c = *hc
+		*verifiedClient = *hc
 	}
-	transport := c.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
+	if verifiedClient.Transport == nil {
+		verifiedClient.Transport = newPrivateTransport()
 	}
-	t, ok := transport.(*http.Transport)
-	if !ok || t.DialTLS != nil || t.DialTLSContext != nil ||
-		(t.TLSClientConfig != nil && (t.TLSClientConfig.InsecureSkipVerify || t.TLSClientConfig.ServerName != "")) {
+	transport, ok := verifiedClient.Transport.(*http.Transport)
+	if !ok || transport.DialTLS != nil || transport.DialTLSContext != nil ||
+		(transport.TLSClientConfig != nil && (transport.TLSClientConfig.InsecureSkipVerify || transport.TLSClientConfig.ServerName != "")) {
 		return nil, errors.New("node transport requires certificate and hostname verification")
 	}
-	c.Transport = t
-	c.Jar = nil
-	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return c, nil
+	verifiedClient.Jar = nil
+	verifiedClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return verifiedClient, nil
+}
+
+// newPrivateTransport clones the standard library defaults. Clone first runs
+// the transport's own one-time protocol setup under its sync.Once, so it does
+// not race with requests other code sends on http.DefaultTransport.
+func newPrivateTransport() *http.Transport {
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		return defaultTransport.Clone()
+	}
+	return &http.Transport{Proxy: http.ProxyFromEnvironment}
 }

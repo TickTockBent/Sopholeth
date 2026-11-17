@@ -31,6 +31,21 @@
 
 ### Replication
 
+- Fix a data race between concurrent gossip sends (#285). Every gossip send
+  and bootstrap request re-checked its HTTP client's TLS settings, reading the
+  shared `http.DefaultTransport` while another send's first request was
+  initializing it; since the dispatcher (#212) runs sends concurrently, a
+  node's first gossip burst raced. The gossip and bootstrap clients are now
+  verified once, when they are configured, and reused for every request.
+  A client with no transport gets a private clone of the default transport;
+  the shared global is never inspected or used by node or `soph` requests
+  verified this way. Verification guarantees are unchanged: certificate and
+  hostname checks stay on, redirects are not followed, cookies are not kept.
+  A client that disables verification is now rejected when it is configured
+  (`ConfigureBootstrap` and `HTTPTransport.SetHTTPClient` return an error,
+  and `ClusterNode.Start` fails) instead of on each send. The server always
+  configures the default client, so its startup is unchanged. Gossip and
+  bootstrap now keep their own connection pools. No wire change.
 - Forward gossip when the local store is full (#163). A node that received a
   PUT it could not store used to return before forwarding it, after already
   marking it seen, so above the fanout threshold every peer behind it lost
