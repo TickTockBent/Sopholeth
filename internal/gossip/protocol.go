@@ -170,15 +170,14 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 		stopChan:          make(chan struct{}),
 		seenMessages:      make(map[string]time.Time),
 	}
-	protocol.setSendLimits(DefaultSendQueueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+	protocol.setSendLimits(defaultSendLimits())
 	return protocol
 }
 
 // setSendLimits replaces the outbound dispatcher. Call it only before any
 // message is queued (construction and tests).
-func (p *Protocol) setSendLimits(queueDepth, maxConcurrent int, sendTimeout time.Duration) {
-	p.dispatcher = newSendDispatcher(p.localNode.ID, func() Transport { return p.transport },
-		queueDepth, maxConcurrent, sendTimeout)
+func (p *Protocol) setSendLimits(limits sendLimits) {
+	p.dispatcher = newSendDispatcher(p.localNode.ID, func() Transport { return p.transport }, limits)
 }
 
 // EnableMetrics registers Prometheus metrics for cluster health monitoring.

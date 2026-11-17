@@ -19,9 +19,15 @@ const (
 	// DefaultSendQueueDepth is the number of messages that may wait for one
 	// peer. A full queue drops the new message and counts the drop.
 	DefaultSendQueueDepth = 128
+	// DefaultMaxSendsPerPeer is the number of workers draining one peer's
+	// queue, and so its sends in flight. One worker would cap a WAN peer at
+	// about one message per round trip (0.2-0.5s to the testnet roots),
+	// shared between replicas and ACKs.
+	DefaultMaxSendsPerPeer = 4
 	// DefaultMaxConcurrentSends caps outbound gossip sends in flight across
-	// all peers. Each peer also has at most one send in flight.
-	DefaultMaxConcurrentSends = 64
+	// all peers. It is sized so that 64 unanswering peers, each holding
+	// DefaultMaxSendsPerPeer slots, are needed to fill it.
+	DefaultMaxConcurrentSends = 256
 	// DefaultSendTimeout is the deadline for one send, matching the HTTP
 	// transport's client timeout.
 	DefaultSendTimeout = 5 * time.Second
@@ -77,7 +83,7 @@ type sendJob struct {
 }
 
 // peerSendQueue is one peer's FIFO and the context its worker runs under.
-// Cancelling the context stops the worker and aborts its in-flight send.
+// Cancelling the context stops its workers and aborts their in-flight sends.
 type peerSendQueue struct {
 	jobs   chan sendJob
 	ctx    context.Context
@@ -87,8 +93,10 @@ type peerSendQueue struct {
 // sendDispatcher delivers gossip messages to peers asynchronously with
 // explicit bounds:
 //
-//   - one bounded FIFO and one worker goroutine per peer, so each peer has at
-//     most one send in flight and a slow peer only delays its own queue;
+//   - one bounded FIFO per peer, drained by a fixed number of workers, so each
+//     peer has at most that many sends in flight and a slow peer only delays
+//     its own queue. Messages to one peer may complete out of order; the
+//     primitive promises no ordering;
 //   - a global semaphore capping sends in flight across all peers;
 //   - a per-send deadline, derived from a dispatcher context that Stop
 //     cancels, never from a client request;
@@ -97,11 +105,12 @@ type peerSendQueue struct {
 // Queues are created on first use for a peer in the peer table and removed
 // with the peer (eviction or Stop), so goroutines are bounded by peer count.
 type sendDispatcher struct {
-	localID     NodeID
-	transport   func() Transport
-	queueDepth  int
-	sendTimeout time.Duration
-	sendSlots   chan struct{}
+	localID        NodeID
+	transport      func() Transport
+	queueDepth     int
+	workersPerPeer int
+	sendTimeout    time.Duration
+	sendSlots      chan struct{}
 
 	baseCtx    context.Context
 	cancelBase context.CancelFunc
@@ -116,26 +125,48 @@ type sendDispatcher struct {
 	metrics *sendMetrics // nil in tests
 }
 
-func newSendDispatcher(localID NodeID, transport func() Transport, queueDepth, maxConcurrent int, sendTimeout time.Duration) *sendDispatcher {
-	if queueDepth < 1 {
-		queueDepth = DefaultSendQueueDepth
+// sendLimits configures a sendDispatcher. Zero fields take the defaults.
+type sendLimits struct {
+	queueDepth    int
+	sendsPerPeer  int
+	maxConcurrent int
+	sendTimeout   time.Duration
+}
+
+func defaultSendLimits() sendLimits {
+	return sendLimits{
+		queueDepth:    DefaultSendQueueDepth,
+		sendsPerPeer:  DefaultMaxSendsPerPeer,
+		maxConcurrent: DefaultMaxConcurrentSends,
+		sendTimeout:   DefaultSendTimeout,
 	}
-	if maxConcurrent < 1 {
-		maxConcurrent = DefaultMaxConcurrentSends
+}
+
+func newSendDispatcher(localID NodeID, transport func() Transport, limits sendLimits) *sendDispatcher {
+	defaults := defaultSendLimits()
+	if limits.queueDepth < 1 {
+		limits.queueDepth = defaults.queueDepth
 	}
-	if sendTimeout <= 0 {
-		sendTimeout = DefaultSendTimeout
+	if limits.sendsPerPeer < 1 {
+		limits.sendsPerPeer = defaults.sendsPerPeer
+	}
+	if limits.maxConcurrent < 1 {
+		limits.maxConcurrent = defaults.maxConcurrent
+	}
+	if limits.sendTimeout <= 0 {
+		limits.sendTimeout = defaults.sendTimeout
 	}
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	return &sendDispatcher{
-		localID:     localID,
-		transport:   transport,
-		queueDepth:  queueDepth,
-		sendTimeout: sendTimeout,
-		sendSlots:   make(chan struct{}, maxConcurrent),
-		baseCtx:     baseCtx,
-		cancelBase:  cancelBase,
-		queues:      make(map[NodeID]*peerSendQueue),
+		localID:        localID,
+		transport:      transport,
+		queueDepth:     limits.queueDepth,
+		workersPerPeer: limits.sendsPerPeer,
+		sendTimeout:    limits.sendTimeout,
+		sendSlots:      make(chan struct{}, limits.maxConcurrent),
+		baseCtx:        baseCtx,
+		cancelBase:     cancelBase,
+		queues:         make(map[NodeID]*peerSendQueue),
 	}
 }
 
@@ -158,8 +189,10 @@ func (d *sendDispatcher) enqueue(peer *Node, msg *Message) bool {
 			cancel: cancelQueue,
 		}
 		d.queues[peer.ID] = queue
-		d.workers.Add(1)
-		go d.runWorker(queue)
+		d.workers.Add(d.workersPerPeer)
+		for workerIndex := 0; workerIndex < d.workersPerPeer; workerIndex++ {
+			go d.runWorker(queue)
+		}
 	}
 	// Count before the channel send so the worker never decrements first.
 	d.pending.Add(1)
@@ -184,7 +217,7 @@ func (d *sendDispatcher) enqueue(peer *Node, msg *Message) bool {
 	}
 }
 
-// removePeer stops the peer's worker, aborts its in-flight send and discards
+// removePeer stops the peer's workers, aborts its in-flight sends and discards
 // whatever is still queued. It does not wait for the worker to exit.
 func (d *sendDispatcher) removePeer(id NodeID) {
 	d.mu.Lock()

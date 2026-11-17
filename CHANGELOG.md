@@ -38,9 +38,11 @@
   (one unanswering peer used to add 5s to every write, two used the whole 10s
   handler budget). An inbound gossip PUT stores the value and returns; its ACK
   and epidemic forwards are queued instead of sent before the response.
-  Each peer has one worker, a FIFO of 128 messages and at most one send in
-  flight; at most 64 sends are in flight in total, and each send has a 5s
-  deadline. A full queue drops the message and counts it. Delivery is not tied
+  Each peer has a FIFO of 128 messages drained by 4 workers, so up to 4 sends
+  to it are in flight and a WAN peer is not held to one message per round
+  trip; at most 256 sends are in flight in total, and each send has a 5s
+  deadline. Messages to one peer may complete out of order. A full queue drops
+  the message and counts it. Delivery is not tied
   to the client request, so a `202` does not cancel sends still queued.
   Removing a peer or stopping the node cancels its sends. New metrics:
   `gossip_send_queue_dropped_total`, `gossip_send_duration_seconds`,

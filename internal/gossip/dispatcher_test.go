@@ -22,6 +22,7 @@ type scriptedTransport struct {
 	mu              sync.Mutex
 	behaviors       map[NodeID]peerBehavior
 	deliveredAt     map[NodeID][]time.Time
+	deliveredByID   map[string]time.Time
 	inFlight        int
 	maxInFlight     int
 	inFlightPerPeer map[NodeID]int
@@ -33,6 +34,7 @@ func newScriptedTransport() *scriptedTransport {
 	return &scriptedTransport{
 		behaviors:       make(map[NodeID]peerBehavior),
 		deliveredAt:     make(map[NodeID][]time.Time),
+		deliveredByID:   make(map[string]time.Time),
 		inFlightPerPeer: make(map[NodeID]int),
 	}
 }
@@ -74,6 +76,7 @@ func (st *scriptedTransport) Send(ctx context.Context, node *Node, msg *Message)
 	case <-answer:
 		st.mu.Lock()
 		st.deliveredAt[node.ID] = append(st.deliveredAt[node.ID], time.Now())
+		st.deliveredByID[msg.MessageID] = time.Now()
 		st.mu.Unlock()
 		return nil
 	case <-ctx.Done():
@@ -90,17 +93,24 @@ func (st *scriptedTransport) deliveries(id NodeID) []time.Time {
 	return append([]time.Time(nil), st.deliveredAt[id]...)
 }
 
+func (st *scriptedTransport) deliveredAtByID(messageID string) (time.Time, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	deliveredAt, delivered := st.deliveredByID[messageID]
+	return deliveredAt, delivered
+}
+
 func (st *scriptedTransport) snapshot() (inFlight, maxInFlight, maxPerPeer, cancelled int) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.inFlight, st.maxInFlight, st.maxPerPeer, st.cancelledSends
 }
 
-func newScriptedProtocol(t *testing.T, queueDepth, maxConcurrent int, sendTimeout time.Duration) (*Protocol, *scriptedTransport) {
+func newScriptedProtocol(t *testing.T, limits sendLimits) (*Protocol, *scriptedTransport) {
 	t.Helper()
 	localNode := &Node{ID: "local", Address: "localhost", Port: 9090, HTTPPort: 8080, Enclave: "default"}
 	protocol := NewProtocol(localNode, 3, "")
-	protocol.setSendLimits(queueDepth, maxConcurrent, sendTimeout)
+	protocol.setSendLimits(limits)
 	transport := newScriptedTransport()
 	protocol.SetTransport(transport)
 	t.Cleanup(func() { protocol.dispatcher.stop() })
@@ -142,7 +152,7 @@ func TestBroadcastDeadPeersDoNotDelayHealthyPeers(t *testing.T) {
 	for _, deadCount := range []int{1, 2} {
 		for round := 0; round < 5; round++ {
 			t.Run(fmt.Sprintf("dead=%d/round=%d", deadCount, round), func(t *testing.T) {
-				protocol, transport := newScriptedProtocol(t, DefaultSendQueueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+				protocol, transport := newScriptedProtocol(t, defaultSendLimits())
 
 				var peerIDs []NodeID
 				for i := 0; i < deadCount; i++ {
@@ -178,7 +188,7 @@ func TestBroadcastDeadPeersDoNotDelayHealthyPeers(t *testing.T) {
 // A slow peer (answers after 2s) does not delay delivery to healthy peers,
 // and still receives the write itself.
 func TestBroadcastSlowPeerDoesNotDelayHealthyPeers(t *testing.T) {
-	protocol, transport := newScriptedProtocol(t, DefaultSendQueueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
 	transport.setBehavior("slow", peerBehavior{delay: 2 * time.Second})
 	for _, id := range []NodeID{"slow", "healthy-0", "healthy-1"} {
 		addTestPeer(t, protocol, id)
@@ -203,7 +213,7 @@ func TestBroadcastSlowPeerDoesNotDelayHealthyPeers(t *testing.T) {
 
 // Above the fanout threshold, forwarding to dead targets returns at once.
 func TestForwardAboveThresholdDoesNotWaitOnDeadTargets(t *testing.T) {
-	protocol, transport := newScriptedProtocol(t, DefaultSendQueueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
 	peerCount := FanoutThreshold + 6
 	for i := 0; i < peerCount; i++ {
 		id := NodeID(fmt.Sprintf("dead-%d", i))
@@ -227,15 +237,19 @@ func TestForwardAboveThresholdDoesNotWaitOnDeadTargets(t *testing.T) {
 func TestSendQueueFullDropsAndCounts(t *testing.T) {
 	const queueDepth = 8
 	const burst = 500
-	protocol, transport := newScriptedProtocol(t, queueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+	limits := defaultSendLimits()
+	limits.queueDepth = queueDepth
+	protocol, transport := newScriptedProtocol(t, limits)
 	transport.setBehavior("dead", peerBehavior{dead: true})
 	addTestPeer(t, protocol, "dead")
 
-	// Let the worker take the first message so the count below is exact.
-	protocol.QueueToPeer("dead", putMessage("first"))
-	waitUntil(t, time.Second, "first send in flight", func() bool {
+	// Occupy every worker first so the counts below are exact.
+	for i := 0; i < limits.sendsPerPeer; i++ {
+		protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("first-%d", i)))
+	}
+	waitUntil(t, time.Second, "every worker busy", func() bool {
 		inFlight, _, _, _ := transport.snapshot()
-		return inFlight == 1
+		return inFlight == limits.sendsPerPeer
 	})
 
 	goroutinesBefore := runtime.NumGoroutine()
@@ -250,16 +264,16 @@ func TestSendQueueFullDropsAndCounts(t *testing.T) {
 	if dropped := protocol.dispatcher.dropped.Load(); dropped != burst-queueDepth {
 		t.Fatalf("dropped = %d, want %d", dropped, burst-queueDepth)
 	}
-	if pending := protocol.dispatcher.pending.Load(); pending != queueDepth+1 {
-		t.Fatalf("pending = %d, want %d (queue depth plus one in flight)", pending, queueDepth+1)
+	if pending := protocol.dispatcher.pending.Load(); pending != int64(queueDepth+limits.sendsPerPeer) {
+		t.Fatalf("pending = %d, want %d (queue depth plus the sends in flight)", pending, queueDepth+limits.sendsPerPeer)
 	}
 }
 
-// The global cap bounds sends in flight across peers, and each peer has at
-// most one send in flight.
-func TestSendConcurrencyBounds(t *testing.T) {
-	const maxConcurrent = 3
-	protocol, transport := newScriptedProtocol(t, DefaultSendQueueDepth, maxConcurrent, DefaultSendTimeout)
+// The global cap bounds sends in flight across peers.
+func TestSendGlobalConcurrencyCap(t *testing.T) {
+	limits := defaultSendLimits()
+	limits.maxConcurrent = 3
+	protocol, transport := newScriptedProtocol(t, limits)
 	for i := 0; i < 8; i++ {
 		id := NodeID(fmt.Sprintf("dead-%d", i))
 		transport.setBehavior(id, peerBehavior{dead: true})
@@ -272,22 +286,86 @@ func TestSendConcurrencyBounds(t *testing.T) {
 	}
 	waitUntil(t, time.Second, "global cap reached", func() bool {
 		inFlight, _, _, _ := transport.snapshot()
-		return inFlight == maxConcurrent
+		return inFlight == limits.maxConcurrent
 	})
 	time.Sleep(50 * time.Millisecond)
-	_, maxInFlight, maxPerPeer, _ := transport.snapshot()
-	if maxInFlight != maxConcurrent {
-		t.Fatalf("max in flight = %d, want %d", maxInFlight, maxConcurrent)
+	if _, maxInFlight, _, _ := transport.snapshot(); maxInFlight != limits.maxConcurrent {
+		t.Fatalf("max in flight = %d, want %d", maxInFlight, limits.maxConcurrent)
 	}
-	if maxPerPeer != 1 {
-		t.Fatalf("max in flight to one peer = %d, want 1", maxPerPeer)
+}
+
+// One peer has at most sendsPerPeer sends in flight, however much is queued.
+func TestSendPerPeerConcurrencyLimit(t *testing.T) {
+	limits := defaultSendLimits()
+	protocol, transport := newScriptedProtocol(t, limits)
+	transport.setBehavior("dead", peerBehavior{dead: true})
+	addTestPeer(t, protocol, "dead")
+	for i := 0; i < 3*limits.sendsPerPeer; i++ {
+		protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("m%d", i)))
+	}
+	waitUntil(t, time.Second, "per-peer limit reached", func() bool {
+		inFlight, _, _, _ := transport.snapshot()
+		return inFlight == limits.sendsPerPeer
+	})
+	time.Sleep(50 * time.Millisecond)
+	if _, _, maxPerPeer, _ := transport.snapshot(); maxPerPeer != limits.sendsPerPeer {
+		t.Fatalf("max in flight to one peer = %d, want %d", maxPerPeer, limits.sendsPerPeer)
+	}
+}
+
+// A WAN-latency peer (200ms per send) under a steady write rate: below
+// sendsPerPeer / RTT (20 msg/s with the defaults) nothing is dropped and the
+// queue does not build up. A single worker per peer manages only 5 msg/s
+// here, so its queue would grow by 10 messages a second.
+func TestSteadyWritesToWANLatencyPeerAreNotDropped(t *testing.T) {
+	const (
+		peerLatency  = 200 * time.Millisecond
+		writesPerSec = 15
+		duration     = 2 * time.Second
+	)
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
+	transport.setBehavior("wan", peerBehavior{delay: peerLatency})
+	addTestPeer(t, protocol, "wan")
+
+	writeCount := int(duration.Seconds() * writesPerSec)
+	queuedAt := make([]time.Time, writeCount)
+	ticker := time.NewTicker(time.Second / writesPerSec)
+	defer ticker.Stop()
+	for writeIndex := 0; writeIndex < writeCount; writeIndex++ {
+		<-ticker.C
+		queuedAt[writeIndex] = time.Now()
+		if err := protocol.BroadcastToEnclave(putMessage(fmt.Sprintf("steady-%d", writeIndex))); err != nil {
+			t.Fatalf("BroadcastToEnclave: %v", err)
+		}
+	}
+	// Generous drain wait so a regression reports the latency, not a timeout.
+	waitUntil(t, 15*time.Second, "steady writes delivered", func() bool { return protocol.dispatcher.pending.Load() == 0 })
+
+	if dropped := protocol.dispatcher.dropped.Load(); dropped != 0 {
+		t.Fatalf("dropped %d of %d writes at %d/s to a %v peer", dropped, writeCount, writesPerSec, peerLatency)
+	}
+	var worstLatency time.Duration
+	for writeIndex := 0; writeIndex < writeCount; writeIndex++ {
+		deliveredAt, delivered := transport.deliveredAtByID(fmt.Sprintf("steady-%d", writeIndex))
+		if !delivered {
+			t.Fatalf("write %d was not delivered", writeIndex)
+		}
+		if latency := deliveredAt.Sub(queuedAt[writeIndex]); latency > worstLatency {
+			worstLatency = latency
+		}
+	}
+	t.Logf("%d writes at %d/s to a %v peer: worst queue-to-delivery %v", writeCount, writesPerSec, peerLatency, worstLatency)
+	if worstLatency > 3*peerLatency {
+		t.Fatalf("worst queue-to-delivery latency %v; the queue is building up", worstLatency)
 	}
 }
 
 // Each send has its own deadline: a dead peer's sends time out one by one
 // instead of blocking its queue forever.
 func TestSendDeadlinePerMessage(t *testing.T) {
-	protocol, transport := newScriptedProtocol(t, DefaultSendQueueDepth, DefaultMaxConcurrentSends, 50*time.Millisecond)
+	limits := defaultSendLimits()
+	limits.sendTimeout = 50 * time.Millisecond
+	protocol, transport := newScriptedProtocol(t, limits)
 	transport.setBehavior("dead", peerBehavior{dead: true})
 	addTestPeer(t, protocol, "dead")
 	for i := 0; i < 3; i++ {
@@ -303,7 +381,7 @@ func TestSendDeadlinePerMessage(t *testing.T) {
 // Stop aborts in-flight sends, discards queued ones, and leaves no workers.
 func TestStopAbortsInFlightSendsWithoutLeaks(t *testing.T) {
 	goroutinesBefore := runtime.NumGoroutine()
-	protocol, transport := newScriptedProtocol(t, DefaultSendQueueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
 	for i := 0; i < 5; i++ {
 		id := NodeID(fmt.Sprintf("dead-%d", i))
 		transport.setBehavior(id, peerBehavior{dead: true})
@@ -316,7 +394,7 @@ func TestStopAbortsInFlightSendsWithoutLeaks(t *testing.T) {
 	}
 	waitUntil(t, time.Second, "sends in flight", func() bool {
 		inFlight, _, _, _ := transport.snapshot()
-		return inFlight == 5
+		return inFlight == 5*DefaultMaxSendsPerPeer
 	})
 
 	startedAt := time.Now()
@@ -338,23 +416,23 @@ func TestStopAbortsInFlightSendsWithoutLeaks(t *testing.T) {
 	}
 }
 
-// Removing a peer stops its worker and aborts its in-flight send.
-func TestRemovePeerStopsItsWorker(t *testing.T) {
-	protocol, transport := newScriptedProtocol(t, DefaultSendQueueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+// Removing a peer stops its workers and aborts its in-flight sends.
+func TestRemovePeerStopsItsWorkers(t *testing.T) {
+	protocol, transport := newScriptedProtocol(t, defaultSendLimits())
 	transport.setBehavior("dead", peerBehavior{dead: true})
 	addTestPeer(t, protocol, "dead")
-	for i := 0; i < 4; i++ {
+	for i := 0; i < DefaultMaxSendsPerPeer+3; i++ {
 		protocol.QueueToPeer("dead", putMessage(fmt.Sprintf("m%d", i)))
 	}
-	waitUntil(t, time.Second, "send in flight", func() bool {
+	waitUntil(t, time.Second, "sends in flight", func() bool {
 		inFlight, _, _, _ := transport.snapshot()
-		return inFlight == 1
+		return inFlight == DefaultMaxSendsPerPeer
 	})
 
 	protocol.removePeer("dead")
 	waitForSendsIdle(t, protocol)
-	if _, _, _, cancelled := transport.snapshot(); cancelled != 1 {
-		t.Fatalf("cancelled sends = %d, want 1", cancelled)
+	if _, _, _, cancelled := transport.snapshot(); cancelled != DefaultMaxSendsPerPeer {
+		t.Fatalf("cancelled sends = %d, want %d (the in-flight ones; queued ones are discarded unsent)", cancelled, DefaultMaxSendsPerPeer)
 	}
 	if protocol.QueueToPeer("dead", putMessage("late")) {
 		t.Fatal("QueueToPeer accepted a removed peer")

@@ -38,8 +38,9 @@ the [`soph` client](cli.md) is a separate executable.
 
 Gossip sends (writes, forwards and ACKs) go through a bounded dispatcher in
 [internal/gossip/dispatcher.go](../internal/gossip/dispatcher.go). Each peer
-has one worker, a FIFO queue and at most one send in flight, and a global cap
-bounds sends in flight across peers. Each send has its own deadline. Sends are
+has a FIFO queue drained by a few workers (4 by default), which is also its
+limit on sends in flight, and a global cap bounds sends in flight across
+peers. Sends to one peer may complete out of order. Each send has its own deadline. Sends are
 not tied to the client's request, so a slow or unreachable peer delays only
 its own queue, and a `202` does not cancel delivery to other peers. When a
 peer's queue is full, new messages for it are dropped and counted in
