@@ -5,6 +5,8 @@ on:
     branches: [ main ]
     paths:
       - 'scripts/vercel-ignore.sh'
+      - 'scripts/ci-changed.py'
+      - '.github/go-test-paths.txt'
       - 'sites/*/vercel.json'
       - 'sites/*/.vercelignore'
       - 'test/ci/**'
@@ -13,6 +15,8 @@ on:
     branches: [ main ]
     paths:
       - 'scripts/vercel-ignore.sh'
+      - 'scripts/ci-changed.py'
+      - '.github/go-test-paths.txt'
       - 'sites/*/vercel.json'
       - 'sites/*/.vercelignore'
       - 'test/ci/**'

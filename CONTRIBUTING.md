@@ -72,10 +72,12 @@ the project. See the project's [license](LICENSE) for the current terms.
 
 ## CI selection
 
-GitHub workflows use
-[path filters](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)
-on main pushes and pull requests. They evaluate the push/PR diff, not just its
-last commit. The expected work is:
+GitHub workflows select work from the push or pull request diff, not just its
+last commit. Docker and the deployment-filter tests use native
+[path filters](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore).
+The Test workflow runs on every main push and pull request and decides inside
+the run, from [`.github/go-test-paths.txt`](.github/go-test-paths.txt), whether
+the Go suite is needed. The expected work is:
 
 | Change | Go build/race tests | Node Docker image | Vercel |
 | --- | --- | --- | --- |
@@ -88,8 +90,8 @@ last commit. The expected work is:
 | Go dependency manifests/vendor | Run | Run | Skip |
 | Dockerfile or .dockerignore | Skip | Run | Skip |
 
-The Go workflow also watches `Makefile` and its own definition; Docker watches
-its workflow. Embedded inputs include `cmd/dashboard/web/` and the four
+The Go suite also runs for `Makefile`, its workflow definitions, and its path
+list and change-detection script; Docker watches its workflow. Embedded inputs include `cmd/dashboard/web/` and the four
 explicit files in `sites/stream.go`. The image builds only `cmd/server`, so
 `internal/client` and `internal/dashboard` are excluded. Update filters when
 adding an imported package, embedded resource, or build input that changes
@@ -100,8 +102,48 @@ base-image refreshes. New commits cancel superseded PR runs; main/release
 publishing runs finish normally. A separate fast workflow tests the deployment
 filters when their scripts, configurations, tests, or workflow files change.
 
-Main currently has no required checks. A workflow skipped by native path
-filters has no completed check; if branch protection later requires one,
-introduce an always-reported gate instead of requiring a filtered workflow.
+`main` requires the **Test gate** check. It always reports: it passes when no
+Go-relevant path changed and otherwise requires the Go suite to pass. Do not
+make a natively path-filtered workflow a required check; a skipped workflow
+reports nothing and blocks the merge.
+
+## Publishing and protected refs
+
+The node binary embeds the omega trust anchor, so publishing is gated (#223):
+
+- Pull requests build the Docker image and never push it.
+- Every publishing run first runs the Go suite on the same commit
+  ([`go-tests.yml`](.github/workflows/go-tests.yml)) and pushes nothing if it
+  fails.
+- `main` pushes (and manual runs on `main`) publish `:edge` and `:sha-<short>`.
+  They never move `:latest`.
+- A `v*` tag publishes the version tags and, for non-prerelease versions,
+  `:latest`. Before that, the **Verify release** job checks that the tagged
+  commit is reachable from `main` and runs `make check-public-release`. That job
+  uses the `release` environment, which holds `OMEGA_EXPECTED_SHA256`, requires
+  a reviewer, and accepts only `v*` tags. A repository variable of the same name
+  is not enough: the job fails when the environment value is empty.
+- Manual runs on any other ref publish nothing.
+
+Repository settings that back this up are kept as JSON in
+[`.github/rulesets/`](.github/rulesets/):
+
+- `main.json`: pull requests required (no approval count, since the repository
+  has one maintainer), Test gate required, linear history, squash or rebase
+  merges, no force-push or deletion, and no bypass list. An emergency change
+  means editing or disabling the ruleset, which only an admin can do and which
+  is recorded in the repository's rule history.
+- `release-tags.json`: only repository admins may create, move, or delete `v*`
+  tags.
+
+Apply or update them with the GitHub API, for example:
+
+```sh
+gh api -X POST repos/TickTockBent/Sopholeth/rulesets --input .github/rulesets/main.json
+gh api -X PUT repos/TickTockBent/Sopholeth/rulesets/<id> --input .github/rulesets/main.json
+```
+
+Create the `release` environment before pushing any `v*` tag. A workflow that
+names a missing environment creates it with no protection.
 See [site deployment filtering](sites/README.md#deploy-only-changed-sites) for
 Vercel comparison and first-deployment behavior.

@@ -1,0 +1,34 @@
+name: Go tests
+
+# Reusable Go build and race-test job. Test calls it for main pushes and pull
+# requests; Build and Push Docker Image calls it before publishing, so an image
+# is never pushed from a commit that has not passed the suite in the same run.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.27.1'
+
+    - name: Build
+      run: make build
+
+    - name: Test
+      run: make test-race
+
+    - name: Test privileged setup and unprivileged renewal
+      run: |
+        go test -race -c -o "$RUNNER_TEMP/omega-ownership.test" ./internal/omega
+        sudo "$RUNNER_TEMP/omega-ownership.test" -test.run '^TestRenewalWithServiceOwnership$' -test.v

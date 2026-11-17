@@ -1,11 +1,21 @@
 name: Build and Push Docker Image
 
+# Publishing rules (#223):
+# - Pull requests build the image and never push.
+# - Nothing is pushed until the Go suite passes on the same commit in this run.
+# - main (push or manual run) publishes :edge and :sha-<short> only.
+# - v* tags publish the version tags and :latest (not for prereleases), after
+#   the tagged commit is shown to be on main and the embedded trust anchor
+#   matches OMEGA_EXPECTED_SHA256 from the protected "release" environment.
+# - Manual runs on any other ref publish nothing.
+
 on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
     # Only the node is shipped in this image. Tag releases and manual runs
-    # still build even when no matching path changed.
+    # still build even when no matching path changed (GitHub does not apply
+    # path filters to tag pushes).
     paths:
       - 'Dockerfile'
       - '.dockerignore'
@@ -44,6 +54,9 @@ on:
       - '!**/*.md'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -54,6 +67,8 @@ env:
 
 jobs:
   build:
+    name: Build (pull request, no push)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -62,23 +77,87 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Go for public release validation
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  test:
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    uses: ./.github/workflows/go-tests.yml
+
+  release-check:
+    name: Verify release
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # Required reviewers and the v* deployment policy live on this environment,
+    # and so does OMEGA_EXPECTED_SHA256. A repository variable of the same name
+    # is not consulted: the check below fails when the value is empty.
+    environment: release
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Require the tagged commit to be on main
+      run: |
+        tagged_commit=$(git rev-parse "${GITHUB_SHA}^{commit}")
+        git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+        if ! git merge-base --is-ancestor "$tagged_commit" origin/main; then
+          echo "::error::$GITHUB_REF_NAME points at $tagged_commit, which is not reachable from main"
+          exit 1
+        fi
+        echo "$GITHUB_REF_NAME ($tagged_commit) is on main"
+
+    - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.27.1'
 
     - name: Verify public release authority
-      if: startsWith(github.ref, 'refs/tags/v')
       env:
         OMEGA_EXPECTED_SHA256: ${{ vars.OMEGA_EXPECTED_SHA256 }}
-      run: make check-public-release
+      run: |
+        if [ -z "$OMEGA_EXPECTED_SHA256" ]; then
+          echo "::error::OMEGA_EXPECTED_SHA256 is not set on the release environment"
+          exit 1
+        fi
+        make check-public-release
+
+  publish:
+    needs: [ test, release-check ]
+    if: >-
+      always() &&
+      github.event_name != 'pull_request' &&
+      needs.test.result == 'success' &&
+      (needs.release-check.result == 'success' ||
+       (needs.release-check.result == 'skipped' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
     - name: Log in to Docker Hub
-      if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
@@ -90,20 +169,21 @@ jobs:
       uses: docker/metadata-action@v5
       with:
         images: ${{ env.IMAGE_NAME }}
+        flavor: |
+          latest=false
         tags: |
-          type=ref,event=branch
-          type=ref,event=pr
+          type=edge,branch=main
+          type=sha
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
-          type=sha
-          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
     - name: Build and push
       uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile
-        push: ${{ github.event_name != 'pull_request' }}
+        push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha

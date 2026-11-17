@@ -15,6 +15,13 @@
 
 ### Repository maintenance
 
+- Gate Docker publishing on tests and protected refs (#223). Publishing runs
+  the Go suite on the same commit first. `main` publishes `:edge` and
+  `:sha-<short>`; only `v*` release tags publish `:latest`, after the tagged
+  commit is shown to be on `main` and the trust anchor is checked against
+  `OMEGA_EXPECTED_SHA256` from the reviewer-protected `release` environment.
+  The Test workflow now always reports a required **Test gate** check. The
+  `main` and `v*` tag rulesets are kept in `.github/rulesets/`.
 - Remove archived burn-in output, completed rehearsal/audit reports, the old
   stream mockup, and unused marketing assets. Condense the network/stream plans
   and omega design; update current guides for the running public testnet.
