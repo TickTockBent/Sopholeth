@@ -31,6 +31,23 @@
 
 ### Replication
 
+- Send gossip through a bounded asynchronous dispatcher, so a slow, dead or
+  unanswering peer no longer delays a write or delivery to healthy peers
+  (#212, #167). A client PUT stores locally, queues the broadcast and answers
+  on quorum or the write timeout; it no longer waits for each peer in turn
+  (one unanswering peer used to add 5s to every write, two used the whole 10s
+  handler budget). An inbound gossip PUT stores the value and returns; its ACK
+  and epidemic forwards are queued instead of sent before the response.
+  Each peer has one worker, a FIFO of 128 messages and at most one send in
+  flight; at most 64 sends are in flight in total, and each send has a 5s
+  deadline. A full queue drops the message and counts it. Delivery is not tied
+  to the client request, so a `202` does not cancel sends still queued.
+  Removing a peer or stopping the node cancels its sends. New metrics:
+  `gossip_send_queue_dropped_total`, `gossip_send_duration_seconds`,
+  `gossip_sends_in_flight` and `gossip_sends_queued`. No wire change.
+- Replicate writes even when quorum is one (#215). A node with replication
+  factor 1 still confirms on its local write, but now also sends the write to
+  its enclave peers instead of keeping it local.
 - Apply shared, configurable key/value limits to client and peer writes
   (defaults: 1 KiB keys, 100 KiB values), rejecting oversized writes before
   storage, ACKs, or forwarding. Clamp peer TTLs to the node's configured bounds

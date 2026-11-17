@@ -314,19 +314,25 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		return fmt.Errorf("local write failed: %w", err)
 	}
 
-	// Check if local write is sufficient for quorum (single node or single-node enclave)
-	if writeOp.Confirmations >= quorum {
+	// Every accepted write is offered to the enclave, whatever the quorum:
+	// quorum only governs what the client is told (#215). The broadcast only
+	// queues sends, so the client's answer depends on quorum or the write
+	// timeout, never on how fast each peer responds (#212). Delivery is not
+	// tied to ctx, so a 202 does not cancel sends to the remaining peers.
+	logging.Debug("[%s] Broadcasting PUT for key %s to enclave peers", cn.localNode.ID, key)
+	if err := cn.protocol.BroadcastToEnclave(msg); err != nil {
+		logging.Warn("[%s] Failed to broadcast write to enclave: %v", cn.localNode.ID, err)
+	}
+
+	// The local write is the first confirmation; a quorum of one is met now
+	// (single-node enclave, or RF=1).
+	if quorum <= 1 {
 		cn.writesMutex.Lock()
 		delete(cn.pendingWrites, msg.MessageID)
 		cn.writesMutex.Unlock()
 		writeOp.markComplete()
-		logging.Debug("Write completed locally (quorum=%d, confirmations=%d)", quorum, writeOp.Confirmations)
+		logging.Debug("Write completed locally (quorum=%d)", quorum)
 		return nil
-	}
-
-	logging.Debug("[%s] Broadcasting PUT for key %s to enclave peers", cn.localNode.ID, key)
-	if err := cn.protocol.BroadcastToEnclave(ctx, msg); err != nil {
-		logging.Warn("[%s] Failed to broadcast write to enclave: %v", cn.localNode.ID, err)
 	}
 
 	select {
@@ -417,30 +423,25 @@ func (cn *ClusterNode) handlePutMessage(msg *gossip.Message) error {
 		Timestamp: time.Now(),
 	}
 
-	cn.writesMutex.RLock()
-	peers := cn.protocol.GetPeers()
-	cn.writesMutex.RUnlock()
-
-	delivered := false
-	for _, peer := range peers {
-		if peer.ID == msg.From {
-			logging.Debug("[%s] Sending ACK for key %s to %s", cn.localNode.ID, msg.Key, peer.ID)
-			cn.protocol.Send(context.Background(), peer, ack)
-			delivered = true
-			break
-		}
+	// The ACK and the epidemic forwards are queued, not sent inline, so this
+	// handler returns to the upstream sender right after the local store and
+	// MarkSeen. Waiting on them here chained per-hop timeouts across the
+	// fanout tree and piled up handler goroutines (#167).
+	queuedToPeer := cn.protocol.QueueToPeer(msg.From, ack)
+	if queuedToPeer {
+		logging.Debug("[%s] Queued ACK for key %s to %s", cn.localNode.ID, msg.Key, msg.From)
 	}
 	// If the originator isn't in the HTTP peer list, it may be a transient
 	// child attached via WS. The substrate's AckRouter looks up the
 	// originating connection by messageId and writes the ACK to that pipe.
-	if !delivered && cn.ackRouter != nil {
+	if !queuedToPeer && cn.ackRouter != nil {
 		if cn.ackRouter.RouteAck(ack) {
 			logging.Debug("[%s] Routed ACK for key %s back through WS attachment", cn.localNode.ID, msg.Key)
 		}
 	}
 
 	// Continue epidemic forwarding to other enclave peers
-	cn.protocol.ForwardToEnclave(context.Background(), msg)
+	cn.protocol.ForwardToEnclave(msg)
 
 	// Fan the stored replica out to attached transient children so they
 	// see other agents' writes in their local store. The broadcaster

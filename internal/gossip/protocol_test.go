@@ -500,9 +500,10 @@ func TestBroadcastToEnclaveFullBroadcastBelowThreshold(t *testing.T) {
 		MessageID: "test-msg-1",
 	}
 
-	if err := p.BroadcastToEnclave(context.Background(), msg); err != nil {
+	if err := p.BroadcastToEnclave(msg); err != nil {
 		t.Fatalf("BroadcastToEnclave error: %v", err)
 	}
+	waitForSendsIdle(t, p)
 
 	// Every peer should have received exactly one send
 	for i := 0; i < FanoutThreshold-1; i++ {
@@ -536,9 +537,10 @@ func TestBroadcastToEnclaveFanoutAboveThreshold(t *testing.T) {
 		MessageID: "test-msg-2",
 	}
 
-	if err := p.BroadcastToEnclave(context.Background(), msg); err != nil {
+	if err := p.BroadcastToEnclave(msg); err != nil {
 		t.Fatalf("BroadcastToEnclave error: %v", err)
 	}
+	waitForSendsIdle(t, p)
 
 	// Count total sends — should be √15 ≈ 4 (ceil), not 15
 	totalSends := 0
@@ -575,7 +577,8 @@ func TestForwardToEnclaveSkipsBelowThreshold(t *testing.T) {
 		MessageID: "test-msg-3",
 	}
 
-	p.ForwardToEnclave(context.Background(), msg)
+	p.ForwardToEnclave(msg)
+	waitForSendsIdle(t, p)
 
 	// No sends — originator already sent to all peers directly
 	for i := 0; i < 3; i++ {
@@ -608,7 +611,8 @@ func TestForwardToEnclaveAboveThreshold(t *testing.T) {
 		MessageID: "test-msg-4",
 	}
 
-	p.ForwardToEnclave(context.Background(), msg)
+	p.ForwardToEnclave(msg)
+	waitForSendsIdle(t, p)
 
 	// Should have sent to √N peers, excluding the sender (peer-0)
 	totalSends := 0
@@ -644,7 +648,8 @@ func TestBroadcastToEnclaveOnlySameEnclave(t *testing.T) {
 		MessageID: "test-msg-5",
 	}
 
-	p.BroadcastToEnclave(context.Background(), msg)
+	p.BroadcastToEnclave(msg)
+	waitForSendsIdle(t, p)
 
 	// Same enclave peer should receive the message
 	if count := mt.getSendCount("same"); count != 1 {

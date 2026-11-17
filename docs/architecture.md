@@ -27,11 +27,24 @@ the [`soph` client](cli.md) is a separate executable.
 
 1. A client writes a key, byte value, and TTL.
 2. The receiving node stores the value in memory and begins its local TTL.
-3. When replication peers are known, it sends the write through enclave gossip.
-4. Each accepting replica stores the value with a new local TTL.
-5. The origin reports whether it observed the quorum threshold.
+3. When replication peers are known, it queues the write for enclave gossip,
+   whatever the quorum size. It does not wait for the sends.
+4. Each accepting replica stores the value with a new local TTL, queues an ACK
+   to the origin and any epidemic forwards, and answers its sender.
+5. The origin reports whether it observed the quorum threshold before its
+   write timeout.
 6. Reads and listings exclude a value at local expiration. A periodic sweep
    removes the expired entry from the store.
+
+Gossip sends (writes, forwards and ACKs) go through a bounded dispatcher in
+[internal/gossip/dispatcher.go](../internal/gossip/dispatcher.go). Each peer
+has one worker, a FIFO queue and at most one send in flight, and a global cap
+bounds sends in flight across peers. Each send has its own deadline. Sends are
+not tied to the client's request, so a slow or unreachable peer delays only
+its own queue, and a `202` does not cancel delivery to other peers. When a
+peer's queue is full, new messages for it are dropped and counted in
+`gossip_send_queue_dropped_total`; there is no retry. Evicting a peer or
+stopping the node cancels its queued and in-flight sends.
 
 There is no client DELETE operation, durable payload archive, or payload
 backfill when a node rejoins. Restarting a node loses its stored values.

@@ -142,6 +142,7 @@ type Protocol struct {
 	metrics           *clusterMetrics      // nil in tests (skip metrics)
 	seenMessages      map[string]time.Time // message ID → expiry time (dedup cache)
 	seenMutex         sync.Mutex
+	dispatcher        *sendDispatcher // bounded async delivery for PUT, forward and ACK
 }
 
 type Transport interface {
@@ -159,7 +160,7 @@ func (p *Protocol) ConfigureBootstrap(client *http.Client, check func(string, []
 
 func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *Protocol {
 	quorumSize := (replicationFactor / 2) + 1
-	return &Protocol{
+	protocol := &Protocol{
 		localNode:         localNode,
 		peers:             make(map[NodeID]*Node),
 		peerFailures:      make(map[NodeID]int),
@@ -169,6 +170,15 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 		stopChan:          make(chan struct{}),
 		seenMessages:      make(map[string]time.Time),
 	}
+	protocol.setSendLimits(DefaultSendQueueDepth, DefaultMaxConcurrentSends, DefaultSendTimeout)
+	return protocol
+}
+
+// setSendLimits replaces the outbound dispatcher. Call it only before any
+// message is queued (construction and tests).
+func (p *Protocol) setSendLimits(queueDepth, maxConcurrent int, sendTimeout time.Duration) {
+	p.dispatcher = newSendDispatcher(p.localNode.ID, func() Transport { return p.transport },
+		queueDepth, maxConcurrent, sendTimeout)
 }
 
 // EnableMetrics registers Prometheus metrics for cluster health monitoring.
@@ -176,6 +186,7 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 // duplicate metric registration across parallel test runs.
 func (p *Protocol) EnableMetrics() {
 	p.metrics = newClusterMetrics()
+	p.dispatcher.metrics = newSendMetrics()
 }
 
 func (p *Protocol) SetTransport(transport Transport) {
@@ -212,6 +223,8 @@ func (p *Protocol) Stop() error {
 	if p.topologyTicker != nil {
 		p.topologyTicker.Stop()
 	}
+	// Abort in-flight gossip sends and discard queued ones.
+	p.dispatcher.stop()
 
 	if p.transport != nil {
 		return p.transport.Stop()
@@ -272,6 +285,8 @@ func (p *Protocol) removePeer(nodeID NodeID) {
 	p.peersMutex.Lock()
 	delete(p.peers, nodeID)
 	delete(p.peerFailures, nodeID)
+	// Under peersMutex so no message can be queued for a peer that is gone.
+	p.dispatcher.removePeer(nodeID)
 	peerCount := len(p.peers)
 	p.peersMutex.Unlock()
 
@@ -592,11 +607,15 @@ func selectRandomPeers(peers []*Node, n int, skipID NodeID) []*Node {
 	return candidates[:n]
 }
 
-// BroadcastToEnclave sends a message to peers in the same enclave.
-// For small enclaves (≤ FanoutThreshold peers), sends to all peers directly.
-// For larger enclaves, uses probabilistic fanout: sends to √N random peers,
-// which forward to their own √N subset. Deduplication prevents re-processing.
-func (p *Protocol) BroadcastToEnclave(ctx context.Context, msg *Message) error {
+// BroadcastToEnclave queues a message for peers in the same enclave.
+// For small enclaves (≤ FanoutThreshold peers), it targets every peer.
+// For larger enclaves, it uses probabilistic fanout: √N random peers, which
+// forward to their own √N subset. Deduplication prevents re-processing.
+//
+// Sends are asynchronous and bounded by the dispatcher (#212): this returns
+// once the message is queued, and delivery is not tied to any caller context,
+// so a slow or dead peer neither delays the caller nor other peers.
+func (p *Protocol) BroadcastToEnclave(msg *Message) error {
 	if p.transport == nil {
 		return fmt.Errorf("transport not set")
 	}
@@ -605,52 +624,54 @@ func (p *Protocol) BroadcastToEnclave(ctx context.Context, msg *Message) error {
 	p.MarkSeen(msg.MessageID)
 
 	peers := p.GetReplicationPeers()
-
-	if len(peers) <= FanoutThreshold {
-		// Small enclave: full broadcast (original behavior)
-		logging.Debug("[%s] Broadcasting %s to %d enclave peers (%s)", p.localNode.ID, msg.Type, len(peers), p.localNode.Enclave)
-		for _, peer := range peers {
-			if err := p.transport.Send(ctx, peer, msg); err != nil {
-				logging.Warn("[%s] Failed to send to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
-			}
-		}
-	} else {
-		// Large enclave: probabilistic fanout
-		fanout := fanoutSize(len(peers))
-		targets := selectRandomPeers(peers, fanout, "")
+	targets := peers
+	if len(peers) > FanoutThreshold {
+		targets = selectRandomPeers(peers, fanoutSize(len(peers)), "")
 		logging.Debug("[%s] Fanout %s to %d/%d enclave peers (%s)", p.localNode.ID, msg.Type, len(targets), len(peers), p.localNode.Enclave)
-		for _, peer := range targets {
-			if err := p.transport.Send(ctx, peer, msg); err != nil {
-				logging.Warn("[%s] Failed to send to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
-			}
-		}
+	} else {
+		logging.Debug("[%s] Broadcasting %s to %d enclave peers (%s)", p.localNode.ID, msg.Type, len(peers), p.localNode.Enclave)
 	}
-
+	for _, peer := range targets {
+		p.QueueToPeer(peer.ID, msg)
+	}
 	return nil
 }
 
 // ForwardToEnclave is called by receiving nodes to continue probabilistic gossip.
-// It forwards the message to √N random enclave peers (excluding the sender),
+// It queues the message for √N random enclave peers (excluding the sender),
 // but only if the enclave is above the fanout threshold. For small enclaves,
 // the originator already sent to everyone, so no forwarding is needed.
-func (p *Protocol) ForwardToEnclave(ctx context.Context, msg *Message) {
+// Like BroadcastToEnclave it never waits on a peer (#167).
+func (p *Protocol) ForwardToEnclave(msg *Message) {
 	peers := p.GetReplicationPeers()
 	if len(peers) <= FanoutThreshold {
 		return // originator already sent to all peers
 	}
 
-	fanout := fanoutSize(len(peers))
-	targets := selectRandomPeers(peers, fanout, msg.From)
+	targets := selectRandomPeers(peers, fanoutSize(len(peers)), msg.From)
 	if len(targets) == 0 {
 		return
 	}
 
 	logging.Debug("[%s] Forwarding %s (key: %s) to %d enclave peers", p.localNode.ID, msg.Type, msg.Key, len(targets))
 	for _, peer := range targets {
-		if err := p.transport.Send(ctx, peer, msg); err != nil {
-			logging.Warn("[%s] Failed to forward to enclave peer %s: %v", p.localNode.ID, peer.ID, err)
-		}
+		p.QueueToPeer(peer.ID, msg)
 	}
+}
+
+// QueueToPeer queues msg for asynchronous delivery to the peer with the given
+// ID. It reports whether that ID is currently in the peer table; a known peer
+// whose send queue is full still returns true, and the drop is counted in
+// gossip_send_queue_dropped_total. It never blocks on the network.
+func (p *Protocol) QueueToPeer(id NodeID, msg *Message) bool {
+	p.peersMutex.RLock()
+	defer p.peersMutex.RUnlock()
+	peer := p.peers[id]
+	if peer == nil {
+		return false
+	}
+	p.dispatcher.enqueue(peer, msg)
+	return true
 }
 
 func (p *Protocol) GetPeers() []*Node {
