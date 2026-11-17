@@ -71,19 +71,8 @@ func openHome(ctx context.Context, home, network string, create bool) (*store, e
 	}
 	s := &store{root: root}
 	fail := func(err error) (*store, error) { s.close(); return nil, err }
-	name := network + ".lock"
-	if info, err := root.Lstat(name); err == nil {
-		if err := safeFile(info); err != nil {
-			return fail(err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fail(err)
-	}
-	s.lock, err = root.OpenFile(name, os.O_CREATE|os.O_RDWR, 0600)
+	s.lock, err = s.openLock(ctx, network+".lock")
 	if err != nil {
-		return fail(err)
-	}
-	if err := s.inherit(s.lock); err != nil {
 		return fail(err)
 	}
 	if err := waitForLock(ctx, s.lock); err != nil {
@@ -103,6 +92,55 @@ func openHome(ctx context.Context, home, network string, create bool) (*store, e
 		}
 	}
 	return s, nil
+}
+
+// openLock opens a lock in this directory, creating it when absent. Only a lock
+// this run created inherits the directory's owner (#236). An existing name may
+// be a hard link to a file elsewhere, and the directory's owner can unlink it
+// between any link-count check and a chown, so an existing lock is never
+// reassigned: it must already belong to the directory's owner.
+func (s *store) openLock(ctx context.Context, name string) (*os.File, error) {
+	if info, err := s.root.Lstat(name); err == nil {
+		if err := safeFile(info); err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		file, err := s.root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+		if err == nil {
+			if err := s.inherit(file); err != nil {
+				return nil, errors.Join(err, file.Close())
+			}
+			return file, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		file, err = s.root.OpenFile(name, os.O_RDWR, 0)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		info, err := file.Stat()
+		if err != nil {
+			return nil, errors.Join(err, file.Close())
+		}
+		owner, err := s.root.Stat(".")
+		if err != nil {
+			return nil, errors.Join(err, file.Close())
+		}
+		if safeFile(info) != nil || !sameOwner(info, owner) {
+			return nil, errors.Join(fmt.Errorf("omega: existing %s must be a 0600 file owned by its directory's owner; remove it and retry", name), file.Close())
+		}
+		return file, nil
+	}
 }
 
 func waitForLock(ctx context.Context, file *os.File) error {
@@ -208,22 +246,17 @@ func (s *store) install(name string, data []byte) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	// A leftover twin is never committed in place, even with matching bytes:
+	// the home's owner can swap its name for a link to a file elsewhere (#236).
 	pending := name + ".pending"
-	existing, readErr := s.read(pending)
-	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return readErr
-	}
-	reuse := readErr == nil && bytes.Equal(existing, data)
-	if readErr == nil && !reuse {
+	if _, err := s.read(pending); err == nil {
 		if err := s.root.Remove(pending); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	flags := os.O_CREATE | os.O_EXCL | os.O_WRONLY
-	if reuse {
-		flags = os.O_WRONLY
-	}
-	f, err := s.root.OpenFile(pending, flags, 0600)
+	f, err := s.root.OpenFile(pending, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -231,10 +264,8 @@ func (s *store) install(name string, data []byte) error {
 	if err := s.inherit(f); err != nil {
 		return err
 	}
-	if !reuse {
-		if _, err := f.Write(data); err != nil {
-			return err
-		}
+	if _, err := f.Write(data); err != nil {
+		return err
 	}
 	if err := s.phase(name + ":written"); err != nil {
 		return err

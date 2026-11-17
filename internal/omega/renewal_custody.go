@@ -102,6 +102,17 @@ func readPublisherBinding(home *store, bundle bootstrap.Bundle) (publisherBindin
 	return binding, nil
 }
 
+// A bound renewal home or its publication history that cannot be opened. The
+// message is the underlying failure, which names the path; callers use the
+// type to point the operator at restoring that home rather than its keys.
+type renewalUnavailableError struct {
+	home string
+	err  error
+}
+
+func (e renewalUnavailableError) Error() string { return e.err.Error() }
+func (e renewalUnavailableError) Unwrap() error { return e.err }
+
 // A pending handoff also blocks use of the old journal. Only provisioning may
 // complete it, including a process killed before the binding's final link.
 func operationalHome(ctx context.Context, home *store, bundle bootstrap.Bundle, mode string) (*store, func(), error) {
@@ -119,17 +130,25 @@ func operationalHome(ctx context.Context, home *store, bundle bootstrap.Bundle, 
 		return nil, func() {}, errors.New("omega: authority and operational homes must be disjoint")
 	}
 	online, err := openHome(ctx, binding.Home, bundle.Network, false)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, func() {}, err // Lock wait, not a missing home.
+	}
 	if err != nil {
-		return nil, func() {}, err
+		return nil, func() {}, renewalUnavailableError{home: binding.Home, err: err}
 	}
 	cleanup := func() { online.close() }
 	c, err := readRenewal(online, bundle.Network)
-	if err == nil && (c.Mode != mode || !bytes.Equal(record(c.Bundle), record(bundle))) {
+	foreign := err == nil && (c.Mode != mode || !bytes.Equal(record(c.Bundle), record(bundle)))
+	if foreign {
 		err = errors.New("omega: operational home belongs to a different authority")
 	}
 	if err != nil {
 		cleanup()
-		return nil, func() {}, fmt.Errorf("omega: incomplete or damaged renewal custody; rerun provision-renewal or restore it: %w", err)
+		err = fmt.Errorf("omega: incomplete or damaged renewal custody; rerun provision-renewal or restore it: %w", err)
+		if !foreign {
+			err = renewalUnavailableError{home: binding.Home, err: err}
+		}
+		return nil, func() {}, err
 	}
 	online.hook = home.hook
 	return online, cleanup, nil

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 
 	"sopholeth/internal/trust/bootstrap"
 )
@@ -17,38 +19,57 @@ func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle,
 	}
 	var rootGeneration, targetsGeneration, onlineGeneration *rotationIntent
 	var latest release
+	historyUnavailable := func(err error) error {
+		if online == home {
+			return err
+		}
+		return renewalUnavailableError{home: online.root.Name(), err: err}
+	}
 	state, _, err := openPublication(online, bundle, nil, false)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return report, err
+		return report, historyUnavailable(err)
 	}
+	var history []release
 	if err == nil {
 		defer state.close()
-		history, err := loadReleases(state, bundle)
+		history, err = loadReleases(state, bundle)
+		if err != nil {
+			return report, historyUnavailable(err)
+		}
+	}
+	// A renewal home provisioned before its first publish has no releases, and
+	// its active keys are the initial ones. Once keys have rotated, an absent or
+	// empty journal would select retired keys, so key verification fails closed.
+	if len(history) == 0 && session != nil && online != home {
+		rotated, evidenceErr := rotationRecorded(home, online, bundle.Network)
+		if evidenceErr != nil {
+			return report, historyUnavailable(evidenceErr)
+		}
+		if rotated {
+			return report, historyUnavailable(fmt.Errorf("omega: publication history %s has no releases, but key rotations are recorded; restore it", filepath.Join(online.root.Name(), bundle.Network+".publication")))
+		}
+	}
+	if len(history) > 0 {
+		latest = history[len(history)-1]
+		if err := applyReleaseRoot(&report, bundle, latest); err != nil {
+			return report, err
+		}
+		intents, err := rotationHistory(state, bundle, latest.currentRoot(bundle))
 		if err != nil {
 			return report, err
 		}
-		if len(history) > 0 {
-			latest = history[len(history)-1]
-			if err := applyReleaseRoot(&report, bundle, latest); err != nil {
-				return report, err
+		for i := range intents {
+			intent := &intents[i]
+			if intent.Custody != encryptedCustody || intent.Mode != p.Mode {
+				return report, errors.New("omega: active history has a different custody profile")
 			}
-			intents, err := rotationHistory(state, bundle, latest.currentRoot(bundle))
-			if err != nil {
-				return report, err
-			}
-			for i := range intents {
-				intent := &intents[i]
-				if intent.Custody != encryptedCustody || intent.Mode != p.Mode {
-					return report, errors.New("omega: active history has a different custody profile")
-				}
-				switch intent.Schema {
-				case 2:
-					targetsGeneration = intent
-				case 3:
-					rootGeneration = intent
-				case 4:
-					onlineGeneration = intent
-				}
+			switch intent.Schema {
+			case 2:
+				targetsGeneration = intent
+			case 3:
+				rootGeneration = intent
+			case 4:
+				onlineGeneration = intent
 			}
 		}
 	}
@@ -140,4 +161,48 @@ func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle,
 		report.KeyFiles["snapshot"], report.KeyFiles["timestamp"] = "verified", "verified"
 	}
 	return report, nil
+}
+
+// Rotate refuses to run without published history in the bound renewal home,
+// and only Rotate writes the authority's rotation records or online keys past
+// generation 1. Either one proves the journal existed.
+func rotationRecorded(home, online *store, network string) (bool, error) {
+	if _, err := home.root.Lstat(network + ".rotations"); err == nil {
+		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	keys, err := onlineKeyStore(online, network, false)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer keys.close()
+	names, err := directoryNames(keys)
+	if err != nil {
+		return false, err
+	}
+	for _, name := range names {
+		if m := onlineKeyFile.FindStringSubmatch(name); m != nil && m[1] != "1" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+var onlineKeyFile = regexp.MustCompile(`^([0-9]+)\.(snapshot|timestamp)-key\.json(\.pending)?$`)
+
+// Reports from commands that change active generations list the same key file
+// states status shows. The inventory is informational only: it never changes
+// the command's outcome, Problem or Action, and an inspection failure leaves
+// the authority's own states in place, as status does.
+func reportActiveKeyFiles(report *Report, home, current, online *store, bundle bootstrap.Bundle) {
+	if report.Custody != encryptedCustody {
+		return
+	}
+	if inspected, err := inspectEncryptedKeys(home, current, online, bundle, Report{}, nil); err == nil {
+		report.KeyFiles = inspected.KeyFiles
+	}
 }
