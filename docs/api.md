@@ -158,6 +158,12 @@ When `NODE_CLUSTER_SECRET` is set, HTTP gossip and bootstrap requests carry
 their body HMAC in `X-Gossip-Signature`. WebSocket message signatures retain
 their existing wire fields.
 
+Every gossip message carries a `message_id`. Nodes treat it as an opaque
+string and only compare it for equality (duplicate suppression, ACK matching
+and reverse ACK routing). Current nodes generate 32 lowercase hex characters
+(128 random bits); older nodes used other formats, and those IDs are still
+accepted.
+
 The HTTP API accepts browser requests from any origin. A reverse proxy can
 control transport exposure, but CORS is not client authentication. See
 [configuration](configuration.md) for resource limits and proxy settings.
