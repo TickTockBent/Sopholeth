@@ -40,6 +40,12 @@ the [`soph` client](cli.md) is a separate executable.
    write over the limits is rejected before any of this and is not forwarded.
 5. The origin reports whether it observed the quorum threshold before its
    write timeout.
+
+The origin gives each write a message ID of 128 random bits, independent of
+the key, the node and the clock, so two writes to one key in the same clock
+tick, on one node or on two, never share an ID. Forwards, ACKs and the
+WebSocket envelope carry the origin's ID unchanged; the origin counts an ACK
+toward a write's quorum by that ID.
 6. Reads and listings exclude a value at local expiration. A periodic sweep
    removes the expired entry from the store.
 

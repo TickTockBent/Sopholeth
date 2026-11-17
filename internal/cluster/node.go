@@ -56,6 +56,10 @@ type ClusterNode struct {
 
 	// relayMetrics is nil until Start enables Prometheus metrics.
 	relayMetrics *relayMetrics
+
+	// clock stamps originated messages. It is time.Now outside tests; tests
+	// freeze it to show that message IDs do not depend on the clock (#166).
+	clock func() time.Time
 }
 
 // AckRouter forwards an ACK to a non-peer originator. The substrate's
@@ -130,6 +134,7 @@ func NewClusterNode(nodeID string, address string, gossipPort int, httpPort int,
 		clusterSecret:     clusterSecret,
 		writeLimits:       DefaultWriteLimits(),
 		pendingWrites:     make(map[string]*WriteOperation),
+		clock:             time.Now,
 	}
 }
 
@@ -299,8 +304,12 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		Key:       key,
 		Data:      data,
 		TTL:       int(ttl.Seconds()),
-		Timestamp: time.Now(),
-		MessageID: fmt.Sprintf("%s-%d", key, time.Now().UnixNano()),
+		Timestamp: cn.clock(),
+		// Opaque and random, never derived from the key or the clock: two
+		// writes to one key in one clock tick, on this node or on two nodes,
+		// must not share an ID, or peers drop one as a duplicate and ACKs
+		// for one count toward the other (#166).
+		MessageID: gossip.NewMessageID(),
 	}
 
 	writeOp := &WriteOperation{

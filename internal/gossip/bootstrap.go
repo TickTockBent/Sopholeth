@@ -221,7 +221,7 @@ func (p *Protocol) notifyPeersAboutNewNode(newNode *Node) {
 				Type:      MessageTypeSync,
 				From:      p.localNode.ID,
 				Timestamp: time.Now(),
-				MessageID: generateMessageID(),
+				MessageID: NewMessageID(),
 				NodeInfo:  newNode,
 			}
 

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -351,7 +350,7 @@ func (p *Protocol) handlePing(msg *Message) error {
 		From:      p.localNode.ID,
 		To:        msg.From,
 		Timestamp: time.Now(),
-		MessageID: generateMessageID(),
+		MessageID: NewMessageID(),
 		NodeInfo:  p.localNode, // Include our identity and enclave membership
 	}
 
@@ -434,7 +433,7 @@ func (p *Protocol) respondWithPeerList(targetID NodeID) {
 			Type:      MessageTypeSync,
 			From:      p.localNode.ID,
 			Timestamp: time.Now(),
-			MessageID: generateMessageID(),
+			MessageID: NewMessageID(),
 			NodeInfo:  node,
 		}
 
@@ -471,7 +470,7 @@ func (p *Protocol) pingPeers(ctx context.Context) {
 			From:      p.localNode.ID,
 			To:        peer.ID,
 			Timestamp: time.Now(),
-			MessageID: generateMessageID(),
+			MessageID: NewMessageID(),
 		}
 		if err := p.transport.Send(ctx, peer, ping); err != nil {
 			p.peersMutex.Lock()
@@ -723,12 +722,6 @@ func (p *Protocol) HandleMessage(msg *Message) error {
 	return p.handleMessage(msg)
 }
 
-var messageCounter uint64
-
-func generateMessageID() string {
-	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&messageCounter, 1))
-}
-
 // startTopologySync periodically exchanges peer lists to fix broken topology.
 // The ticker is created in Start() before this goroutine is launched.
 func (p *Protocol) startTopologySync(ctx context.Context) {
@@ -763,7 +756,7 @@ func (p *Protocol) performTopologySync(ctx context.Context) {
 		Type:      MessageTypeSyncRequest,
 		From:      p.localNode.ID,
 		Timestamp: time.Now(),
-		MessageID: generateMessageID(),
+		MessageID: NewMessageID(),
 		NodeInfo:  p.localNode, // Include our own node info
 	}
 

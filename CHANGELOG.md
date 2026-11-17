@@ -31,6 +31,17 @@
 
 ### Replication
 
+- Give every gossip message an opaque random ID (#166). A client PUT's ID was
+  the key plus the local nanosecond clock, so two writes to one key in one
+  clock tick, on one node or on two, shared an ID: peers dropped the second
+  as a duplicate, and an ACK for one write counted toward the other's quorum.
+  Coarse clocks made this likely. Other messages (PING, PONG, SYNC,
+  SYNC_REQUEST) used the clock plus a counter that restarted at zero on every
+  restart. All of them now use `gossip.NewMessageID`: 128 bits from
+  `crypto/rand` as 32 lowercase hex characters. Only the originator creates
+  an ID; forwards, ACKs, the WebSocket envelope and reverse ACK routing carry
+  it unchanged. No wire change: `message_id` keeps its name and type, and
+  nodes only compare IDs for equality, so old and new nodes interoperate.
 - Fix a data race between concurrent gossip sends (#285). Every gossip send
   and bootstrap request re-checked its HTTP client's TLS settings, reading the
   shared `http.DefaultTransport` while another send's first request was
