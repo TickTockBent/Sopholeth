@@ -65,15 +65,14 @@ a `201` is an observed quorum result, not a promise of three independent copies.
 | Area | Remaining work |
 | --- | --- |
 | Peer bookkeeping (#211, #213) | Bound referrals, correlate liveness, and remove ghost records. Signed-root and established-peer route replacement is already rejected. |
-| Write outcomes (#164, #166, #170, #215) | Unique write IDs, duplicate ACK handling, stable per-write replication context, deadline reporting, and quorum-of-one forwarding. |
-| Slow peers and forwarding (#212, #167) | Bounded concurrent delivery so a stalled peer does not block healthy sends; no implicit client PUT retries. |
+| Write outcomes (#170) | Deadline reporting. Unique write IDs (#166), per-sender ACK counting against a fixed target (#164) and quorum-of-one forwarding (#215) are done. |
 | Shutdown (#151) | Complete orderly stop/restart and verify writes after rejoining. |
-| Storage and listing (#162, #163, #217, #220) | Expired-entry accounting, full-store forwarding, entry overhead, and bounded listing work. The ordered-index change from #248 was reverted in #255. |
-| Public resource handling (#218, #219, #221, #222) | Stream snapshot growth, HTTP deadlines/connections, rate-limiter state, and diagnostic exposure. Deployment limits do not close these issues. |
+| Storage and listing (#162, #217, #220, #280) | Expired-entry accounting, entry overhead, and bounded listing work, with tests that catch requests stalled behind the store lock. The ordered-index change from #248 was reverted in #255; a second attempt (#279) had changes requested. |
+| Public resource handling (#218, #219, #221, #222) | Stream subscriber policy, HTTP deadlines/connections, rate-limiter state, and diagnostic exposure. Deployment limits do not close these issues. |
 | Payload transport (#214, #246) | Keep configurable value caps within the gossip envelope; evaluate raw-byte peer values for the next iteration. |
-| Larger meshes (#152, #165, #168) | Replay, asymmetric eviction, and deduplication behavior under churn and load. |
-| Omega polish (#234–#236) and reset bundles (#231) | Accurate custody reports, existing-file ownership, and explicit bundle overrides. |
-| Release distribution (#223, #224) | Reviewed/tested publishing and verifiable artifacts before a general release. |
+| Larger meshes (#152, #165, #168) | Bounded re-propagation of messages delivered again after the duplicate window, asymmetric eviction, and deduplication behavior under churn and load. |
+| Reset bundles (#231) | Explicit bundle overrides. Omega polish (#234–#236) is done. |
+| Release distribution (#224) | Verifiable artifacts before a general release. Gated publishing (#223) is done. |
 
 The mixed audits (#177/#178) retain residual findings. Native Windows public
 clients (#198), dashboard/WSS discovery (#194), and WebSocket lifecycle work
