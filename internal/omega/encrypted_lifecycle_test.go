@@ -301,6 +301,47 @@ func TestRotateAndPublishReportActiveKeyFiles(t *testing.T) {
 	assertKeyFiles("failed publish", failed)
 }
 
+// When the active generations cannot be established, status, rotate and
+// publish reports drop the initialization-generation states instead of showing
+// them as active, and say why. The commands' own diagnoses are unchanged (#234).
+func TestFailedInspectionReportsNoRetiredKeyFiles(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f, online, opts := encryptedLifecycleFixture(t)
+	applyRoot(t, opts)
+	// The rotated root's encrypted files are the active ones now; the
+	// initialization files would still read as locked.
+	release := filepath.Join(onlineState(online), releaseName(1))
+	must(t, os.WriteFile(release, []byte("{}"), 0600))
+	assertUninspected := func(step string, report Report, err error) {
+		t.Helper()
+		if err == nil || report.Problem != err.Error() {
+			t.Fatalf("%s lost its diagnosis: %v %+v", step, err, report)
+		}
+		if report.KeyFiles != nil {
+			t.Fatalf("%s reported key files without an active inventory: %v", step, report.KeyFiles)
+		}
+		if !strings.Contains(report.KeyFilesError, "publication history") {
+			t.Fatalf("%s key_files_error = %q, want the unreadable history", step, report.KeyFilesError)
+		}
+	}
+	status, err := Status(ctx, f.opts.Home, opts.Network)
+	assertUninspected("status", status, err)
+	if status.Publication != "failed" || !strings.HasPrefix(status.Action, "Preserve the journal") {
+		t.Fatalf("status action changed: %+v", status)
+	}
+	opts.RootVersion, opts.Role = 3, "online"
+	rotated, err := Rotate(ctx, opts)
+	assertUninspected("rotate", rotated, err)
+	f.opts.Version = 3
+	f.changeRoot()
+	published, err := Publish(ctx, f.opts)
+	assertUninspected("publish", published, err)
+	if published.Publication != "failed" {
+		t.Fatalf("publish outcome changed: %+v", published)
+	}
+}
+
 // Check-keys on a restored operator home fails closed when its bound renewal
 // home or that home's publication history is unavailable, and says to restore
 // that home rather than blaming the passphrase or key files (#235).

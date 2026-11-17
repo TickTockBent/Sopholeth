@@ -12,7 +12,19 @@ import (
 
 // Report and check the active generations, not retired initialization keys.
 // A nil session inspects public bindings and ciphertext/file digests only.
-func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle, report Report, session *operatorKeys) (Report, error) {
+//
+// A failure before every active file has a state drops the caller's states,
+// which describe the initialization generation, and records why the inventory
+// is incomplete. The returned KeyFiles then hold only files this inspection
+// reached, so a report never shows retired generations as active (#234).
+func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle, report Report, session *operatorKeys) (result Report, err error) {
+	report.KeyFiles, report.KeyFilesError = nil, ""
+	inventoried := false
+	defer func() {
+		if err != nil && !inventoried {
+			result.KeyFilesError = err.Error()
+		}
+	}()
 	p, err := current.readPublicAuthority()
 	if err != nil {
 		return report, err
@@ -146,6 +158,7 @@ func inspectEncryptedKeys(home, current, online *store, bundle bootstrap.Bundle,
 			}
 		}
 	}
+	inventoried = true
 	if session != nil && online != home {
 		custody, err := readRenewal(online, bundle.Network)
 		if err != nil {
@@ -196,13 +209,13 @@ var onlineKeyFile = regexp.MustCompile(`^([0-9]+)\.(snapshot|timestamp)-key\.jso
 
 // Reports from commands that change active generations list the same key file
 // states status shows. The inventory is informational only: it never changes
-// the command's outcome, Problem or Action, and an inspection failure leaves
-// the authority's own states in place, as status does.
+// the command's outcome, Problem or Action. An inspection failure replaces the
+// initialization-generation states with the files it reached and the reason it
+// stopped, as status does.
 func reportActiveKeyFiles(report *Report, home, current, online *store, bundle bootstrap.Bundle) {
 	if report.Custody != encryptedCustody {
 		return
 	}
-	if inspected, err := inspectEncryptedKeys(home, current, online, bundle, Report{}, nil); err == nil {
-		report.KeyFiles = inspected.KeyFiles
-	}
+	inspected, _ := inspectEncryptedKeys(home, current, online, bundle, Report{}, nil)
+	report.KeyFiles, report.KeyFilesError = inspected.KeyFiles, inspected.KeyFilesError
 }
