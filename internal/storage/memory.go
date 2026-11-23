@@ -1,13 +1,55 @@
 package storage
 
 import (
+	"container/heap"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 )
 
 // ErrStoreFull is returned when a write would exceed the configured capacity.
 var ErrStoreFull = errors.New("store capacity exceeded")
+
+const (
+	// DefaultSweepInterval is the wait between background sweeper wakeups.
+	// The sweeper removes only entries that are already expired, in small
+	// batches, so no single wakeup holds the write lock for O(n) work.
+	DefaultSweepInterval = 30 * time.Second
+
+	// DefaultSweepBatch caps how many expired entries one sweeper wakeup
+	// removes before yielding. Small batches keep each lock hold bounded
+	// regardless of how many entries expired at once (#220).
+	DefaultSweepBatch = 256
+
+	// MaxScanPageLimit caps the page size honored by HTTP keysHandler;
+	// defined here as a storage-level reference constant.
+	MaxScanPageLimit = 1000
+)
+
+type expiryHeap []*Entry
+
+func (h expiryHeap) Len() int           { return len(h) }
+func (h expiryHeap) Less(i, j int) bool { return h[i].ExpiresAt.Before(h[j].ExpiresAt) }
+func (h expiryHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+	h[i].heapIndex = i
+	h[j].heapIndex = j
+}
+func (h *expiryHeap) Push(x any) {
+	entry := x.(*Entry)
+	entry.heapIndex = len(*h)
+	*h = append(*h, entry)
+}
+func (h *expiryHeap) Pop() any {
+	old := *h
+	n := len(old)
+	entry := old[n-1]
+	old[n-1] = nil // Avoid memory retention
+	entry.heapIndex = -1
+	*h = old[:n-1]
+	return entry
+}
 
 type Entry struct {
 	Data      []byte        `json:"data"`
@@ -19,6 +61,7 @@ type Entry struct {
 	// newest entries without scanning the store (#218).
 	key          string
 	newer, older *Entry
+	heapIndex    int
 }
 
 type MemoryStore struct {
@@ -32,6 +75,14 @@ type MemoryStore struct {
 	subscribers  map[*Subscription]struct{}
 	closed       bool
 	newest       *Entry
+
+	// keyIndex orders live keys lexicographically so paged and prefix scans
+	// cost about the page size instead of a full keyspace sort per request (#220).
+	keyIndex *treapNode
+
+	// expiryHeap is a min-heap of live keys ordered by ExpiresAt so expiry sweeping
+	// proceeds incrementally (#220, #162).
+	expiryHeap expiryHeap
 }
 
 // NewMemoryStore creates a new store. maxBytes sets the capacity limit in bytes;
@@ -62,8 +113,31 @@ func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
 		oldSize = int64(len(existing.Data))
 	}
 
+	// Issue #162: If capacity would be exceeded, reclaim expired entries from the top
+	// of the min-heap until the write fits, capped at DefaultSweepBatch to keep the
+	// request path bounded (#220, #162).
 	if m.maxBytes > 0 && (m.currentBytes-oldSize+newSize) > m.maxBytes {
-		return ErrStoreFull
+		now := m.now()
+		reclaimed := 0
+		for len(m.expiryHeap) > 0 && reclaimed < DefaultSweepBatch && (m.currentBytes-oldSize+newSize) > m.maxBytes {
+			top := m.expiryHeap[0]
+			if now.Before(top.ExpiresAt) {
+				break
+			}
+			poppedKey := top.key
+			m.popExpiredEntryLocked()
+			reclaimed++
+
+			if poppedKey == key {
+				exists = false
+				existing = nil
+				oldSize = 0
+			}
+		}
+
+		if (m.currentBytes - oldSize + newSize) > m.maxBytes {
+			return ErrStoreFull
+		}
 	}
 
 	stored := make([]byte, len(data))
@@ -71,18 +145,32 @@ func (m *MemoryStore) Put(key string, data []byte, ttl time.Duration) error {
 
 	now := m.now()
 	m.sequence++
-	m.data[key] = &Entry{
-		Data:      stored,
-		CreatedAt: now,
-		TTL:       ttl,
-		ExpiresAt: now.Add(ttl),
-		revision:  m.sequence,
-		key:       key,
-	}
+	expiresAt := now.Add(ttl)
+
 	if exists {
+		// Overwrite: update entry in-place and fix heap position in O(log n)
 		m.unlinkLocked(existing)
+		existing.Data = stored
+		existing.CreatedAt = now
+		existing.TTL = ttl
+		existing.ExpiresAt = expiresAt
+		existing.revision = m.sequence
+		m.linkNewestLocked(existing)
+		heap.Fix(&m.expiryHeap, existing.heapIndex)
+	} else {
+		entry := &Entry{
+			Data:      stored,
+			CreatedAt: now,
+			TTL:       ttl,
+			ExpiresAt: expiresAt,
+			revision:  m.sequence,
+			key:       key,
+		}
+		m.data[key] = entry
+		m.linkNewestLocked(entry)
+		m.keyIndex = treapInsert(m.keyIndex, key, randomTreapPriority())
+		heap.Push(&m.expiryHeap, entry)
 	}
-	m.linkNewestLocked(m.data[key])
 
 	m.currentBytes = m.currentBytes - oldSize + newSize
 	if len(m.subscribers) > 0 {
@@ -128,32 +216,85 @@ func (m *MemoryStore) GetWithMetadata(key string) ([]byte, time.Time, time.Durat
 }
 
 func (m *MemoryStore) startCleanupWorker() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(DefaultSweepInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			m.cleanupExpired()
+			m.sweepBatch()
 		case <-m.cleanup:
 			return
 		}
 	}
 }
 
-func (m *MemoryStore) cleanupExpired() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
+// sweepBatch releases the write lock between batches so background sweeping
+// does not stall concurrent readers and writers (#220).
+func (m *MemoryStore) sweepBatch() {
+	for {
+		m.mutex.Lock()
+		if m.closed {
+			m.mutex.Unlock()
+			return
+		}
+		removed := m.sweepExpiredLocked(DefaultSweepBatch)
+		m.mutex.Unlock()
 
-	now := m.now()
-	for key, entry := range m.data {
-		if !now.Before(entry.ExpiresAt) {
-			m.currentBytes -= int64(len(entry.Data))
-			m.unlinkLocked(entry)
-			delete(m.data, key)
-			m.publishLocked(Event{Kind: "expire", Entry: StreamEntry{Key: key, Revision: entry.revision}})
+		if removed < DefaultSweepBatch {
+			break
 		}
 	}
+}
+
+// cleanupExpired removes every entry whose TTL has elapsed (full pass).
+func (m *MemoryStore) cleanupExpired() {
+	m.sweepBatch()
+}
+
+// sweepExpired removes up to max expired entries (or all if max <= 0). Exported for tests/benchmarks.
+func (m *MemoryStore) sweepExpired(max int) int {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	return m.sweepExpiredLocked(max)
+}
+
+func (m *MemoryStore) popExpiredEntryLocked() *Entry {
+	if len(m.expiryHeap) == 0 {
+		return nil
+	}
+	entry := heap.Pop(&m.expiryHeap).(*Entry)
+	key := entry.key
+	if _, ok := m.data[key]; ok {
+		m.currentBytes -= int64(len(entry.Data))
+		m.unlinkLocked(entry)
+		delete(m.data, key)
+		m.keyIndex = treapDelete(m.keyIndex, key)
+		m.publishLocked(Event{Kind: "expire", Entry: StreamEntry{Key: key, Revision: entry.revision}})
+	}
+	return entry
+}
+
+func (m *MemoryStore) sweepExpiredLocked(max int) int {
+	if m.closed {
+		return 0
+	}
+
+	now := m.now()
+	removed := 0
+	for len(m.expiryHeap) > 0 {
+		if max > 0 && removed >= max {
+			break
+		}
+		top := m.expiryHeap[0]
+		if now.Before(top.ExpiresAt) {
+			break // Next earliest expiry is in the future
+		}
+
+		m.popExpiredEntryLocked()
+		removed++
+	}
+	return removed
 }
 
 func (m *MemoryStore) Close() {
@@ -183,40 +324,105 @@ func (m *MemoryStore) GetStats() (int, int64) {
 	return count, totalSize
 }
 
-// Range iterates over all non-expired keys
-// The callback function receives the key and remaining TTL in seconds
-// If the callback returns false, iteration stops
+// Range iterates over all non-expired keys in lexicographic order.
+// The callback function receives the key and remaining TTL in seconds.
+// If the callback returns false, iteration stops.
 func (m *MemoryStore) Range(fn func(key string, ttl int) bool) {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
 	now := m.now()
-	for key, entry := range m.data {
-		if !now.Before(entry.ExpiresAt) {
-			continue // Skip expired entries
+	m.keyIndex.walkWhile(func(key string) bool {
+		entry, exists := m.data[key]
+		if !exists || !now.Before(entry.ExpiresAt) {
+			return true // Skip expired entries
 		}
 
 		remainingTTL := int(entry.ExpiresAt.Sub(now).Seconds())
-		if !fn(key, remainingTTL) {
-			break
-		}
-	}
+		return fn(key, remainingTTL)
+	})
 }
 
-// Scan returns all non-expired keys
+// Scan returns all non-expired keys in lexicographic order.
 func (m *MemoryStore) Scan() []string {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	var keys []string
 	now := m.now()
-	for key, entry := range m.data {
-		if now.Before(entry.ExpiresAt) { // Not expired
+	var keys []string
+	m.keyIndex.walkWhile(func(key string) bool {
+		if entry, exists := m.data[key]; exists && now.Before(entry.ExpiresAt) {
 			keys = append(keys, key)
 		}
+		return true
+	})
+
+	return keys
+}
+
+// ScanPage returns at most limit non-expired keys in lexicographic order,
+// starting strictly after cursor (or from the beginning when cursor is empty)
+// and restricted to keys sharing prefix.
+// If limit <= 0, all matching keys are returned without bound (#220).
+// If limit > 0, at most limit keys are returned.
+func (m *MemoryStore) ScanPage(prefix, cursor string, limit int) []string {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	now := m.now()
+	stop := prefixUpperBound(prefix)
+
+	var keys []string
+	if limit > 0 {
+		keys = make([]string, 0, limit)
+	}
+
+	collect := func(key string) bool {
+		if stop != "" && key >= stop {
+			return false // past the prefix range
+		}
+		if !strings.HasPrefix(key, prefix) {
+			return true
+		}
+		entry, exists := m.data[key]
+		if !exists || !now.Before(entry.ExpiresAt) {
+			return true
+		}
+		keys = append(keys, key)
+		if limit > 0 && len(keys) >= limit {
+			return false
+		}
+		return true
+	}
+
+	// Seeking optimization: jump directly to max(cursor, prefix)
+	if cursor != "" {
+		if prefix != "" && cursor < prefix {
+			m.keyIndex.walkFrom(prefix, true, collect)
+		} else {
+			m.keyIndex.walkFrom(cursor, false, collect)
+		}
+	} else if prefix != "" {
+		m.keyIndex.walkFrom(prefix, true, collect)
+	} else {
+		m.keyIndex.walkWhile(collect)
 	}
 
 	return keys
+}
+
+func prefixUpperBound(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	b := []byte(prefix)
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] < 0xff {
+			b[i]++
+			return string(b[:i+1])
+		}
+	}
+	return ""
 }
 
 func (m *MemoryStore) linkNewestLocked(entry *Entry) {

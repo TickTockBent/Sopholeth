@@ -87,12 +87,12 @@ curl "http://localhost:8080/v1/keys?prefix=example:&limit=10&cursor=example:mess
 
 Responses contain a `keys` array and, when another page is available, a
 `next_cursor`. Keys are sorted lexicographically. Pass the returned cursor
-unchanged, URL-encoded, to continue after that key. Without a positive
-`limit`, the response is unbounded.
+unchanged, URL-encoded, to continue after that key. The maximum page `limit` is
+1000; larger limits are clamped to 1000. Without a positive `limit`, the response
+is unbounded.
 
 Pagination is not a snapshot: concurrent writes and expiration can change the
-set between requests. An empty result may currently serialize as `null`
-rather than `[]`; clients should handle both.
+set between requests. An empty result serializes as `{"keys":[]}`.
 
 ## Live stream
 

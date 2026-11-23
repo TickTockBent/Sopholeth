@@ -43,8 +43,8 @@ mkdir -p "$(dirname "$LOG")"
             omega_age="never"
         fi
 
-        # Best-effort key count (large limit so prefix scan returns most/all).
-        keys=$(curl -s -m 5 "${node_url%/}/v1/keys?prefix=bench&limit=10000" 2>/dev/null \
+        # Best-effort key count (unbounded prefix scan returns all matching keys).
+        keys=$(curl -s -m 5 "${node_url%/}/v1/keys?prefix=bench" 2>/dev/null \
             | python3 -c "import json,sys
 try:
     d=json.load(sys.stdin); print(len(d.get('keys',d)) if isinstance(d,(dict,list)) else 0)
