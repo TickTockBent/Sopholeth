@@ -150,8 +150,10 @@ claiming the origin's own ID are not counted. ACKs arriving after the write
 completed or timed out are ignored.
 
 HTTP returns `201` when the node observed enough distinct peers report a
-stored copy to meet that quorum, and `202` when its quorum wait expires after
-local storage. MCP reports `confirmed` or `pending`. There is no durable
+stored copy to meet that quorum, and `202` when its quorum wait ends after
+local storage, because the write timeout expired or the request ended. MCP
+reports `confirmed` or `pending`. A request that ended before the local
+store is an error, and nothing is stored. There is no durable
 retry queue behind `202`.
 
 This is replication bookkeeping from the origin's local peer table, not

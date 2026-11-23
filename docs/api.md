@@ -27,7 +27,7 @@ peer writes. Oversized writes are rejected before storage or replication.
 | Response | Meaning |
 | --- | --- |
 | `201 Created` | Stored locally; the node observed enough distinct peers report a stored copy to meet the quorum it fixed when the write started. |
-| `202 Accepted` | Stored locally; quorum was not confirmed within the write timeout. |
+| `202 Accepted` | Stored locally; quorum was not confirmed before the write timeout, or before the request ended. |
 | `413 Request Entity Too Large` | The value, key, or ingress request body exceeds its configured limit. |
 | `507 Insufficient Storage` | The local payload capacity limit prevented the write. |
 
@@ -138,6 +138,8 @@ add memory overhead beyond the payload storage capacity setting.
 `NODE_STREAM=off` makes the endpoint return `404`. The connection limit
 returns `503` with `Retry-After: 5`. Normal request admission/rate limits and
 CORS apply; the stream bypasses the ordinary 30-second response timeout.
+PUTs bypass it too: the request body must arrive within 30 seconds, and
+`NODE_WRITE_TIMEOUT` bounds the quorum wait.
 Responses set `Cache-Control: no-store` and `X-Accel-Buffering: no`.
 
 ## Node endpoints

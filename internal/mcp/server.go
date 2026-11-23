@@ -400,17 +400,14 @@ func (s *Server) toolStore(ctx context.Context, args map[string]interface{}) (an
 		key = newKey()
 	}
 
-	// Use a bounded context so a slow gossip storm can't wedge the MCP
-	// loop. Mirrors the HTTP handler's 10s ceiling.
-	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
 	// Always include quorum_status so callers can deserialize into a fixed
 	// shape. "confirmed" = local write + quorum acks landed within
 	// NODE_WRITE_TIMEOUT; "pending" = local write succeeded without
-	// confirmation before timeout. Delivery to other peers is not guaranteed.
+	// confirmation before the timeout or before ctx ended. Delivery to other
+	// peers is not guaranteed. Put bounds its own wait by NODE_WRITE_TIMEOUT,
+	// so no fixed deadline is added here (#170).
 	quorumStatus := "confirmed"
-	if err := s.cluster.Put(callCtx, key, []byte(data), time.Duration(ttl)*time.Second); err != nil {
+	if err := s.cluster.Put(ctx, key, []byte(data), time.Duration(ttl)*time.Second); err != nil {
 		if errors.Is(err, cluster.ErrQuorumTimeout) {
 			quorumStatus = "pending"
 		} else if errors.Is(err, storage.ErrStoreFull) {

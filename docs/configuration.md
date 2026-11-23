@@ -41,8 +41,11 @@ peer override.
 
 Size limits must be positive. Maximum TTL must be at least the effective
 minimum and at most 2147483647 seconds (the gossip wire format's ceiling);
-invalid bounds fail startup. The handlers also have a 10-second write context,
-so increasing the quorum timeout alone does not extend that ceiling.
+invalid bounds fail startup. `NODE_WRITE_TIMEOUT` is the only bound on the
+quorum wait: HTTP and MCP add no deadline of their own, and PUTs run outside
+the 30-second response timeout other routes have. A wait that ends after the
+local store, because the timeout expired or the client left, is reported as
+`202` / `pending`.
 
 These size caps are node settings, not protocol constants. Keep a network's
 limits aligned so peers can accept each other's writes. When raising them,
