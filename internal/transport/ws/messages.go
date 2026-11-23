@@ -13,7 +13,6 @@ package ws
 
 import (
 	"encoding/json"
-	"time"
 
 	"sopholeth/internal/gossip"
 )
@@ -125,54 +124,10 @@ func isGossipType(t AttachmentType) bool {
 // encoding/json base64-encodes []byte automatically — matches the TS
 // reference's explicit base64 encoding of the data field.
 func messageToWire(msg *gossip.Message) *gossip.SimpleMessage {
-	wire := &gossip.SimpleMessage{
-		Type:      string(msg.Type),
-		From:      string(msg.From),
-		To:        string(msg.To),
-		Key:       msg.Key,
-		Data:      msg.Data,
-		TTL:       int32(msg.TTL),
-		Timestamp: msg.Timestamp.Unix(),
-		MessageID: msg.MessageID,
-	}
-	if msg.NodeInfo != nil {
-		wire.NodeInfo = &gossip.SimpleNodeInfo{
-			ID:         string(msg.NodeInfo.ID),
-			Address:    msg.NodeInfo.Address,
-			Port:       msg.NodeInfo.Port,
-			HTTPPort:   msg.NodeInfo.HTTPPort,
-			HTTPOrigin: msg.NodeInfo.HTTPOrigin,
-			Enclave:    msg.NodeInfo.Enclave,
-		}
-	}
-	return wire
+	return gossip.NewSimpleMessage(msg)
 }
 
 // wireToMessage is the inverse of messageToWire.
 func wireToMessage(wire *gossip.SimpleMessage) *gossip.Message {
-	msg := &gossip.Message{
-		Type:      gossip.MessageType(wire.Type),
-		From:      gossip.NodeID(wire.From),
-		To:        gossip.NodeID(wire.To),
-		Key:       wire.Key,
-		Data:      wire.Data,
-		TTL:       int(wire.TTL),
-		Timestamp: time.Unix(wire.Timestamp, 0),
-		MessageID: wire.MessageID,
-	}
-	if wire.NodeInfo != nil {
-		enclave := wire.NodeInfo.Enclave
-		if enclave == "" {
-			enclave = "default"
-		}
-		msg.NodeInfo = &gossip.Node{
-			ID:         gossip.NodeID(wire.NodeInfo.ID),
-			Address:    wire.NodeInfo.Address,
-			Port:       wire.NodeInfo.Port,
-			HTTPPort:   wire.NodeInfo.HTTPPort,
-			HTTPOrigin: wire.NodeInfo.HTTPOrigin,
-			Enclave:    enclave,
-		}
-	}
-	return msg
+	return wire.ToMessage()
 }

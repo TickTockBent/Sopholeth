@@ -82,30 +82,7 @@ func makeGossipHandler(cn *ClusterNode) http.HandlerFunc {
 			return
 		}
 
-		msg := &gossip.Message{
-			Type:      gossip.MessageType(simpleMsg.Type),
-			From:      gossip.NodeID(simpleMsg.From),
-			To:        gossip.NodeID(simpleMsg.To),
-			Key:       simpleMsg.Key,
-			Data:      simpleMsg.Data,
-			TTL:       int(simpleMsg.TTL),
-			Timestamp: time.Unix(simpleMsg.Timestamp, 0),
-			MessageID: simpleMsg.MessageID,
-		}
-
-		if simpleMsg.NodeInfo != nil {
-			enclave := simpleMsg.NodeInfo.Enclave
-			if enclave == "" {
-				enclave = "default"
-			}
-			msg.NodeInfo = &gossip.Node{
-				ID:       gossip.NodeID(simpleMsg.NodeInfo.ID),
-				Address:  simpleMsg.NodeInfo.Address,
-				Port:     simpleMsg.NodeInfo.Port,
-				HTTPPort: simpleMsg.NodeInfo.HTTPPort,
-				Enclave:  enclave,
-			}
-		}
+		msg := simpleMsg.ToMessage()
 
 		if err := cn.HandleGossipMessage(msg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

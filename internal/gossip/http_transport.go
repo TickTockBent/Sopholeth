@@ -15,15 +15,18 @@ import (
 
 // SimpleMessage is the HTTP wire format for gossip messages.
 type SimpleMessage struct {
-	Type      string          `json:"type"`
-	From      string          `json:"from"`
-	To        string          `json:"to,omitempty"`
-	Key       string          `json:"key,omitempty"`
-	Data      []byte          `json:"data,omitempty"`
-	TTL       int32           `json:"ttl,omitempty"`
-	Timestamp int64           `json:"timestamp"`
-	MessageID string          `json:"message_id"`
-	NodeInfo  *SimpleNodeInfo `json:"node_info,omitempty"`
+	Type      string `json:"type"`
+	From      string `json:"from"`
+	To        string `json:"to,omitempty"`
+	Key       string `json:"key,omitempty"`
+	Data      []byte `json:"data,omitempty"`
+	TTL       int32  `json:"ttl,omitempty"`
+	Timestamp int64  `json:"timestamp"`
+	MessageID string `json:"message_id"`
+	// Hops is the number of times a PUT has been forwarded (#152). Omitted
+	// when 0, so a message from the originator looks as it did before.
+	Hops     int             `json:"hops,omitempty"`
+	NodeInfo *SimpleNodeInfo `json:"node_info,omitempty"`
 }
 
 // SimpleNodeInfo is the wire format for node information in gossip messages.
@@ -34,6 +37,65 @@ type SimpleNodeInfo struct {
 	HTTPPort   int    `json:"http_port"`
 	HTTPOrigin string `json:"http_origin,omitempty"`
 	Enclave    string `json:"enclave,omitempty"` // Empty treated as "default" for backwards compat
+}
+
+// NewSimpleMessage converts msg to its wire form. Every transport and handler
+// uses this pair, so a new Message field cannot reach one path and not
+// another (#152 added Hops).
+func NewSimpleMessage(msg *Message) *SimpleMessage {
+	wire := &SimpleMessage{
+		Type:      string(msg.Type),
+		From:      string(msg.From),
+		To:        string(msg.To),
+		Key:       msg.Key,
+		Data:      msg.Data,
+		TTL:       int32(msg.TTL),
+		Timestamp: msg.Timestamp.Unix(),
+		MessageID: msg.MessageID,
+		Hops:      msg.Hops,
+	}
+	if msg.NodeInfo != nil {
+		wire.NodeInfo = &SimpleNodeInfo{
+			ID:         string(msg.NodeInfo.ID),
+			Address:    msg.NodeInfo.Address,
+			Port:       msg.NodeInfo.Port,
+			HTTPPort:   msg.NodeInfo.HTTPPort,
+			HTTPOrigin: msg.NodeInfo.HTTPOrigin,
+			Enclave:    msg.NodeInfo.Enclave,
+		}
+	}
+	return wire
+}
+
+// ToMessage is the inverse of NewSimpleMessage. A NodeInfo without an enclave
+// gets "default".
+func (wire *SimpleMessage) ToMessage() *Message {
+	msg := &Message{
+		Type:      MessageType(wire.Type),
+		From:      NodeID(wire.From),
+		To:        NodeID(wire.To),
+		Key:       wire.Key,
+		Data:      wire.Data,
+		TTL:       int(wire.TTL),
+		Timestamp: time.Unix(wire.Timestamp, 0),
+		MessageID: wire.MessageID,
+		Hops:      wire.Hops,
+	}
+	if wire.NodeInfo != nil {
+		enclave := wire.NodeInfo.Enclave
+		if enclave == "" {
+			enclave = "default"
+		}
+		msg.NodeInfo = &Node{
+			ID:         NodeID(wire.NodeInfo.ID),
+			Address:    wire.NodeInfo.Address,
+			Port:       wire.NodeInfo.Port,
+			HTTPPort:   wire.NodeInfo.HTTPPort,
+			HTTPOrigin: wire.NodeInfo.HTTPOrigin,
+			Enclave:    enclave,
+		}
+	}
+	return msg
 }
 
 // defaultGossipTimeout bounds one gossip send when the caller sets none.
@@ -102,29 +164,7 @@ func (t *HTTPTransport) Stop() error {
 
 // Send sends a message to a specific node via HTTP
 func (t *HTTPTransport) Send(ctx context.Context, node *Node, msg *Message) error {
-	// Convert to SimpleMessage for HTTP transport
-	simpleMsg := &SimpleMessage{
-		Type:      string(msg.Type),
-		From:      string(msg.From),
-		To:        string(msg.To),
-		Key:       msg.Key,
-		Data:      msg.Data,
-		TTL:       int32(msg.TTL),
-		Timestamp: msg.Timestamp.Unix(),
-		MessageID: msg.MessageID,
-	}
-
-	// Include NodeInfo if present
-	if msg.NodeInfo != nil {
-		simpleMsg.NodeInfo = &SimpleNodeInfo{
-			ID:         string(msg.NodeInfo.ID),
-			Address:    msg.NodeInfo.Address,
-			Port:       msg.NodeInfo.Port,
-			HTTPPort:   msg.NodeInfo.HTTPPort,
-			HTTPOrigin: msg.NodeInfo.HTTPOrigin,
-			Enclave:    msg.NodeInfo.Enclave,
-		}
-	}
+	simpleMsg := NewSimpleMessage(msg)
 
 	// Send to the HTTP gossip endpoint
 	origin, err := node.Origin()

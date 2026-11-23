@@ -31,11 +31,18 @@ const (
 	// DefaultSendTimeout is the deadline for one send, matching the HTTP
 	// transport's client timeout.
 	DefaultSendTimeout = 5 * time.Second
+	// DefaultMaxSendAge is how long a message may wait, in the peer's queue
+	// and for a global send slot, before its send starts. An older message is
+	// dropped unsent and counted (#152). Together with DefaultSendTimeout it
+	// bounds how late any copy can reach a peer, measured on the sender's own
+	// clock, which is what lets the dedup window cover every late copy.
+	DefaultMaxSendAge = 15 * time.Second
 )
 
 // sendMetrics tracks outbound gossip delivery for Prometheus.
 type sendMetrics struct {
 	queueDropped  prometheus.Counter
+	expired       prometheus.Counter
 	sendDuration  *prometheus.HistogramVec
 	sendsInFlight prometheus.Gauge
 	sendsQueued   prometheus.Gauge
@@ -53,6 +60,10 @@ func newSendMetrics() *sendMetrics {
 				Name: "gossip_send_queue_dropped_total",
 				Help: "Outbound gossip messages dropped because the peer's send queue was full",
 			}),
+			expired: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "gossip_send_expired_total",
+				Help: "Outbound gossip messages dropped unsent because they waited longer than the maximum send age",
+			}),
 			sendDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 				Name:    "gossip_send_duration_seconds",
 				Help:    "Duration of outbound gossip sends, by outcome (ok or error)",
@@ -69,6 +80,7 @@ func newSendMetrics() *sendMetrics {
 		}
 		prometheus.MustRegister(
 			sharedSendMetrics.queueDropped,
+			sharedSendMetrics.expired,
 			sharedSendMetrics.sendDuration,
 			sharedSendMetrics.sendsInFlight,
 			sharedSendMetrics.sendsQueued,
@@ -78,8 +90,9 @@ func newSendMetrics() *sendMetrics {
 }
 
 type sendJob struct {
-	peer *Node
-	msg  *Message
+	peer       *Node
+	msg        *Message
+	enqueuedAt time.Time // sender's clock; see DefaultMaxSendAge
 }
 
 // peerSendQueue is one peer's FIFO and the context its worker runs under.
@@ -100,7 +113,9 @@ type peerSendQueue struct {
 //   - a global semaphore capping sends in flight across all peers;
 //   - a per-send deadline, derived from a dispatcher context that Stop
 //     cancels, never from a client request;
-//   - drop-and-count when a peer's queue is full, never unbounded queuing.
+//   - drop-and-count when a peer's queue is full, never unbounded queuing;
+//   - drop-and-count when a message has waited longer than maxSendAge, so
+//     no copy reaches a peer arbitrarily late (#152).
 //
 // Queues are created on first use for a peer in the peer table and removed
 // with the peer (eviction or Stop), so goroutines are bounded by peer count.
@@ -110,6 +125,8 @@ type sendDispatcher struct {
 	queueDepth     int
 	workersPerPeer int
 	sendTimeout    time.Duration
+	maxSendAge     time.Duration
+	now            func() time.Time
 	sendSlots      chan struct{}
 
 	baseCtx    context.Context
@@ -122,6 +139,7 @@ type sendDispatcher struct {
 
 	pending atomic.Int64 // queued plus in flight
 	dropped atomic.Int64
+	expired atomic.Int64
 	metrics *sendMetrics // nil in tests
 }
 
@@ -131,6 +149,8 @@ type sendLimits struct {
 	sendsPerPeer  int
 	maxConcurrent int
 	sendTimeout   time.Duration
+	maxSendAge    time.Duration
+	now           func() time.Time // clock for send ages; nil uses time.Now
 }
 
 func defaultSendLimits() sendLimits {
@@ -139,6 +159,7 @@ func defaultSendLimits() sendLimits {
 		sendsPerPeer:  DefaultMaxSendsPerPeer,
 		maxConcurrent: DefaultMaxConcurrentSends,
 		sendTimeout:   DefaultSendTimeout,
+		maxSendAge:    DefaultMaxSendAge,
 	}
 }
 
@@ -156,6 +177,12 @@ func newSendDispatcher(localID NodeID, transport func() Transport, limits sendLi
 	if limits.sendTimeout <= 0 {
 		limits.sendTimeout = defaults.sendTimeout
 	}
+	if limits.maxSendAge <= 0 {
+		limits.maxSendAge = defaults.maxSendAge
+	}
+	if limits.now == nil {
+		limits.now = time.Now
+	}
 	baseCtx, cancelBase := context.WithCancel(context.Background())
 	return &sendDispatcher{
 		localID:        localID,
@@ -163,6 +190,8 @@ func newSendDispatcher(localID NodeID, transport func() Transport, limits sendLi
 		queueDepth:     limits.queueDepth,
 		workersPerPeer: limits.sendsPerPeer,
 		sendTimeout:    limits.sendTimeout,
+		maxSendAge:     limits.maxSendAge,
+		now:            limits.now,
 		sendSlots:      make(chan struct{}, limits.maxConcurrent),
 		baseCtx:        baseCtx,
 		cancelBase:     cancelBase,
@@ -200,7 +229,7 @@ func (d *sendDispatcher) enqueue(peer *Node, msg *Message) bool {
 		d.metrics.sendsQueued.Inc()
 	}
 	select {
-	case queue.jobs <- sendJob{peer: peer, msg: msg}:
+	case queue.jobs <- sendJob{peer: peer, msg: msg, enqueuedAt: d.now()}:
 		d.mu.Unlock()
 		return true
 	default:
@@ -294,6 +323,17 @@ func (d *sendDispatcher) deliver(queueCtx context.Context, job sendJob) {
 	}
 	defer func() { <-d.sendSlots }()
 	if queueCtx.Err() != nil {
+		return
+	}
+	// Checked after the slot is taken, so time spent waiting for a global
+	// slot counts toward the age too.
+	if age := d.now().Sub(job.enqueuedAt); age > d.maxSendAge {
+		d.expired.Add(1)
+		if d.metrics != nil {
+			d.metrics.expired.Inc()
+		}
+		logging.Debug("[%s] Dropped %s for peer %s (msg %s): waited %v, limit %v",
+			d.localID, job.msg.Type, job.peer.ID, job.msg.MessageID, age, d.maxSendAge)
 		return
 	}
 

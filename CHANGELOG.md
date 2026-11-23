@@ -31,6 +31,19 @@
 
 ### Replication
 
+- Bound re-propagation of gossip copies that arrive late (#152). A copy
+  that waited in a sender's queue past the receiver's 60-second duplicate
+  window was stored again, with a fresh local lifetime, and forwarded again,
+  starting a second wave. Senders now drop a gossip send that has waited 15
+  seconds to start (`gossip_send_expired_total`). PUTs carry a `hops` count,
+  and nodes stop forwarding at 8 hops; they still store and ACK the copy. The
+  duplicate window is 180 seconds, the longest a copy can now stay in the
+  mesh. Its memory is still capped at 100,000 IDs; when the cache is full,
+  the hop limit keeps any second wave bounded. Overwrites have new message
+  IDs and are unaffected. Older nodes ignore `hops`.
+  Every HTTP and WebSocket path now uses one conversion between `Message`
+  and its wire form, so a new field cannot be dropped on one path.
+
 - Keep the most recent message IDs when the gossip dedup cache is full
   (#168). The old "drop the oldest half" step anchored its midpoint at the
   latest possible expiry, so a burst that filled the 100,000-ID cache within

@@ -70,7 +70,7 @@ a `201` is an observed quorum result, not a promise of three independent copies.
 | Storage and listing (#162, #217, #220, #280) | Expired-entry accounting, entry overhead, and bounded listing work, with tests that catch requests stalled behind the store lock. The ordered-index change from #248 was reverted in #255; a second attempt (#279) had changes requested. |
 | Public resource handling (#218, #219, #221, #222) | Stream subscriber policy, HTTP deadlines/connections, rate-limiter state, and diagnostic exposure. Deployment limits do not close these issues. |
 | Payload transport (#214, #246) | Keep configurable value caps within the gossip envelope; evaluate raw-byte peer values for the next iteration. |
-| Larger meshes (#152, #165, #168) | Bounded re-propagation of messages delivered again after the duplicate window, asymmetric eviction, and deduplication behavior under churn and load. |
+| Larger meshes (#165) | Asymmetric eviction. Keeping the newest IDs in a full dedup cache (#168) and bounding re-propagation of late copies (#152) are done. |
 | Reset bundles (#231) | Explicit bundle overrides. Omega polish (#234–#236) is done. |
 | Release distribution (#224) | Verifiable artifacts before a general release. Gated publishing (#223) is done. |
 

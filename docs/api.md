@@ -167,6 +167,11 @@ and reverse ACK routing). Current nodes generate 32 lowercase hex characters
 (128 random bits); older nodes used other formats, and those IDs are still
 accepted.
 
+A forwarded PUT carries `hops`, the number of times it has been forwarded,
+omitted when 0. Nodes forward a PUT only while `hops` is below 8 (see
+[duplicates and late copies](architecture.md#duplicates-and-late-copies)).
+A message without the field counts as hop 0.
+
 The HTTP API accepts browser requests from any origin. A reverse proxy can
 control transport exposure, but CORS is not client authentication. See
 [configuration](configuration.md) for resource limits and proxy settings.
