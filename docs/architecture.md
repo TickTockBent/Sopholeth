@@ -58,7 +58,10 @@ peers. Sends to one peer may complete out of order. Each send has its own deadli
 not tied to the client's request, so a slow or unreachable peer delays only
 its own queue, and a `202` does not cancel delivery to other peers. When a
 peer's queue is full, new messages for it are dropped and counted in
-`gossip_send_queue_dropped_total`; there is no retry. Evicting a peer or
+`gossip_send_queue_dropped_total`; there is no retry. A message that has
+waited 15 seconds, in its queue and for a global send slot, is dropped unsent
+and counted in `gossip_send_expired_total` (see
+[Duplicates and late copies](#duplicates-and-late-copies)). Evicting a peer or
 stopping the node cancels its queued and in-flight sends.
 
 There is no client DELETE operation, durable payload archive, or payload
@@ -78,6 +81,50 @@ threshold, it uses approximately square-root fanout and epidemic forwarding.
 A bounded message-ID cache suppresses repeated processing. This design aims
 to spread writes across the enclave, but partitions, finite TTL, resource
 limits, and process failures can prevent delivery.
+
+### Duplicates and late copies
+
+A write reaches a node once per path, so most nodes receive several copies.
+The first copy is stored, ACKed and forwarded; later copies must not be, or a
+copy that arrives late restarts the node's local lifetime and starts a
+second propagation wave. Three local rules bound this (#152). None of them
+compares clocks between nodes or reads the message's `timestamp`.
+
+- **Send age.** A sender drops a gossip send that has waited more than 15
+  seconds to start, measured on its own clock. With the 5-second send
+  deadline, a copy reaches a peer within 20 seconds of the sender accepting
+  it, or not at all.
+- **Hop limit.** A PUT carries `hops`, the number of times it has been
+  forwarded. The origin sends 0 and each forward adds one. A node stores and
+  ACKs a copy whatever its count, but forwards only while `hops` is below 8.
+  With the send age, every copy of a write is gone from the mesh within
+  9 × 20 = 180 seconds of the write.
+- **Duplicate window.** A node remembers each message ID for 180 seconds,
+  the longest a copy can stay in the mesh, so any later copy is recognized
+  and dropped: it is not stored again, ACKed or forwarded. The cache holds
+  at most 100,000 IDs, so its memory is bounded. When it is full it drops
+  the oldest ID first (#168) and counts the drop in
+  `gossip_dedup_capacity_evictions_total`; the effective window is then
+  shorter than 180 seconds. A copy that arrives after its ID was dropped is
+  stored again with a fresh local lifetime and may be forwarded, but only
+  until its hop count runs out, so the second wave stays bounded.
+
+In simulations with asynchronous delivery, a wave can run past 8 hops in a
+large enclave, because a node is often first reached along a long fast path.
+The limit still made no measurable difference to coverage: a copy stopped at
+the limit is stored, and its would-be targets are reached by other paths.
+
+An overwrite is a new write with a new message ID, so it is never taken for
+a late copy and propagates normally. The rules apply to copies inside the
+mesh. Anyone can still write the same key and value again through the client
+API or post a gossip message with `hops` 0; that is a new write, and its
+lifetime starts on each replica when the replica accepts it. Two writes to
+one key have no order: an older write's copy can still reach a node after a
+newer write.
+
+Nodes without these rules ignore `hops` and forward every copy as hop 0, so
+the limit holds only along paths of nodes that have it. Below the fanout
+threshold, nodes do not forward at all.
 
 The current quorum calculation is:
 

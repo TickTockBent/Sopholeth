@@ -96,6 +96,10 @@ type Message struct {
 	TTL       int         `json:"ttl,omitempty"`
 	Timestamp time.Time   `json:"timestamp"`
 	MessageID string      `json:"message_id"`
+	// Hops counts how many times a PUT has been forwarded: 0 from the
+	// originator, the received value plus one on each forward. A node stops
+	// forwarding at MaxForwardHops (#152).
+	Hops int `json:"hops,omitempty"`
 	// Peer information for discovery and liveness messages.
 	NodeInfo *Node `json:"node_info,omitempty"`
 }
@@ -123,9 +127,24 @@ const MaxPingFailures = 3
 // threshold, every enclave peer receives each message directly.
 const FanoutThreshold = 10
 
-// seenMessageTTL is how long a message ID stays in the dedup cache.
-// Should be longer than the maximum expected propagation time.
-const seenMessageTTL = 60 * time.Second
+// MaxForwardHops is the hop count at which a node stops forwarding a PUT
+// (#152). It still stores and ACKs the copy. With asynchronous delivery a
+// node is often first reached along a long fast path, so a wave can run past
+// 8 hops in large enclaves, but a copy stopped at the limit is still stored
+// and its targets are reached by other paths: in simulation (12 to 1000
+// nodes, exponential link latencies) the limit made no measurable difference
+// to coverage. It bounds how far any copy can travel, so every
+// copy of a message is gone from the mesh within
+// (MaxForwardHops+1) * (DefaultMaxSendAge+DefaultSendTimeout) of the write,
+// measured on each sender's own clock, even when the dedup cache is full.
+const MaxForwardHops = 8
+
+// seenMessageTTL is how long a message ID stays in the dedup cache. It covers
+// the longest time any copy can stay in the mesh (see MaxForwardHops), so a
+// late copy finds its ID still present and is neither stored nor forwarded a
+// second time (#152). The cache cap still bounds memory: under pressure the
+// effective window is shorter, and the hop limit is then the bound.
+const seenMessageTTL = (MaxForwardHops + 1) * (DefaultMaxSendAge + DefaultSendTimeout)
 
 // maxSeenMessages caps the dedup cache to prevent unbounded growth under
 // sustained high write throughput between cleanup cycles.
@@ -623,7 +642,15 @@ func (p *Protocol) BroadcastToEnclave(msg *Message) error {
 // but only if the enclave is above the fanout threshold. For small enclaves,
 // the originator already sent to everyone, so no forwarding is needed.
 // Like BroadcastToEnclave it never waits on a peer (#167).
+//
+// A message that has already been forwarded MaxForwardHops times, or carries a
+// negative count, goes no further. The forwarded copy carries Hops+1; the
+// caller's message is not changed.
 func (p *Protocol) ForwardToEnclave(msg *Message) {
+	if msg.Hops < 0 || msg.Hops >= MaxForwardHops {
+		logging.Debug("[%s] Not forwarding %s (msg %s): hop limit reached (%d)", p.localNode.ID, msg.Type, msg.MessageID, msg.Hops)
+		return
+	}
 	peers := p.GetReplicationPeers()
 	if len(peers) <= FanoutThreshold {
 		return // originator already sent to all peers
@@ -634,9 +661,11 @@ func (p *Protocol) ForwardToEnclave(msg *Message) {
 		return
 	}
 
-	logging.Debug("[%s] Forwarding %s (key: %s) to %d enclave peers", p.localNode.ID, msg.Type, msg.Key, len(targets))
+	forwarded := *msg
+	forwarded.Hops = msg.Hops + 1
+	logging.Debug("[%s] Forwarding %s (key: %s, hop %d) to %d enclave peers", p.localNode.ID, msg.Type, msg.Key, forwarded.Hops, len(targets))
 	for _, peer := range targets {
-		p.QueueToPeer(peer.ID, msg)
+		p.QueueToPeer(peer.ID, &forwarded)
 	}
 }
 

@@ -54,6 +54,14 @@ Every reachable member of an enclave is a replication target. The core does
 not shard payloads or elect a primary data owner. Finite TTL, partitions,
 resource limits, and node failures can prevent delivery.
 
+Gossip bounds how long and how far one write's copies travel inside the mesh:
+a sender drops a send that waited too long on its own clock, and a hop count
+on the wire stops forwarding. Nodes recognize copies by message ID for as long
+as a copy can still be travelling, within a fixed memory cap. Neither bound
+reads another node's clock or tells a "replay" from a rewrite: writing the
+same value again is a new write with a fresh lifetime. See
+[duplicates and late copies](architecture.md#duplicates-and-late-copies).
+
 All nodes run the same software. Public roots provide bootstrap discovery;
 substrates and transients provide different connection capabilities. These
 roles do not grant authority over client values.
