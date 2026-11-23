@@ -14,8 +14,10 @@ import (
 )
 
 // ErrQuorumTimeout indicates the write was stored locally but quorum
-// confirmation was not received within the timeout window. The data
-// will still propagate via gossip — this is not a write failure.
+// confirmation was not received before the write timeout, or before the
+// caller's context ended. Callers report it as accepted and pending (HTTP
+// 202, MCP quorum_status "pending"), not as a failure. When the context
+// ended, the returned error also wraps the context's error.
 var ErrQuorumTimeout = fmt.Errorf("quorum timeout: stored locally, replication pending")
 
 type ClusterNode struct {
@@ -321,6 +323,12 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 	}
 	ttl = cn.clampTTL(int64(ttl / time.Second))
 
+	// A caller that is already gone gets nothing stored: the error is true
+	// because the store has not happened yet (#170).
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// One snapshot of the replication peers fixes this write's quorum target
 	// and the peers whose ACKs count even if they are evicted mid-write
 	// (#164). Neither moves while the write is pending.
@@ -402,7 +410,10 @@ func (cn *ClusterNode) Put(ctx context.Context, key string, data []byte, ttl tim
 		if cn.removePendingWrite(msg.MessageID, writeOp) {
 			return nil
 		}
-		return ctx.Err()
+		// The value is stored here and offered to the enclave, so the caller
+		// leaving early does not make the write a failure: it is pending,
+		// like a write timeout (#170).
+		return fmt.Errorf("%w: %w", ErrQuorumTimeout, ctx.Err())
 	}
 }
 

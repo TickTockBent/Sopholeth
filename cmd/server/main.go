@@ -473,6 +473,28 @@ type HTTPServer struct {
 	// — the constructor wires one up regardless of inbound capability so
 	// transients can also call Attach when they have a substrate peer.
 	treeManager *tree.Manager
+	// requestTimeout bounds every request except streams and PUTs; a PUT
+	// is bounded by putBodyReadTimeout and NODE_WRITE_TIMEOUT instead.
+	// putBodyReadTimeout bounds how long a PUT may take to send its body.
+	// Zero means defaultRequestTimeout for either. Tests shorten them.
+	requestTimeout     time.Duration
+	putBodyReadTimeout time.Duration
+}
+
+const defaultRequestTimeout = 30 * time.Second
+
+func durationOrDefault(configured time.Duration) time.Duration {
+	if configured <= 0 {
+		return defaultRequestTimeout
+	}
+	return configured
+}
+
+// isDataPut reports whether r is a write. Writes run outside the request
+// timeout: http.TimeoutHandler answers 503 when it fires, even after the
+// value is stored, which would report a pending write as failed (#170).
+func isDataPut(r *http.Request) bool {
+	return r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/data/")
 }
 
 func (s *HTTPServer) Router() *mux.Router {
@@ -493,9 +515,9 @@ func (s *HTTPServer) Router() *mux.Router {
 	r.Use(s.securityMW.Middleware)
 	r.Use(node.MaxRequestSizeMiddleware(s.securityMW.MaxRequestSize()))
 	r.Use(func(next http.Handler) http.Handler {
-		timed := node.TimeoutMiddleware(30 * time.Second)(next)
+		timed := node.TimeoutMiddleware(durationOrDefault(s.requestTimeout))(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/v1/stream" {
+			if r.URL.Path == "/v1/stream" || isDataPut(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -632,6 +654,13 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A PUT skips the request timeout (see isDataPut), so a slow upload is
+	// cut off here instead. Nothing is stored until the body is complete.
+	bodyReadDeadline := time.Now().Add(durationOrDefault(s.putBodyReadTimeout))
+	if err := http.NewResponseController(w).SetReadDeadline(bodyReadDeadline); err != nil {
+		logging.Warn("PUT body read deadline not set: %v", err)
+	}
+
 	// Bound reads as well as storage, including uploads without Content-Length.
 	maxValueBytes := s.clusterNode.WriteLimits().MaxValueBytes
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(maxValueBytes)))
@@ -665,10 +694,9 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 		ttl = s.maxTTL
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	if err := s.clusterNode.Put(ctx, key, body, time.Duration(ttl)*time.Second); err != nil {
+	// No deadline of our own: Put returns by NODE_WRITE_TIMEOUT, and a
+	// fixed one shorter than that turned pending writes into 500s (#170).
+	if err := s.clusterNode.Put(r.Context(), key, body, time.Duration(ttl)*time.Second); err != nil {
 		if errors.Is(err, cluster.ErrValueTooLarge) || errors.Is(err, cluster.ErrKeyTooLong) {
 			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 			return
@@ -678,8 +706,8 @@ func (s *HTTPServer) putHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, cluster.ErrQuorumTimeout) {
-			// Data is stored locally and will propagate via gossip.
-			// 202 Accepted signals "written, replication in progress."
+			// Stored locally and offered to the enclave; quorum was not
+			// confirmed before the write timeout or the request ended.
 			w.WriteHeader(http.StatusAccepted)
 			fmt.Fprintf(w, "Accepted (quorum pending)")
 			return

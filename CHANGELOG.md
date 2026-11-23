@@ -31,6 +31,19 @@
 
 ### Replication
 
+- Report a write that is stored but unconfirmed as pending, not failed
+  (#170). The PUT handler and the MCP `store` tool wrapped the write in a
+  fixed 10-second deadline, and every route but the stream ran under a
+  30-second response timeout. When either ended the quorum wait before
+  `NODE_WRITE_TIMEOUT` did, the client got `500`, `503` or an MCP error for a
+  value the node had already stored and offered to its enclave. The node now
+  answers `202` (MCP `quorum_status: "pending"`) whenever the wait ends after
+  the local store, whether the write timeout expired, a deadline fired or the
+  client left. A request that ended before the store, or a store error such as
+  a full store, is still an error, and nothing is stored. PUTs no longer run
+  under the 30-second response timeout; a 30-second deadline on reading the
+  request body replaces it, and `NODE_WRITE_TIMEOUT` bounds the rest. Nothing
+  retries a PUT.
 - Bound re-propagation of gossip copies that arrive late (#152). A copy
   that waited in a sender's queue past the receiver's 60-second duplicate
   window was stored again, with a fresh local lifetime, and forwarded again,

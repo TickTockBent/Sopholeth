@@ -65,7 +65,6 @@ a `201` is an observed quorum result, not a promise of three independent copies.
 | Area | Remaining work |
 | --- | --- |
 | Peer bookkeeping (#211, #213) | Bound referrals, correlate liveness, and remove ghost records. Signed-root and established-peer route replacement is already rejected. |
-| Write outcomes (#170) | Deadline reporting. Unique write IDs (#166), per-sender ACK counting against a fixed target (#164) and quorum-of-one forwarding (#215) are done. |
 | Shutdown (#151) | Complete orderly stop/restart and verify writes after rejoining. |
 | Storage and listing (#162, #217, #220, #280) | Expired-entry accounting, entry overhead, and bounded listing work, with tests that catch requests stalled behind the store lock. The ordered-index change from #248 was reverted in #255; a second attempt (#279) had changes requested. |
 | Public resource handling (#218, #219, #221, #222) | Stream subscriber policy, HTTP deadlines/connections, rate-limiter state, and diagnostic exposure. Deployment limits do not close these issues. |
