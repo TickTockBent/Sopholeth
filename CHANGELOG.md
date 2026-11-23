@@ -31,6 +31,17 @@
 
 ### Replication
 
+- Keep the most recent message IDs when the gossip dedup cache is full
+  (#168). The old "drop the oldest half" step anchored its midpoint at the
+  latest possible expiry, so a burst that filled the 100,000-ID cache within
+  a few seconds was deleted all at once, and messages still in flight were
+  stored, ACKed and forwarded again. The cache is now an insertion-ordered
+  ring: expired IDs leave from the front, and a full cache drops exactly one
+  oldest ID per new one, so it always holds the newest 100,000 IDs. Memory
+  stays bounded by the cap, and the ring grows only as traffic needs it.
+  `gossip_dedup_capacity_evictions_total` counts unexpired IDs dropped for
+  room; a rising count means the duplicate window is shorter than 60 seconds
+  at the current message rate.
 - Count each peer's ACK once per write, and only from replication peers
   (#164). The originator kept a bare counter: a peer re-sending its ACK, or
   any host putting any ID in `From`, counted again, so one real replica could

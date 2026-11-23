@@ -449,32 +449,41 @@ func TestMarkSeenDedup(t *testing.T) {
 func TestSeenMessagesCacheBounded(t *testing.T) {
 	p, _ := newTestProtocol()
 
-	// Fill the cache to capacity
+	// A burst fills the cache to capacity within a few milliseconds.
 	for i := 0; i < maxSeenMessages; i++ {
 		p.MarkSeen(fmt.Sprintf("msg-%d", i))
 	}
 
-	// Verify cache is at capacity
 	p.seenMutex.Lock()
-	sizeAtCap := len(p.seenMessages)
+	sizeAtCap := p.seenMessages.len()
 	p.seenMutex.Unlock()
 	if sizeAtCap != maxSeenMessages {
 		t.Fatalf("cache size = %d, want %d", sizeAtCap, maxSeenMessages)
 	}
 
-	// Add one more — should trigger eviction and stay bounded
-	p.MarkSeen("overflow-msg")
-
-	p.seenMutex.Lock()
-	sizeAfter := len(p.seenMessages)
-	p.seenMutex.Unlock()
-	if sizeAfter >= maxSeenMessages {
-		t.Fatalf("cache size after eviction = %d, should be < %d", sizeAfter, maxSeenMessages)
+	// One more drops exactly the oldest ID, not the whole burst (#168).
+	if p.MarkSeen("overflow-msg") {
+		t.Fatal("overflow-msg should be new")
 	}
 
-	// The new message should still be present
+	p.seenMutex.Lock()
+	sizeAfter := p.seenMessages.len()
+	p.seenMutex.Unlock()
+	if sizeAfter != maxSeenMessages {
+		t.Fatalf("cache size after eviction = %d, want %d", sizeAfter, maxSeenMessages)
+	}
+
 	if !p.MarkSeen("overflow-msg") {
 		t.Fatal("overflow-msg should be in the cache after eviction")
+	}
+	if !p.MarkSeen(fmt.Sprintf("msg-%d", maxSeenMessages-1)) {
+		t.Fatal("the newest burst ID should survive eviction")
+	}
+	if !p.MarkSeen("msg-1") {
+		t.Fatal("msg-1 should survive: only msg-0 was evicted")
+	}
+	if p.MarkSeen("msg-0") {
+		t.Fatal("msg-0, the oldest ID, should have been evicted")
 	}
 }
 

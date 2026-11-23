@@ -23,6 +23,10 @@ type clusterMetrics struct {
 	peerEvictions prometheus.Counter
 	peerJoins     prometheus.Counter
 	pingFailures  prometheus.Counter
+	// dedupCapacityEvictions counts unexpired message IDs dropped because the
+	// dedup cache was full. A rising count means the duplicate window is
+	// shorter than seenMessageTTL under the current message rate.
+	dedupCapacityEvictions prometheus.Counter
 }
 
 var (
@@ -49,8 +53,12 @@ func newClusterMetrics() *clusterMetrics {
 				Name: "gossip_ping_failures_total",
 				Help: "Total number of failed ping attempts to peers",
 			}),
+			dedupCapacityEvictions: prometheus.NewCounter(prometheus.CounterOpts{
+				Name: "gossip_dedup_capacity_evictions_total",
+				Help: "Total number of unexpired message IDs dropped from the full dedup cache to make room for newer ones",
+			}),
 		}
-		prometheus.MustRegister(sharedMetrics.peersActive, sharedMetrics.peerEvictions, sharedMetrics.peerJoins, sharedMetrics.pingFailures)
+		prometheus.MustRegister(sharedMetrics.peersActive, sharedMetrics.peerEvictions, sharedMetrics.peerJoins, sharedMetrics.pingFailures, sharedMetrics.dedupCapacityEvictions)
 	})
 	return sharedMetrics
 }
@@ -138,8 +146,8 @@ type Protocol struct {
 	checkSeed         func(string, []*Node) error
 	topologyTicker    *time.Ticker
 	stopChan          chan struct{}
-	metrics           *clusterMetrics      // nil in tests (skip metrics)
-	seenMessages      map[string]time.Time // message ID → expiry time (dedup cache)
+	metrics           *clusterMetrics // nil in tests (skip metrics)
+	seenMessages      *seenCache      // dedup cache of recent message IDs, guarded by seenMutex
 	seenMutex         sync.Mutex
 	dispatcher        *sendDispatcher // bounded async delivery for PUT, forward and ACK
 }
@@ -176,7 +184,7 @@ func NewProtocol(localNode *Node, replicationFactor int, clusterSecret string) *
 		quorumSize:        quorumSize,
 		clusterSecret:     clusterSecret,
 		stopChan:          make(chan struct{}),
-		seenMessages:      make(map[string]time.Time),
+		seenMessages:      newSeenCache(maxSeenMessages, seenMessageTTL, time.Now),
 	}
 	defaultBootstrapClient, err := newBootstrapClient(nil)
 	if err != nil {
@@ -529,65 +537,24 @@ func (p *Protocol) Broadcast(ctx context.Context, msg *Message) error {
 
 // MarkSeen records a message ID in the dedup cache. Returns true if the
 // message was already seen (duplicate), false if it's new.
-// If the cache is at capacity, expired entries are evicted first. If still
-// full, the oldest half is dropped to make room.
+// When the cache is full, the single oldest ID is dropped to make room, so the
+// most recent maxSeenMessages IDs are always kept (#168).
 func (p *Protocol) MarkSeen(messageID string) bool {
 	p.seenMutex.Lock()
-	defer p.seenMutex.Unlock()
+	duplicate, evictedForCapacity := p.seenMessages.markSeen(messageID)
+	p.seenMutex.Unlock()
 
-	if _, seen := p.seenMessages[messageID]; seen {
-		return true
+	if evictedForCapacity > 0 && p.metrics != nil {
+		p.metrics.dedupCapacityEvictions.Add(float64(evictedForCapacity))
 	}
-
-	// Enforce capacity bound
-	if len(p.seenMessages) >= maxSeenMessages {
-		p.evictSeenLocked()
-	}
-
-	p.seenMessages[messageID] = time.Now().Add(seenMessageTTL)
-	return false
-}
-
-// evictSeenLocked removes expired entries, then drops the oldest half if
-// still at capacity. Must be called with seenMutex held.
-func (p *Protocol) evictSeenLocked() {
-	now := time.Now()
-	for id, expiry := range p.seenMessages {
-		if now.After(expiry) {
-			delete(p.seenMessages, id)
-		}
-	}
-
-	// If expired cleanup wasn't enough, drop the oldest half
-	if len(p.seenMessages) >= maxSeenMessages {
-		// Find the median expiry (oldest entries have earliest expiry)
-		earliest := now.Add(seenMessageTTL) // start with max possible
-		for _, expiry := range p.seenMessages {
-			if expiry.Before(earliest) {
-				earliest = expiry
-			}
-		}
-		midpoint := earliest.Add(now.Add(seenMessageTTL).Sub(earliest) / 2)
-
-		for id, expiry := range p.seenMessages {
-			if expiry.Before(midpoint) {
-				delete(p.seenMessages, id)
-			}
-		}
-	}
+	return duplicate
 }
 
 // cleanupSeenMessages removes expired entries from the dedup cache.
 func (p *Protocol) cleanupSeenMessages() {
 	p.seenMutex.Lock()
 	defer p.seenMutex.Unlock()
-
-	now := time.Now()
-	for id, expiry := range p.seenMessages {
-		if now.After(expiry) {
-			delete(p.seenMessages, id)
-		}
-	}
+	p.seenMessages.cleanup()
 }
 
 // fanoutSize returns the number of peers to forward to for probabilistic gossip.
